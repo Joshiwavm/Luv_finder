@@ -257,13 +257,12 @@ pip<span class="w"> </span>install<span class="w"> </span>-e<span class="w"> </s
 <section id="extras">
 <h2>Extras<a class="headerlink" href="#extras" title="Link to this heading">¶</a></h2>
 <dl class="simple">
-<dt><code class="docutils literal notranslate"><span class="pre">casa</span></code></dt><dd><p><code class="docutils literal notranslate"><span class="pre">casatools</span></code>, <code class="docutils literal notranslate"><span class="pre">casatasks</span></code>, <code class="docutils literal notranslate"><span class="pre">casadata</span></code>. Needed to read measurement sets and
-to simulate mocks. Native arm64 wheels exist for Python 3.12 on macOS &gt;= 14.
-<code class="docutils literal notranslate"><span class="pre">casadata</span></code> downloads ~350 MB on first import; if it cannot write to
-<code class="docutils literal notranslate"><span class="pre">~/.casa/data</span></code>, create that directory by hand. If the import fails with
-<code class="docutils literal notranslate"><span class="pre">Symbol</span> <span class="pre">not</span> <span class="pre">found:</span> <span class="pre">_CRYPTO_calloc</span></code>, upgrade the environment’s OpenSSL:
-<code class="docutils literal notranslate"><span class="pre">conda</span> <span class="pre">install</span> <span class="pre">-c</span> <span class="pre">conda-forge</span> <span class="pre">&quot;openssl&gt;=3.6&quot;</span></code> (casatools bundles OpenSSL 3.6
-and dyld reuses whichever <code class="docutils literal notranslate"><span class="pre">libcrypto.3.dylib</span></code> loads first).</p>
+<dt><code class="docutils literal notranslate"><span class="pre">casa</span></code></dt><dd><p><code class="docutils literal notranslate"><span class="pre">casatools</span></code> and <code class="docutils literal notranslate"><span class="pre">casatasks</span></code>. Needed to read measurement sets and to
+simulate mocks. Native arm64 wheels exist for Python 3.12 on macOS &gt;= 14.
+If the import fails with <code class="docutils literal notranslate"><span class="pre">Symbol</span> <span class="pre">not</span> <span class="pre">found:</span> <span class="pre">_CRYPTO_calloc</span></code>, upgrade the
+environment’s OpenSSL: <code class="docutils literal notranslate"><span class="pre">conda</span> <span class="pre">install</span> <span class="pre">-c</span> <span class="pre">conda-forge</span> <span class="pre">&quot;openssl&gt;=3.6&quot;</span></code>
+(casatools bundles OpenSSL 3.6 and dyld reuses whichever
+<code class="docutils literal notranslate"><span class="pre">libcrypto.3.dylib</span></code> loads first).</p>
 </dd>
 <dt><code class="docutils literal notranslate"><span class="pre">jax</span></code></dt><dd><p><code class="docutils literal notranslate"><span class="pre">jax</span></code>, <code class="docutils literal notranslate"><span class="pre">jax-finufft</span></code>. Not used yet; see the roadmap.</p>
 </dd>
@@ -272,6 +271,28 @@ and dyld reuses whichever <code class="docutils literal notranslate"><span class
 </dl>
 <p>The science code downstream of <a class="reference internal" href="generated/luv_finder.data.html#module-luv_finder.data" title="luv_finder.data"><code class="xref py py-mod docutils literal notranslate"><span class="pre">luv_finder.data</span></code></a> is numpy-only. Exporting a
 measurement set to NPZ with <code class="docutils literal notranslate"><span class="pre">luv-export</span></code> lets everything else run without CASA.</p>
+</section>
+<section id="casa-runtime-data">
+<h2>CASA runtime data<a class="headerlink" href="#casa-runtime-data" title="Link to this heading">¶</a></h2>
+<p>CASA needs a data directory (measures tables, ephemerides, observatory
+positions). The <code class="docutils literal notranslate"><span class="pre">casadata</span></code> pip package ships one copy per environment at
+roughly 850 MB each; it is not a dependency of <code class="docutils literal notranslate"><span class="pre">casatools</span></code> and this project
+does not install it. Keep a single shared copy instead, maintained by
+casaconfig, and point every environment at it from <code class="docutils literal notranslate"><span class="pre">~/.casa/config.py</span></code>:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">measurespath</span> <span class="o">=</span> <span class="s2">"/Users/&lt;you&gt;/.casa/data"</span>
+<span class="n">measures_auto_update</span> <span class="o">=</span> <span class="kc">True</span>   <span class="c1"># small, changes often</span>
+<span class="n">data_auto_update</span> <span class="o">=</span> <span class="kc">False</span>      <span class="c1"># ~850 MB, update by hand</span>
+</pre></div>
+</div>
+<p>Populate or refresh it with:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>python<span class="w"> </span>-c<span class="w"> </span><span class="s2">"from casaconfig import pull_data; pull_data()"</span><span class="w">       </span><span class="c1"># first time</span>
+python<span class="w"> </span>-c<span class="w"> </span><span class="s2">"from casaconfig import measures_update; measures_update()"</span>
+python<span class="w"> </span>-c<span class="w"> </span><span class="s2">"from casaconfig import data_update; data_update()"</span>
+</pre></div>
+</div>
+<p>If <code class="docutils literal notranslate"><span class="pre">casadata</span></code> is installed alongside this, it shadows <code class="docutils literal notranslate"><span class="pre">measurespath</span></code> on the
+data path and CASA warns that the two sets of measures tables differ. Uninstall
+it: <code class="docutils literal notranslate"><span class="pre">pip</span> <span class="pre">uninstall</span> <span class="pre">casadata</span></code>.</p>
 </section>
 <section id="casa-log-files">
 <h2>CASA log files<a class="headerlink" href="#casa-log-files" title="Link to this heading">¶</a></h2>
@@ -341,6 +362,7 @@ clutter, because the destination is fixed at the first CASA import.</p>
             <ul>
 <li><a class="reference internal" href="#">Installation</a><ul>
 <li><a class="reference internal" href="#extras">Extras</a></li>
+<li><a class="reference internal" href="#casa-runtime-data">CASA runtime data</a></li>
 <li><a class="reference internal" href="#casa-log-files">CASA log files</a></li>
 </ul>
 </li>
