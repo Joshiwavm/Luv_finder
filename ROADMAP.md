@@ -176,6 +176,13 @@ it were line flux. Compare recovered line lists and S/N, then decide whether
 subtraction belongs upstream in `alma-data-prep` or here, and which channels are
 masked as line-contaminated while fitting.
 
+For the masking decision specifically, a per-channel power statistic works
+directly on the visibilities: by Parseval, `sum_j w_j |V_j(nu)|^2` is the power of
+the dirty image in channel `nu`, so comparing it with its noise expectation flags
+bright channels with no imaging at all. It is spatially integrated, so it dilutes
+a faint compact line across the field and will only catch the bright ones, which
+is exactly what continuum masking needs.
+
 ### 3.2 Detection inference on one pointing
 Single Band 3 pointing. Turn the response cube into a catalogue: position,
 frequency, width and S/N per candidate. Calibrate the false-positive rate from
@@ -220,9 +227,16 @@ caveat in the catalogue.
 
 - **Merge with [alma-data-prep](https://github.com/Joshiwavm/alma-data-prep).**
   Start with the chunked export described in section 1.
-- **Bright-line subtraction.** Detect with the moment-8 machinery in
-  `alma_data_prep.export_cube.ExportCube`, subtract the best-fit UV model, re-run
-  on the residual. Needs a bright-plus-faint fixture.
+- **Bright-line subtraction.** Subtract the best-fit UV model and re-run on the
+  residual. Needs a bright-plus-faint fixture. Detection does not need the
+  moment-8 machinery in `alma_data_prep.export_cube.ExportCube`: that map is
+  `max_nu [I / sigma_nu]`, which is a matched filter with a one-channel boxcar,
+  so the filter here already dominates it for a line of known width. Moment-8
+  cannot move into the visibility plane either, because `max` is nonlinear and
+  pointwise in space while the Fourier relation is linear; Parseval gives total
+  power, not a per-pixel maximum. The reason to want it there, avoiding a CASA
+  imaging pass, is solved instead by the NUFFT in section 2, which produces the
+  dirty cube directly.
 - **The `dra` sign flip** between image and model conventions is documented and
   asserted but not fixed. Fixing it means regenerating the committed fixture.
 - **Other exploration methods** beyond grid search, once it is understood on real
