@@ -4,6 +4,18 @@
 .. automodule:: luv_finder.mock
 
    
+   .. rubric:: Module Attributes
+
+   .. autosummary::
+   
+      SIMMOS
+   
+   .. rubric:: Functions
+
+   .. autosummary::
+   
+      resolve_antenna_config
+   
    .. rubric:: Classes
 
    .. autosummary::

@@ -40,6 +40,11 @@ casaconfig, and point every environment at it from ``~/.casa/config.py``:
    measures_auto_update = True   # small, changes often
    data_auto_update = False      # ~850 MB, update by hand
 
+Antenna configurations come from this directory too, so the repository does not
+vendor any ``.cfg`` files. Cycle 13 requires casarundata 2026.02.19 or newer;
+``luv_finder.mock.resolve_antenna_config`` reports which cycles your copy has if
+the requested one is missing.
+
 Populate or refresh it with:
 
 .. code-block:: bash

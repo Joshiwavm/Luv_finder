@@ -4,6 +4,12 @@
 .. automodule:: luv_finder.matchedfilter
 
    
+   .. rubric:: Module Attributes
+
+   .. autosummary::
+   
+      GRID_KEYS
+   
    .. rubric:: Functions
 
    .. autosummary::

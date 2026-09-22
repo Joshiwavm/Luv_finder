@@ -284,6 +284,10 @@ casaconfig, and point every environment at it from <code class="docutils literal
 <span class="n">data_auto_update</span> <span class="o">=</span> <span class="kc">False</span>      <span class="c1"># ~850 MB, update by hand</span>
 </pre></div>
 </div>
+<p>Antenna configurations come from this directory too, so the repository does not
+vendor any <code class="docutils literal notranslate"><span class="pre">.cfg</span></code> files. Cycle 13 requires casarundata 2026.02.19 or newer;
+<code class="docutils literal notranslate"><span class="pre">luv_finder.mock.resolve_antenna_config</span></code> reports which cycles your copy has if
+the requested one is missing.</p>
 <p>Populate or refresh it with:</p>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>python<span class="w"> </span>-c<span class="w"> </span><span class="s2">"from casaconfig import pull_data; pull_data()"</span><span class="w">       </span><span class="c1"># first time</span>
 python<span class="w"> </span>-c<span class="w"> </span><span class="s2">"from casaconfig import measures_update; measures_update()"</span>
