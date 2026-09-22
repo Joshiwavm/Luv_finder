@@ -36,11 +36,26 @@ OpenSSL is older than the one casatools bundles: `conda install -c conda-forge "
 
 ## Quickstart
 
+Start with the smoke preset. It uses the 10-antenna ACA and a 16-channel cube,
+so it runs in about 10 seconds and produces ~7 MB instead of ~180 MB:
+
 ```bash
-luv-mock configs/mocks/line13_line9.yaml                       # simulate two lines
-luv-export --ms output/ms_files/line13_line9/*.noisy.ms --out line13_line9.npz
-luv-find --ms line13_line9.npz --grid configs/grids/line13_line9_known.yaml --jackknife
+luv-mock configs/mocks/smoke.yaml
+luv-find --ms output/ms_files/smoke/smoke.aca.cycle10.noisy.ms \
+         --grid configs/grids/smoke.yaml --jackknife
 ```
+
+The science-scale presets use the 43-antenna 12 m array:
+
+```bash
+luv-mock configs/mocks/line13_line9.yaml
+luv-export --ms output/ms_files/line13_line9/line13_line9.alma.cycle10.3.noisy.ms \
+           --out line13_line9.npz
+luv-find --ms line13_line9.npz --grid configs/grids/known_sources.yaml --jackknife
+```
+
+`configs/README.md` explains the presets, how mocks pair with grids, and the
+sign flip between the image and model conventions for `dra`.
 
 ## Development
 

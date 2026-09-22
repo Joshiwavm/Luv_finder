@@ -1,5 +1,0 @@
-# Fixed positions of the injected sources in the line13_line9 mock (fast sanity run).
-dra: [4.25, 12.0]
-ddec: [23.5, -4.25]
-width: 300
-total_flux: [1.0, 1.5]
