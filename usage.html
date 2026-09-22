@@ -251,11 +251,21 @@
 <h1>Usage<a class="headerlink" href="#usage" title="Link to this heading">¶</a></h1>
 <section id="command-line">
 <h2>Command line<a class="headerlink" href="#command-line" title="Link to this heading">¶</a></h2>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>luv-mock<span class="w"> </span>configs/mocks/line13_line9.yaml
-luv-export<span class="w"> </span>--ms<span class="w"> </span>output/ms_files/line13_line9/line13_line9.alma.cycle10.3.noisy.ms<span class="w"> </span>--out<span class="w"> </span>line13_line9.npz
-luv-find<span class="w"> </span>--ms<span class="w"> </span>line13_line9.npz<span class="w"> </span>--grid<span class="w"> </span>configs/grids/default.yaml<span class="w"> </span>--jackknife<span class="w"> </span>--out<span class="w"> </span>response.npz
+<p>The <code class="docutils literal notranslate"><span class="pre">smoke</span></code> preset is deliberately tiny (ACA, 16 channels, one minute) and
+runs end to end in seconds:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>luv-mock<span class="w"> </span>configs/mocks/smoke.yaml
+luv-find<span class="w"> </span>--ms<span class="w"> </span>output/ms_files/smoke/smoke.aca.cycle10.noisy.ms<span class="w"> </span>--grid<span class="w"> </span>configs/grids/smoke.yaml<span class="w"> </span>--jackknife
 </pre></div>
 </div>
+<p>The <code class="docutils literal notranslate"><span class="pre">line*_line*</span></code> presets are science-scale (12 m array, 50 channels):</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>luv-mock<span class="w"> </span>configs/mocks/line13_line9.yaml
+luv-export<span class="w"> </span>--ms<span class="w"> </span>output/ms_files/line13_line9/line13_line9.alma.cycle10.3.noisy.ms<span class="w"> </span>--out<span class="w"> </span>line13_line9.npz
+luv-find<span class="w"> </span>--ms<span class="w"> </span>line13_line9.npz<span class="w"> </span>--grid<span class="w"> </span>configs/grids/known_sources.yaml<span class="w"> </span>--jackknife<span class="w"> </span>--out<span class="w"> </span>response.npz
+</pre></div>
+</div>
+<p>Every mock preset has a grid preset of the same name, or <code class="docutils literal notranslate"><span class="pre">known_sources.yaml</span></code>
+for the three <code class="docutils literal notranslate"><span class="pre">line*_line*</span></code> mocks, which share their source geometry.
+<code class="docutils literal notranslate"><span class="pre">configs/README.md</span></code> documents the pairing, the naming and the <code class="docutils literal notranslate"><span class="pre">dra</span></code> sign flip.</p>
 </section>
 <section id="python">
 <h2>Python<a class="headerlink" href="#python" title="Link to this heading">¶</a></h2>

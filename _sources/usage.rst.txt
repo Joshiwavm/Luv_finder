@@ -4,11 +4,25 @@ Usage
 Command line
 ------------
 
+The ``smoke`` preset is deliberately tiny (ACA, 16 channels, one minute) and
+runs end to end in seconds:
+
+.. code-block:: bash
+
+   luv-mock configs/mocks/smoke.yaml
+   luv-find --ms output/ms_files/smoke/smoke.aca.cycle10.noisy.ms --grid configs/grids/smoke.yaml --jackknife
+
+The ``line*_line*`` presets are science-scale (12 m array, 50 channels):
+
 .. code-block:: bash
 
    luv-mock configs/mocks/line13_line9.yaml
    luv-export --ms output/ms_files/line13_line9/line13_line9.alma.cycle10.3.noisy.ms --out line13_line9.npz
-   luv-find --ms line13_line9.npz --grid configs/grids/default.yaml --jackknife --out response.npz
+   luv-find --ms line13_line9.npz --grid configs/grids/known_sources.yaml --jackknife --out response.npz
+
+Every mock preset has a grid preset of the same name, or ``known_sources.yaml``
+for the three ``line*_line*`` mocks, which share their source geometry.
+``configs/README.md`` documents the pairing, the naming and the ``dra`` sign flip.
 
 Python
 ------
