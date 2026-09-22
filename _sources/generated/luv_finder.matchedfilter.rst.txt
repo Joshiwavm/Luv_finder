@@ -1,0 +1,18 @@
+﻿luv\_finder.matchedfilter
+=========================
+
+.. automodule:: luv_finder.matchedfilter
+
+   
+   .. rubric:: Functions
+
+   .. autosummary::
+   
+      nu_center_func
+   
+   .. rubric:: Classes
+
+   .. autosummary::
+   
+      MatchedFilter
+   

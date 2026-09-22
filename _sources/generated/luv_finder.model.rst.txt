@@ -1,0 +1,13 @@
+﻿luv\_finder.model
+=================
+
+.. automodule:: luv_finder.model
+
+   
+   .. rubric:: Classes
+
+   .. autosummary::
+   
+      Gaussian
+      Model
+   
