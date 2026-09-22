@@ -1,0 +1,4 @@
+# The two injected sources plus two empty control positions (dra x ddec product).
+dra: [4.25, 12.0]           # model convention, sign-flipped from the mock
+ddec: [23.5, -4.25]
+width: 300

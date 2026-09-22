@@ -1,26 +1,14 @@
-# smoke: deliberately tiny mock for exercising the CASA path in seconds.
-#
-# 10-antenna ACA (45 baselines) instead of the 43-antenna 12 m array (903), a
-# 16 x 64 x 64 cube instead of 50 x 256 x 256, and 1 minute instead of 8. That
-# is ~500x fewer visibilities than the line*_line* presets: a few MB rather
-# than ~150 MB. tests/test_mock.py runs this file, so keep it cheap.
-#
-# One bright source, offset from the phase centre so the phase-shift path is
-# actually exercised. See _common.md for the dra sign convention.
-cube_shape: [16, 64, 64]        # 64 px x 2" = 128" field, inside the ~269" ACA beam
-cell: 2arcsec                   # ACA resolution at 40 GHz is ~12", so this is sane
+# Tiny preset for tests and quick checks: ACA, 24 channels, 1 minute. ~7 MB, ~20 s.
+cube_shape: [24, 64, 64]
+cell: 2arcsec               # ACA resolves ~12" at 40 GHz
 dv: 100km/s
-freq_center: 40GHz              # cube spans 39.893 - 40.093 GHz
+freq_center: 40GHz
 integration_time: 1min
-alma_config: configs/alma/aca.cycle10.cfg
-ptg_file: configs/alma/ptgfile.txt
+alma_config: aca.cycle13.cfg
 output_folder: output/ms_files
 support_folder: support
-
-# Pin the project name. Without this the name is derived from the SNRs and
-# these products would be called 'line20' rather than 'smoke'.
-fits_filename: support/smoke_input.fits
+fits_filename: support/smoke_input.fits   # pins the project name to "smoke"
 
 sources:
-  - position: [-8.0, 12.0]      # model convention: dra=+8.0, ddec=+12.0
+  - position: [-8.0, 12.0]  # model convention: dra=+8.0, ddec=+12.0
     line: {width: 300, mean: 40.0, snr: 20}

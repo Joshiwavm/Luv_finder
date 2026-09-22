@@ -1,7 +1,4 @@
-# Matching grid for configs/mocks/smoke.yaml: the single injected source, in
-# model convention (mock [-8.0, 12.0] -> dra=+8.0, ddec=+12.0), plus one empty
-# control position.
-dra: [8.0, -20.0]
+# The injected source plus one empty control position.
+dra: [8.0, -20.0]           # model convention, sign-flipped from the mock
 ddec: 12.0
 width: 300
-total_flux: 1.0

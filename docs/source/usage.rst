@@ -4,51 +4,44 @@ Usage
 Command line
 ------------
 
-The ``smoke`` preset is deliberately tiny (ACA, 16 channels, one minute) and
+The ``smoke`` preset is deliberately tiny (ACA, 24 channels, one minute) and
 runs end to end in seconds:
 
 .. code-block:: bash
 
    luv-mock configs/mocks/smoke.yaml
-   luv-find --ms output/ms_files/smoke/smoke.aca.cycle10.noisy.ms --grid configs/grids/smoke.yaml --jackknife
+   luv-find --ms output/ms_files/smoke/smoke.aca.cycle13.noisy.ms --grid configs/grids/smoke.yaml --jackknife
 
-The ``line*_line*`` presets are science-scale (12 m array, 50 channels):
+The science preset uses the 12 m array and 50 channels:
 
 .. code-block:: bash
 
    luv-mock configs/mocks/line13_line9.yaml
-   luv-export --ms output/ms_files/line13_line9/line13_line9.alma.cycle10.3.noisy.ms --out line13_line9.npz
-   luv-find --ms line13_line9.npz --grid configs/grids/known_sources.yaml --jackknife --out response.npz
+   luv-export --ms output/ms_files/line13_line9/line13_line9.alma.cycle13.3.noisy.ms --out line13_line9.npz
+   luv-find --ms line13_line9.npz --grid configs/grids/line13_line9.yaml --jackknife --out response.npz
 
-Every mock preset has a grid preset of the same name, or ``known_sources.yaml``
-for the three ``line*_line*`` mocks, which share their source geometry.
-``configs/README.md`` documents the pairing, the naming and the ``dra`` sign flip.
+Each mock preset has a grid preset of the same name. ``configs/README.md``
+documents the pairing and the ``dra`` sign flip.
 
-Python
-------
+Signal-to-noise units
+---------------------
 
-.. code-block:: python
+``MatchedFilter.response`` is the matched-filter statistic: unit variance under
+the null, so the peak height is the line's signal-to-noise ratio. It does not
+depend on the template amplitude, which cancels in the kernel normalisation, so
+``total_flux`` is not a search axis and passing it in a grid raises an error.
 
-   import functools
-   from luv_finder import DataHandler, Gaussian, MatchedFilter, Model
-   from luv_finder.matchedfilter import nu_center_func
+Diagnostic figures
+------------------
 
-   data = DataHandler.from_npz("line13_line9.npz")
-   res = data.metadata.minresolution()
+.. code-block:: bash
 
-   g = Gaussian()
-   g.grid = {
-       "dra": [4.25, 12.0], "ddec": [23.5, -4.25],
-       "bmin": res / 10, "bmaj": res / 10,
-       "width": [300.0], "total_flux": [1.0],
-       "nu_center": functools.partial(nu_center_func, uvfreq_min=data.uvdata.uvfreqs.min()),
-   }
-   mod = Model(); mod.addcomponent(g)
+   pytest --plots
 
-   mf = MatchedFilter(data, mod)
-   mf.run(jackknife=True)
-   mf.plot_response("filter_response.png")
-   print(mf.best_params)
+writes the visibility-spectrum and filter-response checks to ``plots/`` together
+with an ``index.html`` contact sheet. The same figures are available directly
+through :func:`luv_finder.plotting.spectrum_check` and
+:func:`luv_finder.plotting.response_check`.
 
 Parameter naming
 ----------------

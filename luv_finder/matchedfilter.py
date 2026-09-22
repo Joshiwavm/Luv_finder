@@ -5,10 +5,10 @@ from __future__ import annotations
 import copy
 import functools
 import multiprocessing
+import os
 from itertools import product
 
 import astropy.units as u
-import matplotlib.pyplot as plt
 import numpy as np
 from astropy.constants import c
 from tqdm import tqdm
@@ -16,9 +16,9 @@ from tqdm import tqdm
 from .data import DataHandler
 from .model import Model
 
-# Empirical correction of the response amplitude (kernel normalisation bias).
-# TODO: derive analytically; see the padding/normalisation experiments in the git history of Test.ipynb.
-RESPONSE_SCALE = 0.9
+#: Search axes that a grid may vary. ``total_flux`` is deliberately absent: the
+#: kernel normalisation is scale-invariant, so varying it duplicates grid points.
+GRID_KEYS = ("dra", "ddec", "bmin", "bmaj", "width", "nu_center")
 
 
 def nu_center_func(width: float, uvfreq_min: float) -> float:
@@ -32,7 +32,13 @@ def _default_pool(pool: int | None) -> int:
 
 
 def _grid_point_response(args):
-    """Response spectrum of one grid point (module-level for multiprocessing)."""
+    """Signal-to-noise spectrum of one grid point (module-level for multiprocessing).
+
+    The kernel is normalised by ``sqrt(k^T N^-1 k)``, so the returned array is the
+    matched-filter statistic ``k^T N^-1 d / sqrt(k^T N^-1 k)``: unit variance under
+    the null, and equal to the line's S/N when the template matches. That
+    normalisation also makes the result independent of the template amplitude.
+    """
     params, finder, n_vis, n_freq = args
     data = finder.data
     model_uv = finder._get_model(params)
@@ -53,12 +59,16 @@ def _grid_point_response(args):
 
     signal_p = np.pad(signal_mean, (0, 2 * pad), mode="reflect")
     kernel_p = np.pad(kernel_norm, (0, 2 * pad), mode="reflect")
-    response = MatchedFilter.delay_transform(signal_p, kernel_p) * RESPONSE_SCALE
+    response = MatchedFilter.delay_transform(signal_p, kernel_p)
     return response[pad:-pad], params
 
 
 class MatchedFilter:
     """Evaluate a model kernel against the data over a parameter grid.
+
+    ``response`` is in signal-to-noise units: one row per grid point, one column
+    per channel, unit variance under the null hypothesis. A line matching the
+    template at that grid point shows up with a peak equal to its S/N.
 
     Parameters
     ----------
@@ -87,6 +97,13 @@ class MatchedFilter:
         return comp.profile(self.data.uvdata)
 
     def _expand_grid(self) -> list[dict]:
+        unknown = [k for k in self.mod.grid if k.split("_", 2)[-1] not in GRID_KEYS]
+        if unknown:
+            raise ValueError(
+                f"grid keys {unknown} are not searchable. Searchable keys are {list(GRID_KEYS)}. "
+                "total_flux in particular cancels in the kernel normalisation, so varying it "
+                "only duplicates grid points."
+            )
         variable, fixed, funcs = {}, {}, {}
         for key, val in self.mod.grid.items():
             if callable(val):
@@ -154,33 +171,13 @@ class MatchedFilter:
     def plot_response(
         self, filename: str = "plots/filter_response.png", show: bool = False, vline: float | None = None
     ):
-        i = self.best_index
-        freqs = self.frequencies()
-        fig, ax = plt.subplots(figsize=(8, 4))
-        ax.axhline(0, ls="--", color="gray")
-        if vline is not None:
-            ax.axvline(vline, ls="--", color="gray")
-        ax.plot(freqs, self.response[i], lw=2, label="Data")
-        if self.response_jackknife is not None:
-            ax.plot(freqs, self.response_jackknife[i], lw=2, ls=":", label="Jackknife")
-        ax.set_xlabel("Frequency (GHz)")
-        ax.set_ylabel("Response")
-        ax.set_title("Best grid point")
-        ax.legend()
-        text = "\n".join(
-            f"{k.split('_', 2)[-1]}={v:.2f}" for k, v in self.best_params.items() if not k.endswith("nu_center")
-        )
-        ax.text(
-            1.05,
-            0.5,
-            text,
-            transform=ax.transAxes,
-            va="center",
-            fontsize=10,
-            bbox=dict(boxstyle="round", facecolor="white", alpha=0.8),
-        )
-        fig.tight_layout()
-        fig.savefig(filename)
-        if show:
+        """Save the best grid point's S/N spectrum (see :mod:`luv_finder.plotting`)."""
+        from .plotting import response_check
+
+        plots_dir, name = os.path.split(filename)
+        path = response_check(self, plots_dir=plots_dir or ".", name=name, line_ghz=vline)
+        if show:  # pragma: no cover - interactive only
+            import matplotlib.pyplot as plt
+
             plt.show()
-        plt.close(fig)
+        return path

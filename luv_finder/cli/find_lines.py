@@ -22,7 +22,12 @@ def build_grid(data: DataHandler, cfg: dict | None) -> dict:
     """Grid ranges from YAML; positions default to the primary beam, sizes to the resolution."""
     fov = data.metadata.primarybeamsize()
     res = data.metadata.minresolution()
-    cfg = cfg or {}
+    cfg = dict(cfg or {})
+    if "total_flux" in cfg:
+        raise ValueError(
+            "total_flux is not a search axis: it cancels in the matched-filter kernel "
+            "normalisation, so every value gives an identical response. Remove it from the grid file."
+        )
 
     def rng(key, default):
         v = cfg.get(key, default)
@@ -37,7 +42,6 @@ def build_grid(data: DataHandler, cfg: dict | None) -> dict:
         "bmin": rng("bmin", res / 10),
         "bmaj": rng("bmaj", res / 10),
         "width": rng("width", [200.0, 300.0, 400.0]),
-        "total_flux": rng("total_flux", [0.5, 1.0, 2.0]),
         "nu_center": functools.partial(nu_center_func, uvfreq_min=data.uvdata.uvfreqs.min()),
     }
 

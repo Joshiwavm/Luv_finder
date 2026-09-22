@@ -15,12 +15,34 @@ from astropy.io import fits
 from astropy.modeling import models
 
 from . import utils
-from ._casa import tasks
+from ._casa import tasks, tools
 
-# ALMA Cycle 10 12m-array reference: 50 uJy continuum rms in 27 min (used for the
-# sensitivity <-> integration time scaling below).
+# Rough 12 m-array anchor (50 uJy in 27 min) used only to pick a starting flux.
+# It is wrong for other arrays, so ``calibrate_snr`` measures the achieved S/N
+# from the simulated data and corrects it.
 _REF_RMS_JY = 0.05e-3
 _REF_MIN = 27.0
+
+#: Antenna configurations are resolved from CASA's own data directory, so the
+#: repository does not vendor .cfg files. Cycle 13 needs casarundata >= 2026.02.19.
+SIMMOS = "alma/simmos"
+
+
+def resolve_antenna_config(name: str) -> str:
+    """Absolute path to a CASA antenna configuration, by bare name or path."""
+    if os.path.sep in name and os.path.exists(name):
+        return name
+    repo = tools().ctsys.resolve(SIMMOS)
+    path = os.path.join(repo, name)
+    if not os.path.exists(path):
+        available = sorted(os.path.basename(p) for p in glob.glob(os.path.join(repo, "*cycle*.cfg")))
+        cycles = sorted({n.split("cycle")[1].split(".")[0] for n in available if "cycle" in n}, key=int)
+        raise FileNotFoundError(
+            f"antenna configuration {name!r} not found in {repo}. "
+            f"Cycles available in this casarundata: {', '.join(cycles) or 'none'}. "
+            "Update it with: python -c 'from casaconfig import data_update; data_update()'"
+        )
+    return path
 
 
 class MockObservation:
@@ -35,6 +57,12 @@ class MockObservation:
     sources : list of dict
         ``position`` (dra, ddec) arcsec; optional ``axis_min``/``axis_maj`` arcsec;
         ``line`` {width km/s, mean GHz, snr}; ``continuum`` {snr}.
+    alma_config : str
+        Bare name of a CASA antenna configuration, e.g. ``alma.cycle13.3.cfg``,
+        resolved from CASA's own data directory.
+    calibrate_snr : bool
+        Re-simulate once with the flux rescaled so that each line's declared
+        ``snr`` is its achieved matched-filter S/N. Doubles the runtime.
     """
 
     def __init__(
@@ -48,11 +76,12 @@ class MockObservation:
         fits_filename=None,
         sources=None,
         direction="J2000 00h00m00.10 -40d00m00.00",
-        ptg_file="configs/alma/ptgfile.txt",
-        alma_config="configs/alma/alma.cycle10.2.cfg",
+        ptg_file=None,
+        alma_config="alma.cycle13.3.cfg",
         output_folder="output/ms_files",
         support_folder="support",
         seed=242,
+        calibrate_snr=True,
     ):
         if not sources:
             raise ValueError("at least one source is required")
@@ -63,7 +92,8 @@ class MockObservation:
         self.fits_filename = fits_filename
         self.sources = sources
         self.direction = direction
-        self.ptg_file = ptg_file
+        self.ptg_file = ptg_file or os.path.join(support_folder, "ptgfile.txt")
+        self.calibrate_snr = calibrate_snr
         self.alma_config = alma_config
         self.output_folder = output_folder
         self.support_folder = support_folder
@@ -192,7 +222,7 @@ class MockObservation:
             incell=self.cell,
             incenter=str(self.freq_center),
             inwidth=str(self.compute_df()),
-            antennalist=self.alma_config,
+            antennalist=resolve_antenna_config(self.alma_config),
             seed=self.seed,
             graphics="none",
         )
@@ -275,10 +305,59 @@ class MockObservation:
         self.ms_noisy = os.path.join(self.output_folder, self.ms_noisy)
         return dest
 
+    def achieved_snr(self) -> list[float]:
+        """Matched-filter S/N of each line source in the simulated data.
+
+        Uses the noiseless visibilities as the signal and the noisy weights as the
+        noise model, so this is the expected S/N rather than one noisy draw.
+        """
+        from .data import DataHandler
+
+        clean = DataHandler(self.ms_noiseless)
+        noisy = DataHandler(self.ms_noisy)
+        nf, nv = clean.n_freqs(clean.uvdata), clean.n_visbs(clean.uvdata)
+        out = []
+        for src in self.sources:
+            if "line" not in src:
+                continue
+            dra, ddec = src.get("position", (0.0, 0.0))
+            # model convention flips the sign of dra relative to the image
+            shifted = clean.apply_phase_shift(-dra, ddec, clean.uvdata)
+            weights = noisy.apply_phase_shift(-dra, ddec, noisy.uvdata).uvwghts
+            s_ch, w_ch = np.average(
+                shifted.UVreals_shifted.reshape(nf, nv),
+                weights=weights.reshape(nf, nv),
+                axis=1,
+                returned=True,
+            )
+            out.append(float(np.sqrt(np.sum(s_ch**2 * w_ch))))
+        return out
+
+    def _calibrate(self) -> list[float]:
+        """Rescale the cube so each line's declared ``snr`` is its achieved S/N.
+
+        S/N is linear in flux and the noise draw is seeded, so a single
+        multiplicative correction is exact.
+        """
+        achieved = self.achieved_snr()
+        wanted = [src["line"]["snr"] for src in self.sources if "line" in src]
+        if not achieved or min(achieved) <= 0:
+            return achieved
+        # one global factor: all line sources share the same noise realisation
+        factor = float(np.mean([w / a for w, a in zip(wanted, achieved, strict=True)]))
+        print(f"calibrating: achieved S/N {[round(a, 2) for a in achieved]} -> scaling flux by {factor:.3f}")
+        self.cube *= factor
+        self.save_cube()
+        self.simulate_observation()
+        return self.achieved_snr()
+
     def run_all(self, plots_dir: str = "plots") -> str:
         self.create_cube()
         self.save_cube()
         self.simulate_observation()
+        if self.calibrate_snr:
+            final = self._calibrate()
+            print(f"achieved matched-filter S/N: {[round(a, 2) for a in final]}")
         self.run_imaging()
         self.plot_results(plots_dir)
         return self.move_output()

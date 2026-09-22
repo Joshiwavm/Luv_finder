@@ -10,7 +10,7 @@ the data gives the noise reference. Only simulated single-pointing data so far.
 
 - `conda activate luv` (arm64 Python 3.12, native; no Rosetta). Install: `pip install -e ".[casa,dev]"`.
 - Run everything from the repo root; configs and outputs use root-relative paths.
-- `pytest` — CASA-free, uses `tests/fixtures/line13_line9_small.npz`. `pytest -m casa` regenerates a tiny mock (needs CASA).
+- `pytest` — CASA-free, uses `tests/fixtures/line13_line9_small.npz`. `pytest -m casa` simulates the smoke preset (needs CASA). `pytest --plots` also writes figures and a contact sheet to `plots/`.
 - `pre-commit run --all-files` — ruff lint + format, nbstripout. Keep it clean.
 - `make -C docs html` — Sphinx (furo, nbsphinx); tutorials in `docs/source/tutorials/` are committed executed and never re-run by the build.
 - CLIs: `luv-mock <yaml>`, `luv-export --ms X --out X.npz`, `luv-find --ms X[.npz] [--grid yaml] [--jackknife]`.
@@ -19,11 +19,12 @@ the data gives the noise reference. Only simulated single-pointing data so far.
 
 - `luv_finder/data.py` — `DataHandler`: flattens an MS into channel-major arrays (`uvdata`), NPZ round-trip, phase shift, `jackknife(mode="scan"|"random")`. CASA is reached lazily through `_casa.py`, so the NPZ path works without it.
 - `luv_finder/model.py` — `Model` + `Gaussian` (2D spatial x 1D spectral, evaluated analytically in UV). Parameters are exposed as `src_{NN}_{attr}`; the matched filter routes values back via `key.split("_", 2)[-1]`.
-- `luv_finder/matchedfilter.py` — `MatchedFilter`: expands `Model.grid` (scalar = fixed, array = enumerate, callable = derived from width), multiprocessing over grid points, FFT delay transform. `RESPONSE_SCALE = 0.9` is an unexplained empirical factor.
+- `luv_finder/matchedfilter.py` — `MatchedFilter`: expands `Model.grid` (scalar = fixed, array = enumerate, callable = derived from width), multiprocessing over grid points, FFT delay transform. The response is in S/N units (unit variance under the null); `total_flux` cancels in the kernel normalisation and is rejected as a grid key.
 - `luv_finder/mock.py` — `MockObservation`: cube -> `simobserve` -> `tclean` -> `output/ms_files/<name>/`. YAML presets in `configs/mocks/`.
 - `luv_finder/_casa.py` — the only place that imports `casatools`/`casatasks`. It presets `casaconfig.config.logfile` so CASA writes to `logs/` (override with `LUV_CASA_LOG_DIR`) instead of scattering `casa-<timestamp>.log` in the working directory. Never import CASA directly; use `tools()`/`tasks()`, or call `configure_logging()` first if you must.
+- `luv_finder/plotting.py` — all diagnostic figures; each takes a directory and returns the path written. `MatchedFilter.plot_response` is a thin wrapper.
 - `luv_finder/cli/` — argparse wrappers only; no science logic.
-- `configs/alma/` antenna configs; `configs/mocks/` mock presets; `configs/grids/` grid presets, named to match the mock they pair with (`known_sources.yaml` covers the three `line*_line*` mocks, which share geometry). `configs/README.md` documents the pairing, the naming and the `dra` sign flip between image and model conventions. `data/ output/ support/ plots/ logs/` are gitignored products.
+- `configs/mocks/` and `configs/grids/` pair by filename; `configs/README.md` covers the pairing and the `dra` sign flip. Antenna configs are not vendored: presets name files CASA ships (`alma.cycle13.3.cfg`), resolved by `mock.resolve_antenna_config`. `data/ output/ support/ plots/ logs/` are gitignored products.
 - Test configs live in `configs/`, not under `tests/`: `tests/test_mock.py` loads `configs/mocks/smoke.yaml` and `configs/grids/smoke.yaml` rather than hardcoding parameters, so presets and tests cannot drift apart.
 
 ## Conventions

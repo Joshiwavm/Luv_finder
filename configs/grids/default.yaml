@@ -1,19 +1,5 @@
-# Blind search: let the data set the position grid and the source size.
-#
-# Keys map to Gaussian attributes and are prefixed src_00_ when the Model is
-# built. A value may be:
-#   scalar          fixed
-#   list            enumerated
-#   {start,stop,step} -> np.arange
-# Omitted keys fall back to data-derived defaults in luv_finder.cli.find_lines:
-#   dra/ddec  +-fov_fraction * primary beam, step = resolution / 2
-#   bmin/bmaj resolution / 10
-# nu_center is always derived from the width, never set here.
-#
-# dra/ddec are in MODEL convention, which flips the sign of dra relative to the
-# mock presets (see ../mocks/_common.md).
-#
-# Cost is the product of all enumerated keys, so widen one axis at a time.
+# Blind search. Omitted keys are derived from the data: dra/ddec span
+# +-fov_fraction * primary beam in steps of resolution/2, bmin/bmaj = resolution/10.
+# Values may be a scalar (fixed), a list, or {start, stop, step}. Cost is their product.
 fov_fraction: 0.4
-width: [200, 300, 400]        # km/s
-total_flux: [0.5, 1.0, 2.0]   # Jy km/s
+width: [200, 300, 400]      # km/s

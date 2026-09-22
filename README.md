@@ -36,33 +36,39 @@ OpenSSL is older than the one casatools bundles: `conda install -c conda-forge "
 
 ## Quickstart
 
-Start with the smoke preset. It uses the 10-antenna ACA and a 16-channel cube,
-so it runs in about 10 seconds and produces ~7 MB instead of ~180 MB:
+The `smoke` preset uses the ACA and a 24-channel cube: ~9 MB and ~20 s, against
+~180 MB for the science preset.
 
 ```bash
 luv-mock configs/mocks/smoke.yaml
-luv-find --ms output/ms_files/smoke/smoke.aca.cycle10.noisy.ms \
+luv-find --ms output/ms_files/smoke/smoke.aca.cycle13.noisy.ms \
          --grid configs/grids/smoke.yaml --jackknife
 ```
 
-The science-scale presets use the 43-antenna 12 m array:
+The science preset uses the 43-antenna 12 m array:
 
 ```bash
 luv-mock configs/mocks/line13_line9.yaml
-luv-export --ms output/ms_files/line13_line9/line13_line9.alma.cycle10.3.noisy.ms \
+luv-export --ms output/ms_files/line13_line9/line13_line9.alma.cycle13.3.noisy.ms \
            --out line13_line9.npz
-luv-find --ms line13_line9.npz --grid configs/grids/known_sources.yaml --jackknife
+luv-find --ms line13_line9.npz --grid configs/grids/line13_line9.yaml --jackknife
 ```
 
-`configs/README.md` explains the presets, how mocks pair with grids, and the
-sign flip between the image and model conventions for `dra`.
+The filter response is in signal-to-noise units, so the peak height is the line's
+S/N and the jackknife trace shows the noise floor on the same axis. A mock's
+declared `snr` is calibrated against the simulated data, so it means the S/N you
+actually get. See [configs/README.md](configs/README.md).
+
+Antenna configurations are not vendored: `alma_config` names a file CASA ships,
+such as `alma.cycle13.3.cfg`. Cycle 13 needs casarundata 2026.02.19 or newer.
 
 ## Development
 
 ```bash
 pre-commit install && pre-commit run --all-files   # ruff lint + format
-pytest                                             # CASA-free tests on a bundled fixture
-pytest -m casa                                     # regenerate a tiny mock (needs CASA)
+pytest                                             # CASA-free, uses a bundled fixture
+pytest -m casa                                     # simulates the smoke preset (needs CASA)
+pytest --plots                                     # also write plots/ + index.html to eyeball
 make -C docs html                                  # docs -> docs/build/html
 ```
 
