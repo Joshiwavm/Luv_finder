@@ -18,7 +18,18 @@ pip install -e ".[casa,dev]"        # add ,jax for the JAX extras
 ```
 
 Runs natively on Apple Silicon (casatools ships arm64 wheels for Python 3.12,
-macOS >= 14). `casadata` downloads ~350 MB on first import.
+macOS >= 14).
+
+CASA needs a runtime data directory. Keep one shared copy rather than a
+per-environment `casadata` package, by setting `measurespath` in `~/.casa/config.py`:
+
+```python
+measurespath = "/Users/<you>/.casa/data"
+measures_auto_update = True
+data_auto_update = False
+```
+
+Populate it once with `python -c "from casaconfig import pull_data; pull_data()"`.
 
 If `import casatools` fails with `Symbol not found: _CRYPTO_calloc`, the conda env's
 OpenSSL is older than the one casatools bundles: `conda install -c conda-forge "openssl>=3.6"`.

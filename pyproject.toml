@@ -26,7 +26,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-casa = ["casatools", "casatasks", "casadata"]
+# casadata is deliberately absent: CASA runtime data lives in one shared
+# directory pointed at by measurespath in ~/.casa/config.py (see the docs).
+casa = ["casatools", "casatasks"]
 jax = ["jax", "jax-finufft"]
 dev = [
   "pytest",
