@@ -23,7 +23,7 @@ the data gives the noise reference. Only simulated single-pointing data so far.
 - `luv_finder/mock.py` — `MockObservation`: cube -> `simobserve` -> `tclean` -> `output/ms_files/<name>/`. YAML presets in `configs/mocks/`.
 - `luv_finder/_casa.py` — the only place that imports `casatools`/`casatasks`. It presets `casaconfig.config.logfile` so CASA writes to `logs/` (override with `LUV_CASA_LOG_DIR`) instead of scattering `casa-<timestamp>.log` in the working directory. Never import CASA directly; use `tools()`/`tasks()`, or call `configure_logging()` first if you must.
 - `luv_finder/cli/` — argparse wrappers only; no science logic.
-- `configs/alma/` antenna configs; `configs/grids/` grid presets; `data/ output/ support/ plots/` are gitignored products.
+- `configs/alma/` antenna configs; `configs/grids/` grid presets; `data/ output/ support/ plots/ logs/` are gitignored products.
 
 ## Conventions
 
