@@ -80,13 +80,41 @@ redundant or shareable.
   is a Gaussian, so `fft(kernel)` in `delay_transform` can be written down
   analytically rather than computed.
 
-### JAX
+### JAX and jit
+Measured on the test fixture, 256 positions, CPU, float64 throughout. Results
+agree with the current path to 5e-9 relative error.
+
+| Path | Time | Gain |
+|---|---|---|
+| Current numpy | 1510 ms | — |
+| Analytic, kernel hoisted out of the position loop | 166 ms | 9.1x |
+| `vmap` over positions, no jit | 95 ms | |
+| `vmap` + `jit` | 11 ms | 8.5x on top |
+
+Two things follow. First, jit is worth roughly as much as the analytic
+restructuring, so both are worth doing. Second, the restructuring is a
+precondition rather than an alternative: `_grid_point_response` currently
+deep-copies a `SimpleNamespace` and mutates model attributes with `setattr`,
+neither of which is traceable, so the present code cannot be jitted at all. The
+analytic form is a pure function of arrays and jits directly.
+
 Port `Gaussian._uvgauss_1D2D`, `delay_transform` and the grid loop to
-`jax.numpy` with `vmap` over grid points. Do the analytic restructuring first:
-it removes most of the work rather than moving it to a faster device, and what
-remains maps cleanly onto `vmap` and NUFFT primitives. CPU on macOS, CUDA on the
-cluster. Everything downstream of `data.py` is already numpy-only, so CASA and
-JAX never need to share an environment.
+`jax.numpy`. Enable `jax_enable_x64`: the weighted sums over visibilities need
+it, and jackknify already did this. CPU on macOS, CUDA on the cluster.
+Everything downstream of `data.py` is numpy-only, so CASA and JAX never need to
+share an environment.
+
+Two practical constraints:
+
+- **Recompilation on shape change.** Going from 256 to 300 positions retriggers
+  compilation, 73 ms against 10 ms cached. Keep the batch shape fixed and pad
+  the final chunk rather than letting the grid size vary.
+- **`vmap` has a memory wall.** It materialises `n_pos x n_freq x n_vis`
+  intermediates: fine at 256 positions, but a realistic blind search of 10,000
+  positions over 50 channels and 43,000 visibilities is 172 GB per intermediate.
+  The position axis must be chunked with `lax.map`, or removed entirely by the
+  NUFFT above, which is the reason to treat the NUFFT as the real fix and
+  jit+`vmap` as the thing that makes each chunk fast.
 
 ## Longer term
 
