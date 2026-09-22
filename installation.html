@@ -273,6 +273,15 @@ and dyld reuses whichever <code class="docutils literal notranslate"><span class
 <p>The science code downstream of <a class="reference internal" href="generated/luv_finder.data.html#module-luv_finder.data" title="luv_finder.data"><code class="xref py py-mod docutils literal notranslate"><span class="pre">luv_finder.data</span></code></a> is numpy-only. Exporting a
 measurement set to NPZ with <code class="docutils literal notranslate"><span class="pre">luv-export</span></code> lets everything else run without CASA.</p>
 </section>
+<section id="casa-log-files">
+<h2>CASA log files<a class="headerlink" href="#casa-log-files" title="Link to this heading">¶</a></h2>
+<p><code class="docutils literal notranslate"><span class="pre">casatools</span></code> and <code class="docutils literal notranslate"><span class="pre">casatasks</span></code> write a <code class="docutils literal notranslate"><span class="pre">casa-&lt;timestamp&gt;.log</span></code> into the working
+directory as soon as they are imported. <code class="xref py py-mod docutils literal notranslate"><span class="pre">luv_finder._casa</span></code> presets the
+casaconfig log path so these land in <code class="docutils literal notranslate"><span class="pre">logs/</span></code> instead, which is gitignored. Set
+<code class="docutils literal notranslate"><span class="pre">LUV_CASA_LOG_DIR</span></code> to send them elsewhere. Reach CASA through
+<code class="docutils literal notranslate"><span class="pre">luv_finder._casa.tools()</span></code> / <code class="docutils literal notranslate"><span class="pre">tasks()</span></code>; importing it directly re-creates the
+clutter, because the destination is fixed at the first CASA import.</p>
+</section>
 </section>
 
         </article>
@@ -332,6 +341,7 @@ measurement set to NPZ with <code class="docutils literal notranslate"><span cla
             <ul>
 <li><a class="reference internal" href="#">Installation</a><ul>
 <li><a class="reference internal" href="#extras">Extras</a></li>
+<li><a class="reference internal" href="#casa-log-files">CASA log files</a></li>
 </ul>
 </li>
 </ul>

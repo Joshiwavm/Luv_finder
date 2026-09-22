@@ -25,3 +25,13 @@ Extras
 
 The science code downstream of :mod:`luv_finder.data` is numpy-only. Exporting a
 measurement set to NPZ with ``luv-export`` lets everything else run without CASA.
+
+CASA log files
+--------------
+
+``casatools`` and ``casatasks`` write a ``casa-<timestamp>.log`` into the working
+directory as soon as they are imported. :mod:`luv_finder._casa` presets the
+casaconfig log path so these land in ``logs/`` instead, which is gitignored. Set
+``LUV_CASA_LOG_DIR`` to send them elsewhere. Reach CASA through
+``luv_finder._casa.tools()`` / ``tasks()``; importing it directly re-creates the
+clutter, because the destination is fixed at the first CASA import.
