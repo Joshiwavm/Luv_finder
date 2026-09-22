@@ -144,10 +144,10 @@ class MatchedFilter:
         responses, params = zip(*results, strict=True)
         return np.array(responses), list(params)
 
-    def run(self, pool: int | None = None, jackknife: bool = False, jackknife_mode: str = "scan") -> None:
+    def run(self, pool: int | None = None, jackknife: bool = False) -> None:
         self.response, self.grid_params = self.get_response(pool)
         if jackknife:
-            jacked = self.data.jackknife(self.data.uvdata, mode=jackknife_mode)
+            jacked = self.data.jackknife(self.data.uvdata)
             self.response_jackknife, self.grid_params_jackknife = self.get_response(pool, uvdata=jacked)
 
     @property

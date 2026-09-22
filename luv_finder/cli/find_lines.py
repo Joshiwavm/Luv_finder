@@ -51,7 +51,6 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("--ms", required=True, help=".ms directory or .npz from luv-export")
     p.add_argument("--grid", default=None, help="YAML grid ranges (see configs/grids/default.yaml)")
     p.add_argument("--jackknife", action="store_true", help="also run on a jackknifed noise realisation")
-    p.add_argument("--jackknife-mode", choices=("scan", "random"), default="scan")
     p.add_argument("--pool", type=int, default=None, help="worker processes (default 25%% of cores)")
     p.add_argument("--plots-dir", default="plots")
     p.add_argument("--out", default=None, help="save responses + grid to this .npz")
@@ -65,7 +64,7 @@ def main(argv: list[str] | None = None) -> None:
     mod.addcomponent(comp)
 
     mf = MatchedFilter(data, mod)
-    mf.run(pool=args.pool, jackknife=args.jackknife, jackknife_mode=args.jackknife_mode)
+    mf.run(pool=args.pool, jackknife=args.jackknife)
 
     os.makedirs(args.plots_dir, exist_ok=True)
     mf.plot_response(os.path.join(args.plots_dir, "filter_response.png"))

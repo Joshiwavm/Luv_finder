@@ -1,173 +1,229 @@
 # Roadmap
 
 Current state: grid-search matched filter, in S/N units, on simulated
-single-pointing data. Nested sampling was removed; grid search is sufficient for
-now.
+single-pointing data. Work the three blocks below in order: the data
+representation has to change before performance work is worth doing, and both
+have to land before the real data is tractable.
 
-## Real data: SPT-CL J0459-4947
+## 1. Data volume and layout
 
-Two 12 m datasets on the same source, to be worked through in the order below.
-Each step is a gate: do not start the next one until the previous is understood.
-
-| | Band 1 | Band 3 |
-|---|---|---|
-| Pointings | 1 | 7 (mosaic) |
-| Spectral windows | 4 | 4 |
-| Coverage | 37.7-45.6 GHz | 84.0-100.0 GHz |
-| Channels per window | 128, 128, 128, **960** | 128 x 4 |
-| Velocity resolution | 105-121 km/s, **13.7 km/s** | 47-55 km/s |
-| Antennas | 50 | 51 |
-| Rows | 1.75 M | 5.50 M |
-| Expected lines | ~4 | 11 |
-
-Lines sit at different sky positions in both bands, so this is a genuine blind
-search rather than a targeted extraction. Both sets were produced by
-`alma-data-prep`, which makes its export path the natural place to put any
-chunking this package needs, and is a concrete step toward merging the two.
-
-### 0. Handle the data volume
-
-Neither dataset fits the current in-memory representation.
+Neither real dataset fits the current in-memory representation.
 
 | | Band 1 | Band 3 |
 |---|---|---|
 | On disk | 12 GB | 20 GB |
 | Visibility-channels | 588 M | 704 M |
 | As `uvdata` today | 37.6 GB | 45.0 GB |
-| Largest single pointing | 37.6 GB | 6.4 GB |
 
-`DataHandler` keeps eight float64 arrays, 64 bytes per visibility-channel, which
-is 2-3x the size of the measurement set itself. Two changes fix this, and both
-are the same refactor that the analytic work below needs:
+### Where the inflation comes from
 
-- **Store factored, not expanded.** Only `UVreals` and `UVimags` are genuinely
-  per visibility-channel. `uwaves` and `vwaves` are the outer product of `u, v`
-  per row with frequency per channel; `uvfreqs` is per channel; `uvwghts` and
-  `uvtimes` are per row; `uvdists` is derivable from `uwaves, vwaves`. Keeping
-  the factors and forming products on demand takes 64 bytes per
-  visibility-channel down to 16, and to 8 in float32 for the data arrays, which
-  is smaller than the measurement set. A Band 3 pointing becomes under 1 GB.
-- **Chunk by (field, spw).** `load_data` currently concatenates every field and
-  window into one flat array, then reshapes to `(n_freq, n_vis)`. That reshape
-  assumes a single rectangular channel grid and is simply invalid for Band 1,
-  which mixes 128- and 960-channel windows, and it silently merges the seven
-  Band 3 pointings. Process one (field, spw) at a time and combine at the
-  response level, which is also what the mosaic step needs.
+`DataHandler` keeps eight float64 arrays, every one of them the full
+`n_freq x n_vis` length, so 64 bytes per visibility-channel. Only two of them
+carry that much information. Band 3, per array:
 
-This is a prerequisite for every step below.
+| Array | Stored | Distinct values | Waste |
+|---|---|---|---|
+| `UVreals`, `UVimags` | 5.6 GB each | 5.6 GB each | none |
+| `uwaves`, `vwaves` | 5.6 GB each | 44 MB each | 5.6 GB each |
+| `uvwghts`, `uvtimes` | 5.6 GB each | 44 MB each | 5.6 GB each |
+| `uvdists` | 5.6 GB | derivable | 5.6 GB |
+| `uvfreqs` | 5.6 GB | 1 KB | 5.6 GB |
 
-### 1. Decide whether continuum subtraction is needed
-Run the finder on a single pointing with and without `uvcontsub`. Continuum
-sources bias the matched filter because the template integrates a smooth
-spectral component as if it were line flux. Compare recovered line lists and
-S/N. If subtraction is needed, decide whether it belongs upstream in
-`alma-data-prep` or as a step in this package. Settle the fitting order and
-which channels are masked as line-contaminated.
+`uvfreqs` is the clearest case: 128 distinct frequencies, written out 704 million
+times. `uwaves` is `u * nu / c`, an outer product of 5.5 M baseline coordinates
+with 128 frequencies, stored as if all 704 M entries were independent. Nothing is
+wrong with the numbers, they are just the same values repeated.
 
-### 2. Detection inference on one pointing
-Single Band 3 pointing. Turn the response cube into a catalogue: peaks above
-threshold with position, frequency, width and S/N. Calibrate the false-positive
-rate from the jackknife response distribution over the same grid, so a threshold
-maps to an expected number of spurious detections. Check the recovered count
-against the 11 expected lines.
+### Fix: store the factors, whiten once
 
-### 3. Joint Band 1 + Band 3 identification
-One pointing per band. A line in each band at the same sky position is a
-redshift confirmation, since the two bands sample different transitions of the
-same ladder. Needs a co-spatial matching step, with a positional tolerance set
-by the beam of the coarser band, and a way to express joint significance from
-two independent responses. This is where the catalogue format has to become
-cross-band.
+- Keep `UVreals` and `UVimags` two-dimensional. Keep `u`, `v`, `time` per row and
+  frequency per channel, and form `uwaves`, `uvfreqs` and `uvdists` on demand.
+- **Whiten on load.** Since everything downstream works in S/N units, store
+  `d * sqrt(w)` rather than `d` and `w` separately. The weights then never need
+  to be kept at full length; `sqrt(w)` per row is enough to whiten a template.
+- Stay in float64. The weighted sums run over 10^8 terms and float32 does not
+  have the precision for them.
 
-### 4. All seven Band 3 pointings
-Mosaic. The open problem: pointings overlapping the same sky position have
-different primary-beam attenuation, so their visibilities cannot simply be
-concatenated. Candidate approach is a per-pointing PB factor in the UV model
-(`Metadata.primarybeamsize` gives the scale) and a joint response summed over
-pointings with PB-squared weighting. Requires multi-field support in
-`DataHandler`, which currently flattens all fields into one array.
+Band 3 goes from 45.0 GB to 11.4 GB, which is 1.6 GB per pointing. Band 1 goes
+from 37.6 GB to 9.5 GB. Both then fit comfortably.
 
-## Performance
+### Fix: chunk by (field, spw)
+
+`load_data` concatenates every field and window into one flat array and then
+reshapes to `(n_freq, n_vis)`. That reshape assumes a single rectangular channel
+grid. It is invalid for Band 1, which mixes three 128-channel windows with one
+960-channel window, and it silently merges the seven Band 3 pointings into one
+block. Process one (field, spw) at a time and combine at the response level,
+which is what the mosaic step needs anyway.
+
+Both datasets came from `alma-data-prep`, so its export path is the natural place
+to put this chunking, and doing it there is a concrete first step toward merging
+the two repositories.
+
+## 2. Performance
 
 ### Analytic evaluation instead of per-grid-point exponentials
-Measured on the test fixture: 81% of the time per grid point is the model
-evaluation plus the two phase shifts, all of them complex exponentials over
-every visibility. Because the model is a Gaussian, most of that work is either
-redundant or shareable.
+
+81% of the time per grid point is the model evaluation plus the two phase
+shifts, all complex exponentials over every visibility. Because the model is a
+Gaussian, nearly all of it is redundant.
 
 - **The model phase cancels.** The model is generated at (dra, ddec) and then
   phase-shifted by the same offset, so the kernel is the phase-free envelope
   `A(u,v) * S(nu)`. Verified: the imaginary part after shifting is 1e-16 of the
-  real part, and the real part equals the envelope computed directly. One
-  complex exponential per grid point is pure waste.
-- **The spatial taper is position-independent.** `A(u,v; bmin, bmaj)` does not
-  depend on dra or ddec, so it can be computed once per source size and reused
-  across the whole position grid instead of recomputed for every combination.
-- **The position search is a Fourier transform.** The weighted channel mean of
-  the phase-shifted data, as a function of (dra, ddec), is a non-uniform Fourier
-  transform of the weighted visibilities. For a regular position grid this is
-  one NUFFT per channel rather than one exponential per position, turning
-  `O(N_pos * N_vis)` into roughly `O(N_vis log N + N_pos)`. `jax-finufft` is
-  already in the `jax` extra and was used this way in the jackknify package.
+  real part. One complex exponential per grid point is pure waste.
+- **The kernel is position-independent.** `A(u,v; bmin, bmaj)` does not contain
+  dra or ddec, so the normalised kernel is identical at every position, verified
+  to 3e-14. It needs computing once per (size, width), not once per grid point.
 - **The template transform is closed-form.** The Fourier transform of a Gaussian
-  is a Gaussian, so `fft(kernel)` in `delay_transform` can be written down
-  analytically rather than computed.
+  is a Gaussian, so `fft(kernel)` can be written down instead of computed.
 
-### JAX and jit
-Measured on the test fixture, 256 positions, CPU, float64 throughout. Results
-agree with the current path to 5e-9 relative error.
+### The position search is a Fourier transform
 
-| Path | Time | Gain |
+The response is built along two different axes, and only the first is expensive.
+
+**Spatial.** For a trial position the data are phase-shifted and collapsed to one
+number per channel:
+
+```
+d(nu; dra, ddec) = sum_j w_j Re[ V_j(nu) exp(-2i pi (u_j dra + v_j ddec)) ] / sum_j w_j
+```
+
+Read as a function of `(dra, ddec)`, that is a Fourier transform of the weighted
+visibilities from the irregular `(u, v)` samples onto a regular position grid: a
+type-1 NUFFT, and physically just the dirty image of that channel. Looping over
+positions is therefore computing the dirty image one pixel at a time, at
+`O(N_pos * N_vis)`. One NUFFT per channel produces every position at once, at
+roughly `O(N_vis + N_grid log N_grid)`. It has to be per channel because
+`u * nu / c` rescales with frequency, which is ordinary spectral-cube gridding.
+
+**Spectral.** `delay_transform` slides the template along frequency. This part
+does not change. It runs on an array of shape `(n_pos, n_freq)`, negligible next
+to the visibilities, and vectorises trivially.
+
+So the restructured pipeline is: one NUFFT per channel to build the weighted
+dirty cube, one kernel normalisation per template shape, then the existing FFT
+along frequency for every position. The two transforms are along different axes
+and compose; the NUFFT replaces the phase-shift loop, not `delay_transform`.
+
+One constraint this introduces: the position grid must be regular. The current
+code accepts arbitrary `dra`/`ddec` lists, which stays useful for targeted
+checks, but a blind search wants a regular grid anyway.
+
+### JAX, jit and large volumes
+
+Measured on the fixture, 256 positions, CPU, float64, agreeing with the current
+path to 5e-9:
+
+| Path | Time |
+|---|---|
+| Current numpy | 1510 ms |
+| Analytic, kernel hoisted | 166 ms |
+| `vmap`, no jit | 95 ms |
+| `vmap` + `jit` | 11 ms |
+
+The restructuring is also a precondition, not an alternative:
+`_grid_point_response` deep-copies a `SimpleNamespace` and mutates model
+attributes with `setattr`, neither of which is traceable, so the present code
+cannot be jitted at all.
+
+**Batching is an explicit choice.** JAX does not parallelise a Python loop; a
+loop inside `jit` is unrolled at trace time. Measured at 16384 positions:
+
+| | Time | Memory growth |
 |---|---|---|
-| Current numpy | 1510 ms | — |
-| Analytic, kernel hoisted out of the position loop | 166 ms | 9.1x |
-| `vmap` over positions, no jit | 95 ms | |
-| `vmap` + `jit` | 11 ms | 8.5x on top |
+| `vmap` | 1250 ms | 8.6 GB |
+| `lax.map` | 1860 ms | ~0 GB |
 
-Two things follow. First, jit is worth roughly as much as the analytic
-restructuring, so both are worth doing. Second, the restructuring is a
-precondition rather than an alternative: `_grid_point_response` currently
-deep-copies a `SimpleNamespace` and mutates model attributes with `setattr`,
-neither of which is traceable, so the present code cannot be jitted at all. The
-analytic form is a pure function of arrays and jits directly.
+`vmap` materialises the `n_pos x n_freq x n_vis` intermediate and XLA does not
+fuse it away. `lax.map` sequences the batch and holds memory flat for about 1.5x
+the time.
 
-Port `Gaussian._uvgauss_1D2D`, `delay_transform` and the grid loop to
-`jax.numpy`. Enable `jax_enable_x64`: the weighted sums over visibilities need
-it, and jackknify already did this. CPU on macOS, CUDA on the cluster.
-Everything downstream of `data.py` is numpy-only, so CASA and JAX never need to
-share an environment.
+**Fitting the real data.** Even factored, a Band 3 pointing is 1.6 GB of
+visibilities, and the NUFFT output is a dirty cube of `n_pos x n_freq x 8` bytes,
+which for a 512 x 512 grid over 128 channels is 34 GB. The frequency axis is the
+natural chunk: hold the visibilities resident, stream channels through the NUFFT,
+and reduce along frequency as you go rather than materialising the cube. Use
+`lax.map` over channel chunks with `vmap` inside each, and keep the chunk shape
+fixed so compilation is reused; going from 256 to 300 positions retriggers a
+73 ms compile against 10 ms cached.
 
-Two practical constraints, both measured:
+**GPU.** On the cluster this is CUDA, where float64 works. On this Mac it is not
+currently available: `jax-metal` last released 0.1.1 in October 2024 against the
+jaxlib 0.4.34 plugin interface while the environment has jax 0.11.2, and more
+fundamentally Apple GPUs have no double precision, which conflicts with the
+float64 decision above. Worth retesting in a throwaway environment rather than
+the working one, but do not plan around it.
 
-- **Recompilation on shape change.** Going from 256 to 300 positions retriggers
-  compilation, 73 ms against 10 ms cached. Keep the batch shape fixed and pad
-  the final chunk rather than letting the grid size vary.
-- **Pick the batching primitive deliberately.** JAX does not parallelise a
-  Python loop; a loop inside `jit` is unrolled at trace time. The choice is
-  explicit, and it decides the memory profile:
+## 3. Real data: SPT-CL J0459-4947
 
-  | 16384 positions | Time | Memory growth |
-  |---|---|---|
-  | `vmap` | 1250 ms | 8.6 GB |
-  | `lax.map` | 1860 ms | ~0 GB |
+| | Band 1 | Band 3 |
+|---|---|---|
+| Pointings | 1 | 7 (mosaic) |
+| Coverage | 37.7-45.6 GHz | 84.0-100.0 GHz |
+| Channels per window | 128, 128, 128, **960** | 128 x 4 |
+| Velocity resolution | 105-121 km/s, **13.7 km/s** | 47-55 km/s |
+| Antennas | 50 | 51 |
+| Expected lines | ~4 | 11 |
 
-  `vmap` materialises the `n_pos x n_freq x n_vis` intermediate; XLA does not
-  fuse it away. `lax.map` sequences the batch axis and holds memory flat at
-  every size tested, for about 1.5x the time. The sensible default is `lax.map`
-  over chunks with `vmap` inside each chunk: memory bounded by the chunk, speed
-  close to `vmap`. The NUFFT remains the real fix, since it removes the position
-  axis from the per-visibility work altogether.
+Lines sit at different sky positions in both bands, so this is a genuine blind
+search. Each step below is a gate.
+
+### 3.1 Decide whether continuum subtraction is needed
+Run the finder on a single pointing with and without `uvcontsub`. A continuum
+source biases the filter because the template integrates a smooth component as if
+it were line flux. Compare recovered line lists and S/N, then decide whether
+subtraction belongs upstream in `alma-data-prep` or here, and which channels are
+masked as line-contaminated while fitting.
+
+### 3.2 Detection inference on one pointing
+Single Band 3 pointing. Turn the response cube into a catalogue: position,
+frequency, width and S/N per candidate. Calibrate the false-positive rate from
+the jackknife response over the same grid.
+
+**Grouping and clipping.** One source does not produce one detection. The
+response is correlated across neighbouring positions on the beam scale and across
+channels on the line-width scale, so a real line lights up a cluster of grid
+points, and a bright source can push sidelobe positions over threshold too. Needs
+deciding: extract local maxima with an exclusion radius set by the beam and the
+line width, or label connected components in (dra, ddec, nu) under that metric.
+The false-positive calibration has to count groups rather than grid points,
+otherwise the trials factor is badly wrong. Bright-line subtraction before
+searching for faint ones belongs here as well.
+
+### 3.3 Joint Band 1 and Band 3 identification
+One pointing per band. A line in each band at the same sky position is a redshift
+confirmation, since the bands sample different transitions of the same ladder.
+Needs co-spatial matching with a tolerance set by the coarser beam, a way to
+combine two independent significances, and a catalogue format that spans bands.
+
+### 3.4 All seven Band 3 pointings
+Mosaic. Pointings overlapping the same sky position have different primary-beam
+attenuation, so visibilities cannot simply be concatenated. Candidate approach: a
+per-pointing PB factor in the UV model, and a joint response summed over pointings
+with PB-squared weighting. Requires the per-field chunking from section 1.
+
+## 4. Sources that are not Gaussians
+
+The matched filter is only optimal when the template resembles the source, and
+everything here assumes an elliptical Gaussian. Lensed systems break that badly:
+SDP.81 shows dense-gas tracers and continuum along an Einstein arc, where a single
+Gaussian is a poor match and costs real S/N.
+
+Options to weigh: a small basis of components fitted jointly, an explicit arc or
+ring parametrisation, or accepting the mismatch and quantifying the S/N lost
+against a matched template. Worth measuring the penalty on a simulated arc before
+choosing, since the answer decides whether this needs new model classes or only a
+caveat in the catalogue.
 
 ## Longer term
 
 - **Merge with [alma-data-prep](https://github.com/Joshiwavm/alma-data-prep).**
-  The end goal is one repository; the mechanism is undecided. Interim: use it for
-  organising, concatenating and exporting real archives, and read its UV exports
-  through `DataHandler.from_npz`.
+  Start with the chunked export described in section 1.
 - **Bright-line subtraction.** Detect with the moment-8 machinery in
   `alma_data_prep.export_cube.ExportCube`, subtract the best-fit UV model, re-run
-  the finder on the residual. Needs a two-line fixture, bright plus faint.
+  on the residual. Needs a bright-plus-faint fixture.
 - **The `dra` sign flip** between image and model conventions is documented and
   asserted but not fixed. Fixing it means regenerating the committed fixture.
-- **Other exploration methods** beyond grid search, once the grid search is
-  understood on real data.
+- **Other exploration methods** beyond grid search, once it is understood on real
+  data.

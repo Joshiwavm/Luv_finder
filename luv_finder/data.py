@@ -214,30 +214,18 @@ class DataHandler:
         uvdata.UVimags_shifted = vis.imag
         return uvdata
 
-    def jackknife(self, uvdata: SimpleNamespace, mode: str = "scan", seed: int = 42) -> SimpleNamespace:
+    def jackknife(self, uvdata: SimpleNamespace) -> SimpleNamespace:
         """Return a signal-free noise realisation of ``uvdata``.
 
-        Parameters
-        ----------
-        mode : {"scan", "random"}
-            ``"scan"`` pairs consecutive integrations, sign-flips one of each pair
-            and averages them (output has half the rows). ``"random"`` sign-flips
-            a random half of the visibilities in place (output has the same shape;
-            reference: jackknify ``Jack._jack_it``).
+        Pairs consecutive integrations, differences them and halves the result,
+        so any signal constant over a pair cancels while the noise is preserved.
+        The output has half the rows.
+
+        The split is by integration, never random: a random sign flip of
+        individual visibilities destroys the baseline structure and does not
+        give the observation's white-noise level.
         """
         uvdata = copy.deepcopy(uvdata)
-        if mode == "random":
-            rng = np.random.default_rng(seed)
-            flip = np.zeros(uvdata.UVreals.shape[0], dtype=bool)
-            flip[: flip.size // 2] = True
-            rng.shuffle(flip)
-            uvdata.UVreals[flip] *= -1.0
-            uvdata.UVimags[flip] *= -1.0
-            uvdata.jacked = True
-            return uvdata
-        if mode != "scan":
-            raise ValueError(f"unknown jackknife mode {mode!r}")
-
         scans, idx = np.unique(uvdata.uvtimes, return_inverse=True)
         neg = (idx % 2).astype(bool)
         pos = ~neg

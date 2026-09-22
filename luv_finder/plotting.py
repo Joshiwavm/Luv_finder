@@ -45,7 +45,7 @@ def spectrum_check(data, dra, ddec, model_uv=None, plots_dir="plots", name="spec
     freqs = data.uvdata.uvfreqs.reshape(nf, nv)[:, 0] / 1e9
 
     shifted = data.apply_phase_shift(dra, ddec, data.uvdata)
-    jack = data.jackknife(data.uvdata, mode="random")
+    jack = data.jackknife(data.uvdata)
     jack_shift = data.apply_phase_shift(dra, ddec, jack)
 
     fig, axes = plt.subplots(2, 1, sharex=True, figsize=(7.5, 6.5))
