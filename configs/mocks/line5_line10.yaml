@@ -1,0 +1,15 @@
+# line5_line10: two Gaussian line sources, reproduces output/ms_files/line5_line10
+cube_shape: [50, 256, 256]
+cell: 0.25arcsec
+dv: 100km/s
+freq_center: 40GHz
+integration_time: 8min
+alma_config: configs/alma/alma.cycle10.3.cfg
+ptg_file: configs/alma/ptgfile.txt
+output_folder: output/ms_files
+support_folder: support
+sources:
+  - position: [-4.25, 23.5]
+    line: {width: 300, mean: 39.9, snr: 5}
+  - position: [-12.0, -4.25]
+    line: {width: 300, mean: 40.2, snr: 10}

@@ -1,0 +1,7 @@
+# Grid ranges for luv-find. Omitted keys fall back to data-derived defaults:
+#   dra/ddec: +-fov_fraction * primary beam, step = resolution/2
+#   bmin/bmaj: resolution/10
+# A scalar fixes the parameter; a list enumerates; {start, stop, step} -> np.arange.
+fov_fraction: 0.4
+width: [200, 300, 400]      # km/s
+total_flux: [0.5, 1.0, 2.0] # Jy km/s
