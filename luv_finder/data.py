@@ -16,6 +16,8 @@ import astropy.constants as const
 import astropy.units as u
 import numpy as np
 
+from ._casa import tools
+
 UV_FIELDS = (
     "UVreals",
     "UVimags",
@@ -48,9 +50,7 @@ class Metadata:
         if self._dish_diameter is None:
             if self.msfile is None:
                 raise ValueError("dish_diameter unknown and no MS file to read it from")
-            from casatools import msmetadata
-
-            msmd = msmetadata()
+            msmd = tools().msmetadata()
             msmd.open(self.msfile)
             d = msmd.antennadiameter()
             msmd.close()
@@ -109,9 +109,7 @@ class DataHandler:
     # -------------------------------------------------------------- CASA I/O
     @staticmethod
     def _target_selection(msfile: str):
-        from casatools import msmetadata
-
-        msmd = msmetadata()
+        msmd = tools().msmetadata()
         msmd.open(msfile)
         fields = msmd.fieldsforintent("*OBSERVE_TARGET*", False)
         spws = msmd.spwsforintent("*OBSERVE_TARGET*")
@@ -120,8 +118,7 @@ class DataHandler:
 
     def load_data(self) -> None:
         """Read all target-field visibilities from ``self.msfile`` into ``uvdata``."""
-        from casatools import ms as mstool
-
+        mstool = tools().ms
         fields, spws = self._target_selection(self.msfile)
         for field in fields:
             for spw in spws:
@@ -154,8 +151,7 @@ class DataHandler:
 
     def uv_save(self, output_name: str, uvdata: SimpleNamespace | None = None) -> str:
         """Write ``uvdata`` into a copy of ``self.msfile`` named ``<base>_<output_name>.ms``."""
-        from casatools import ms as mstool
-
+        mstool = tools().ms
         uvdata = self.uvdata if uvdata is None else uvdata
         base_dir, base_name = os.path.split(self.msfile)
         stem, ext = os.path.splitext(base_name)

@@ -15,6 +15,7 @@ from astropy.io import fits
 from astropy.modeling import models
 
 from . import utils
+from ._casa import tasks
 
 # ALMA Cycle 10 12m-array reference: 50 uJy continuum rms in 27 min (used for the
 # sensitivity <-> integration time scaling below).
@@ -170,8 +171,7 @@ class MockObservation:
 
     # -------------------------------------------------------------- simulate
     def simulate_observation(self) -> None:
-        from casatasks import simobserve
-
+        simobserve = tasks().simobserve
         if self.fits_filename is None:
             raise RuntimeError("call save_cube() first")
         os.makedirs(os.path.dirname(self.ptg_file) or ".", exist_ok=True)
@@ -202,7 +202,8 @@ class MockObservation:
         utils.getstatwtweights(self.ms_noisy)
 
     def run_imaging(self) -> None:
-        from casatasks import exportfits, tclean
+        casatasks = tasks()
+        tclean, exportfits = casatasks.tclean, casatasks.exportfits
 
         for vis in (self.ms_noiseless, self.ms_noisy):
             if vis is None:

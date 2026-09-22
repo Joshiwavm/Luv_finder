@@ -5,6 +5,8 @@ from __future__ import annotations
 import numpy as np
 from astropy.constants import c
 
+from ._casa import tools
+
 C = c.value
 
 
@@ -35,9 +37,7 @@ def uvdist_to_l(uvdist: float) -> float:
 
 
 def _target_selection(vis: str):
-    import casatools
-
-    msmd = casatools.msmetadata()
+    msmd = tools().msmetadata()
     msmd.open(vis)
     fields = msmd.fieldsforintent("*OBSERVE_TARGET*", False)
     spws = msmd.spwsforintent("*OBSERVE_TARGET#ON_SOURCE*")
@@ -47,14 +47,12 @@ def _target_selection(vis: str):
 
 def uvload(vis: str):
     """Return (weights, uvdists [lambda]) of all target visibilities in an MS."""
-    import casatools
-
     uvwghts = np.empty(0)
     uvdists = np.empty(0)
     fields, spws = _target_selection(vis)
     for field in fields:
         for spw in spws:
-            ms = casatools.ms()
+            ms = tools().ms()
             ms.open(vis)
             ms.selectinit(reset=True)
             ms.selectinit(datadescid=int(spw))
@@ -77,13 +75,11 @@ def getstatwtweights(vis: str, seed: int = 0) -> None:
     Used after ``simobserve`` so that simulated weights reflect the injected
     noise level instead of CASA's nominal values.
     """
-    import casatools
-
     rng = np.random.default_rng(seed)
     fields, spws = _target_selection(vis)
     for field in fields:
         for spw in spws:
-            ms = casatools.ms()
+            ms = tools().ms()
             ms.open(vis, nomodify=False)
             ms.selectinit(reset=True)
             ms.selectinit(datadescid=int(spw))

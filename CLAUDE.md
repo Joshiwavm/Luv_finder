@@ -17,10 +17,11 @@ the data gives the noise reference. Only simulated single-pointing data so far.
 
 ## Architecture
 
-- `luv_finder/data.py` — `DataHandler`: flattens an MS into channel-major arrays (`uvdata`), NPZ round-trip, phase shift, `jackknife(mode="scan"|"random")`. Only module (with `mock.py`, `utils.py`) allowed to import CASA; CASA imports are lazy so the NPZ path works without it.
+- `luv_finder/data.py` — `DataHandler`: flattens an MS into channel-major arrays (`uvdata`), NPZ round-trip, phase shift, `jackknife(mode="scan"|"random")`. CASA is reached lazily through `_casa.py`, so the NPZ path works without it.
 - `luv_finder/model.py` — `Model` + `Gaussian` (2D spatial x 1D spectral, evaluated analytically in UV). Parameters are exposed as `src_{NN}_{attr}`; the matched filter routes values back via `key.split("_", 2)[-1]`.
 - `luv_finder/matchedfilter.py` — `MatchedFilter`: expands `Model.grid` (scalar = fixed, array = enumerate, callable = derived from width), multiprocessing over grid points, FFT delay transform. `RESPONSE_SCALE = 0.9` is an unexplained empirical factor.
 - `luv_finder/mock.py` — `MockObservation`: cube -> `simobserve` -> `tclean` -> `output/ms_files/<name>/`. YAML presets in `configs/mocks/`.
+- `luv_finder/_casa.py` — the only place that imports `casatools`/`casatasks`. It presets `casaconfig.config.logfile` so CASA writes to `logs/` (override with `LUV_CASA_LOG_DIR`) instead of scattering `casa-<timestamp>.log` in the working directory. Never import CASA directly; use `tools()`/`tasks()`, or call `configure_logging()` first if you must.
 - `luv_finder/cli/` — argparse wrappers only; no science logic.
 - `configs/alma/` antenna configs; `configs/grids/` grid presets; `data/ output/ support/ plots/` are gitignored products.
 
