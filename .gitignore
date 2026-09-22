@@ -1,0 +1,37 @@
+# data products (regenerate with luv-mock / alma-data-prep)
+data/
+output/
+support/
+plots/
+*.ms/
+*.im*/
+*.fits
+!tests/fixtures/*
+
+# CASA
+*.log
+*.last
+casa-*.log
+analysis_scripts/
+
+# python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.ruff_cache/
+
+# jupyter
+.ipynb_checkpoints/
+
+# docs
+docs/build/
+
+# os
+.DS_Store
+
+# generated
+docs/source/generated/
+configs/alma/ptgfile.txt
