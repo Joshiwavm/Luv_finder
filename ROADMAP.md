@@ -12,16 +12,49 @@ Each step is a gate: do not start the next one until the previous is understood.
 | | Band 1 | Band 3 |
 |---|---|---|
 | Pointings | 1 | 7 (mosaic) |
-| Spectral windows | 5, 38.7-44.9 GHz | 4, 85.0-99.0 GHz |
+| Spectral windows | 4 | 4 |
+| Coverage | 37.7-45.6 GHz | 84.0-100.0 GHz |
+| Channels per window | 128, 128, 128, **960** | 128 x 4 |
+| Velocity resolution | 105-121 km/s, **13.7 km/s** | 47-55 km/s |
 | Antennas | 50 | 51 |
+| Rows | 1.75 M | 5.50 M |
 | Expected lines | ~4 | 11 |
 
 Lines sit at different sky positions in both bands, so this is a genuine blind
-search rather than a targeted extraction.
+search rather than a targeted extraction. Both sets were produced by
+`alma-data-prep`, which makes its export path the natural place to put any
+chunking this package needs, and is a concrete step toward merging the two.
 
-**Blocked**: the measurement sets currently in `data/` are continuum-averaged,
-one channel per spectral window with widths of 6000-15000 km/s. There is no
-spectral axis to search. The spectral versions are being downloaded.
+### 0. Handle the data volume
+
+Neither dataset fits the current in-memory representation.
+
+| | Band 1 | Band 3 |
+|---|---|---|
+| On disk | 12 GB | 20 GB |
+| Visibility-channels | 588 M | 704 M |
+| As `uvdata` today | 37.6 GB | 45.0 GB |
+| Largest single pointing | 37.6 GB | 6.4 GB |
+
+`DataHandler` keeps eight float64 arrays, 64 bytes per visibility-channel, which
+is 2-3x the size of the measurement set itself. Two changes fix this, and both
+are the same refactor that the analytic work below needs:
+
+- **Store factored, not expanded.** Only `UVreals` and `UVimags` are genuinely
+  per visibility-channel. `uwaves` and `vwaves` are the outer product of `u, v`
+  per row with frequency per channel; `uvfreqs` is per channel; `uvwghts` and
+  `uvtimes` are per row; `uvdists` is derivable from `uwaves, vwaves`. Keeping
+  the factors and forming products on demand takes 64 bytes per
+  visibility-channel down to 16, and to 8 in float32 for the data arrays, which
+  is smaller than the measurement set. A Band 3 pointing becomes under 1 GB.
+- **Chunk by (field, spw).** `load_data` currently concatenates every field and
+  window into one flat array, then reshapes to `(n_freq, n_vis)`. That reshape
+  assumes a single rectangular channel grid and is simply invalid for Band 1,
+  which mixes 128- and 960-channel windows, and it silently merges the seven
+  Band 3 pointings. Process one (field, spw) at a time and combine at the
+  response level, which is also what the mosaic step needs.
+
+This is a prerequisite for every step below.
 
 ### 1. Decide whether continuum subtraction is needed
 Run the finder on a single pointing with and without `uvcontsub`. Continuum
@@ -104,17 +137,26 @@ it, and jackknify already did this. CPU on macOS, CUDA on the cluster.
 Everything downstream of `data.py` is numpy-only, so CASA and JAX never need to
 share an environment.
 
-Two practical constraints:
+Two practical constraints, both measured:
 
 - **Recompilation on shape change.** Going from 256 to 300 positions retriggers
   compilation, 73 ms against 10 ms cached. Keep the batch shape fixed and pad
   the final chunk rather than letting the grid size vary.
-- **`vmap` has a memory wall.** It materialises `n_pos x n_freq x n_vis`
-  intermediates: fine at 256 positions, but a realistic blind search of 10,000
-  positions over 50 channels and 43,000 visibilities is 172 GB per intermediate.
-  The position axis must be chunked with `lax.map`, or removed entirely by the
-  NUFFT above, which is the reason to treat the NUFFT as the real fix and
-  jit+`vmap` as the thing that makes each chunk fast.
+- **Pick the batching primitive deliberately.** JAX does not parallelise a
+  Python loop; a loop inside `jit` is unrolled at trace time. The choice is
+  explicit, and it decides the memory profile:
+
+  | 16384 positions | Time | Memory growth |
+  |---|---|---|
+  | `vmap` | 1250 ms | 8.6 GB |
+  | `lax.map` | 1860 ms | ~0 GB |
+
+  `vmap` materialises the `n_pos x n_freq x n_vis` intermediate; XLA does not
+  fuse it away. `lax.map` sequences the batch axis and holds memory flat at
+  every size tested, for about 1.5x the time. The sensible default is `lax.map`
+  over chunks with `vmap` inside each chunk: memory bounded by the chunk, speed
+  close to `vmap`. The NUFFT remains the real fix, since it removes the position
+  axis from the per-visibility work altogether.
 
 ## Longer term
 
