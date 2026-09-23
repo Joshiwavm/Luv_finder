@@ -47,6 +47,10 @@ wrong with the numbers, they are just the same values repeated.
 Band 3 goes from 45.0 GB to 11.4 GB, which is 1.6 GB per pointing. Band 1 goes
 from 37.6 GB to 9.5 GB. Both then fit comfortably.
 
+The uv binning in section 2 attacks the same problem from the other side, by
+reducing the number of visibilities rather than the bytes per visibility, and is
+worth a factor of tens. If it holds up, it largely dissolves this section.
+
 ### Fix: chunk by (field, spw)
 
 `load_data` concatenates every field and window into one flat array and then
@@ -77,6 +81,52 @@ Gaussian, nearly all of it is redundant.
   to 3e-14. It needs computing once per (size, width), not once per grid point.
 - **The template transform is closed-form.** The Fourier transform of a Gaussian
   is a Gaussian, so `fft(kernel)` can be written down instead of computed.
+
+### uv binning, corrected for the primary beam
+
+Averaging visibilities that land in the same uv cell reduces `N_vis`, which is
+the dominant axis in both the memory problem of section 1 and the cost here.
+Measured on Band 3, field 0, window 0: 196,508 rows at 85.0 GHz, longest
+baseline 100 klambda, primary beam 68.5 arcsec.
+
+| Cell | Field of view | Occupied cells | Reduction |
+|---|---|---|---|
+| 6.0 klambda | 0.5 x PB | 462 | 425x |
+| 3.0 klambda | 1.0 x PB | 1,540 | 128x |
+| 1.5 klambda | 2.0 x PB | 4,889 | 40x |
+
+The coverage is sparse relative to the number of (baseline, time) samples, so
+many integrations fall in the same cell. Searching the full primary beam wants
+the last row. Applied across every field and window that takes Band 3 from 704 M
+visibility-channels to roughly 18 M, so 45 GB becomes about 1.1 GB.
+
+What it costs, and what has to be right:
+
+- **The cell size is the field of view.** `cell = 1 / FoV` is the usual gridding
+  criterion, and sources toward the edge of that field are attenuated by the
+  transform of the cell. Measure the S/N loss against source offset on a
+  simulated field before committing to a cell size; the usable search radius is
+  smaller than the nominal one.
+- **Bin within (field, spw), never across pointings.** Visibilities from
+  different pointings carry differently PB-weighted skies, so averaging them into
+  one cell mixes them. Combining pointings stays at the response level in 3.4.
+- **Divide the recovered S/N by PB(theta).** The primary beam attenuates
+  off-axis sources within every pointing, so a raw response understates the
+  intrinsic line flux away from the phase centre.
+- **Do not bin in frequency.** The lines are narrow, and Band 1's 960-channel
+  window exists precisely to resolve them.
+- `u` and `v` scale with frequency, so a grid fixed in wavelengths is exact at
+  one frequency only. Per window the fractional bandwidth is about 2%, so
+  gridding at the window centre is accurate to that level. Check it is
+  acceptable rather than assuming.
+- Bin weight-aware, `V_cell = sum(w V) / sum(w)` with `w_cell = sum(w)`, which
+  the whitened storage of section 1 provides directly.
+
+This overlaps with the NUFFT below, since gridding is the first step of a type-1
+NUFFT, but the two are complementary. Binning is far cheaper than a transform
+and shrinks every downstream array, and once the data are a few thousand points
+the NUFFT cost is dominated by its FFT rather than by spreading. Bin first, then
+transform.
 
 ### The position search is a Fourier transform
 
