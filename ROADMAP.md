@@ -238,6 +238,14 @@ Single Band 3 pointing. Turn the response cube into a catalogue: position,
 frequency, width and S/N per candidate. Calibrate the false-positive rate from
 the jackknife response over the same grid.
 
+**Jackknife weights (parked).** `jackknife` keeps the pair-averaged weight `w`,
+but `(V_a - V_b)/2` has inverse variance `4/(1/w_a + 1/w_b)`, i.e. `2w`. The
+jackknife dirty image has the right noise, but the S/N normalisation uses half the
+weight, so the jackknife response has variance 1/2 (measured on the fixture:
+standard deviation 0.71 against 1.01 for the data). A false-positive rate
+calibrated on it is optimistic by `sqrt(2)` in S/N. Fix the weights before this
+calibration.
+
 **Grouping and clipping.** One source does not produce one detection. The
 response is correlated across neighbouring positions on the beam scale and across
 channels on the line-width scale, so a real line lights up a cluster of grid

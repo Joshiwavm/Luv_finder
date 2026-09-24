@@ -10,7 +10,7 @@ from luv_finder.matchedfilter import _grid_point_response, nu_center_func
 C_KMS = 299792.458
 
 
-def _finder(data, **grid):
+def _finder(data, weighting="natural", **grid):
     g = Gaussian()
     g.grid = {
         "bmin": data.metadata.minresolution() / 10,
@@ -21,11 +21,14 @@ def _finder(data, **grid):
     }
     m = Model()
     m.addcomponent(g)
-    return MatchedFilter(data, m)
+    return MatchedFilter(data, m, weighting=weighting)
 
 
-def _synthetic(nchan, snr, nvis=400, seed=0):
-    """Noiseless visibilities holding a line of exactly the requested S/N."""
+def _synthetic(nchan, snr, nvis=400, seed=0, size=0.0):
+    """Noiseless visibilities holding a line of exactly the requested optimal S/N.
+
+    ``size`` is the source's Gaussian sigma in arcsec; 0 is a point source.
+    """
     r = np.random.default_rng(seed)
     df = 40e9 * 100 / C_KMS
     freqs = 40e9 + (np.arange(nchan) - nchan / 2) * df
@@ -42,14 +45,14 @@ def _synthetic(nchan, snr, nvis=400, seed=0):
         UVreals=np.zeros(nchan * nvis),
         UVimags=np.zeros(nchan * nvis),
     )
-    sig = Gaussian(nu_center=freqs[nchan // 2], width=300.0, total_flux=1.0).profile(ns).UVreals
-    s_ch, w_ch = np.average(sig.reshape(nchan, nvis), weights=ns.uvwghts.reshape(nchan, nvis), axis=1, returned=True)
-    ns.UVreals = sig * (snr / np.sqrt(np.sum(s_ch**2 * w_ch)))
+    src = Gaussian(nu_center=freqs[nchan // 2], width=300.0, total_flux=1.0, bmin=size, bmaj=size)
+    sig = src.profile(ns).UVreals
+    ns.UVreals = sig * (snr / np.sqrt(np.sum(ns.uvwghts * sig**2)))
     return DataHandler(uvdata=ns, dish_diameter=12.0)
 
 
-def _peak(data, **params):
-    mf = _finder(data)
+def _peak(data, weighting="natural", **params):
+    mf = _finder(data, weighting)
     nf, nv = data.n_freqs(data.uvdata), data.n_visbs(data.uvdata)
     p = {
         "src_00_dra": 0.0,
@@ -106,3 +109,28 @@ def test_recovers_injected_lines(data, truth):
         assert abs(freqs[np.argmax(mf.response[i])] - src["line"]["mean"]) < 0.05  # GHz
 
     assert np.abs(mf.response_jackknife).max() < 0.5 * mf.response.max()
+
+
+def test_template_weighting_equals_natural_for_a_point_source():
+    data = _synthetic(50, snr=10.0)
+    assert _peak(data, "template") == pytest.approx(_peak(data, "natural"), rel=1e-12)
+
+
+def test_template_weighting_recovers_a_resolved_source():
+    """Weighting by A(u, v) attains the optimal S/N; the plain average loses the predicted fraction."""
+    size = 3.0  # arcsec sigma, resolved by the 30 klambda baselines
+    data = _synthetic(50, snr=10.0, size=size)
+    template = _peak(data, "template", src_00_bmin=size, src_00_bmaj=size)
+    natural = _peak(data, "natural", src_00_bmin=size, src_00_bmaj=size)
+
+    a = Gaussian(bmin=size, bmaj=size).envelope(data.uvdata)
+    w = data.uvdata.uvwghts
+    kept = np.sum(w * a) / np.sqrt(np.sum(w) * np.sum(w * a**2))
+    assert template == pytest.approx(10.0, abs=0.05)
+    assert natural == pytest.approx(10.0 * kept, abs=0.05)
+    assert kept < 0.8
+
+
+def test_unknown_weighting_is_rejected(data):
+    with pytest.raises(ValueError, match="weighting"):
+        _finder(data, weighting="uniform")

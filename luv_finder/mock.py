@@ -306,16 +306,18 @@ class MockObservation:
         return dest
 
     def achieved_snr(self) -> list[float]:
-        """Matched-filter S/N of each line source in the simulated data.
+        """Optimal matched-filter S/N of each line source in the simulated data.
 
         Uses the noiseless visibilities as the signal and the noisy weights as the
-        noise model, so this is the expected S/N rather than one noisy draw.
+        noise model, so this is the expected S/N rather than one noisy draw. The
+        template is the source itself, sqrt(sum_jk w Re[V']^2), which a filter
+        weighting by the source envelope attains; for a point source it equals
+        the channel-averaged S/N.
         """
         from .data import DataHandler
 
         clean = DataHandler(self.ms_noiseless)
         noisy = DataHandler(self.ms_noisy)
-        nf, nv = clean.n_freqs(clean.uvdata), clean.n_visbs(clean.uvdata)
         out = []
         for src in self.sources:
             if "line" not in src:
@@ -323,14 +325,7 @@ class MockObservation:
             dra, ddec = src.get("position", (0.0, 0.0))
             # model convention flips the sign of dra relative to the image
             shifted = clean.apply_phase_shift(-dra, ddec, clean.uvdata)
-            weights = noisy.apply_phase_shift(-dra, ddec, noisy.uvdata).uvwghts
-            s_ch, w_ch = np.average(
-                shifted.UVreals_shifted.reshape(nf, nv),
-                weights=weights.reshape(nf, nv),
-                axis=1,
-                returned=True,
-            )
-            out.append(float(np.sqrt(np.sum(s_ch**2 * w_ch))))
+            out.append(float(np.sqrt(np.sum(noisy.uvdata.uvwghts * shifted.UVreals_shifted**2))))
         return out
 
     def _calibrate(self) -> list[float]:

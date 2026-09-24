@@ -7,6 +7,7 @@ grids (`luv-find --grid <file>`). Each mock has a grid of the same name.
 |---|---|---|
 | `smoke` | ACA, 10 antennas | ~7 MB, ~20 s — used by `tests/test_mock.py` |
 | `line13_line9` | 12 m, 43 antennas | ~180 MB |
+| `size_point`, `size_beam`, `size_3beam` | 12 m | one source of 0, 1 and 3 beam FWHM, used by `tests/test_source_size.py` |
 | `default` grid | — | blind search, ranges derived from the data |
 
 Antenna configurations are not vendored. `alma_config` names a file that CASA

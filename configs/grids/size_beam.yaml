@@ -1,0 +1,6 @@
+# Targeted: the injected source's position, width and size (sigma, arcsec).
+dra: 6.0                    # model convention, sign-flipped from the mock
+ddec: 8.0
+width: 300
+bmin: 2.03
+bmaj: 2.03

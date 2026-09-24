@@ -20,6 +20,11 @@ from .model import Model
 #: kernel normalisation is scale-invariant, so varying it duplicates grid points.
 GRID_KEYS = ("dra", "ddec", "bmin", "bmaj", "width", "nu_center")
 
+#: How visibilities are weighted when a channel is collapsed: by noise only
+#: ("natural", optimal for a point source) or also by the source envelope A(u, v)
+#: ("template", optimal for a resolved source of the trial size).
+WEIGHTINGS = ("natural", "template")
+
 
 def nu_center_func(width: float, uvfreq_min: float) -> float:
     """Line centre placed 4 sigma above the lowest channel, for a given width (km/s)."""
@@ -48,9 +53,16 @@ def _grid_point_response(args):
     signal = data_uv.UVreals_shifted.reshape(n_freq, n_vis)
     kernel = model_uv.UVreals_shifted.reshape(n_freq, n_vis)
     weight = data_uv.uvwghts.reshape(n_freq, n_vis)
-
-    signal_mean, weight_mean = np.average(signal, weights=weight, axis=1, returned=True)
-    kernel_mean = np.average(kernel, weights=weight, axis=1)
+    # "natural" weights each visibility by its noise weight only, which is optimal for a
+    # point source; "template" also weights by the source envelope A(u, v), which is the
+    # full-visibility matched filter for a resolved source. Per channel the collapsed data
+    # sum(w t V) / sum(w t^2) has variance 1 / sum(w t^2), with t = 1 or A.
+    taper = 1.0
+    if finder.weighting == "template":
+        taper = finder.mod.component(0).envelope(data.uvdata).reshape(n_freq, n_vis)
+    weight_mean = np.sum(weight * taper**2, axis=1)
+    signal_mean = np.sum(weight * taper * signal, axis=1) / weight_mean
+    kernel_mean = np.sum(weight * taper * kernel, axis=1) / weight_mean
     kernel_norm = kernel_mean * weight_mean / np.sqrt(kernel_mean @ (kernel_mean * weight_mean))
 
     width_hz = (4 / 2.355 * (params["src_00_width"] * u.km / u.s) / c * params["src_00_nu_center"] * u.Hz).to(u.Hz)
@@ -75,11 +87,16 @@ class MatchedFilter:
     data : DataHandler
     mod : Model
         With one component whose ``grid`` dict defines the search ranges.
+    weighting : {"natural", "template"}
+        See :data:`WEIGHTINGS`. With "natural" the trial source size cancels.
     """
 
-    def __init__(self, data: DataHandler, mod: Model):
+    def __init__(self, data: DataHandler, mod: Model, weighting: str = "natural"):
+        if weighting not in WEIGHTINGS:
+            raise ValueError(f"weighting must be one of {WEIGHTINGS}, got {weighting!r}")
         self.data = copy.deepcopy(data)
         self.mod = copy.deepcopy(mod)
+        self.weighting = weighting
         self.response = None
         self.grid_params = None
         self.response_jackknife = None
