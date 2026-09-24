@@ -9,6 +9,7 @@ the data gives the noise reference. Only simulated single-pointing data so far.
 ## Environment and commands
 
 - `conda activate luv` (arm64 Python 3.12, native; no Rosetta). Install: `pip install -e ".[casa,dev]"`.
+- Linux (Allegro): `luv` lives at `/almastorage/allegro6/marrewijk/miniconda3/envs/luv`; activate by full path from bash, as in the parent `ALMA_analysis/CLAUDE.md`. casatools/casatasks are pinned to 6.7.5.18 in `pyproject.toml`: the 6.7.6.14 wheel ships no libcrypto and `import casatasks` fails. Do not work around it with `LD_PRELOAD`; it breaks Python's `ssl`.
 - Run everything from the repo root; configs and outputs use root-relative paths.
 - `pytest` — CASA-free, uses `tests/fixtures/line13_line9_small.npz`. `pytest -m casa` simulates the smoke preset (needs CASA). `pytest --plots` also writes figures and a contact sheet to `plots/`.
 - `pre-commit run --all-files` — ruff lint + format, nbstripout. Keep it clean.

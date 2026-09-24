@@ -28,7 +28,9 @@ dependencies = [
 [project.optional-dependencies]
 # casadata is deliberately absent: CASA runtime data lives in one shared
 # directory pointed at by measurespath in ~/.casa/config.py (see the docs).
-casa = ["casatools", "casatasks"]
+# Pinned: the casatools 6.7.6.14 Linux wheel bundles libssl but not
+# libcrypto, so `import casatasks` fails with OPENSSL_3.0.1 not found.
+casa = ["casatools==6.7.5.18", "casatasks==6.7.5.18"]
 jax = ["jax", "jax-finufft"]
 dev = [
   "pytest",
