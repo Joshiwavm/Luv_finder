@@ -103,6 +103,24 @@ def response_check(mf, plots_dir="plots", name="filter_response", line_ghz=None)
     return _save(fig, plots_dir, name)
 
 
+def source_size_check(freqs, expected, noisy, declared, title, plots_dir="plots", name="source_size"):
+    """Response at the true source position: noiseless expectation and one noisy draw.
+
+    ``declared`` is the S/N the mock was calibrated to; a filter matched to the
+    source reaches it with the expectation curve.
+    """
+    fig, ax = plt.subplots(figsize=(8, 4))
+    ax.axhline(0, ls="--", c="gray", lw=0.8)
+    ax.axhline(declared, ls=":", c="C3", lw=1, label=f"declared S/N {declared:g}")
+    ax.plot(freqs, expected, lw=1.8, label=f"expected (peak {np.max(expected):.2f})")
+    ax.plot(freqs, noisy, lw=1, alpha=0.8, label=f"noisy draw (peak {np.max(noisy):.2f})")
+    ax.set_xlabel("Frequency [GHz]")
+    ax.set_ylabel("Matched-filter S/N")
+    ax.set_title(title)
+    ax.legend(fontsize=8)
+    return _save(fig, plots_dir, name)
+
+
 def contact_sheet(plots_dir: str, title: str = "Luv_finder diagnostics") -> str:
     """Write an index.html showing every PNG in ``plots_dir``."""
     pngs = sorted(f for f in os.listdir(plots_dir) if f.endswith(".png"))

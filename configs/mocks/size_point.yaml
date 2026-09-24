@@ -1,0 +1,18 @@
+# Point source (one-cell sigma). Used by tests/test_source_size.py; declared snr is the optimal S/N.
+# Beam FWHM ~4.4" at 40 GHz (estimate, to be replaced by the value measured on the
+# point mock); axis_* are sigma = k * FWHM / 2.355.
+cube_shape: [30, 256, 256]
+cell: 0.25arcsec
+dv: 100km/s
+freq_center: 40GHz
+integration_time: 8min
+alma_config: alma.cycle13.3.cfg
+output_folder: output/ms_files
+support_folder: support
+fits_filename: support/size_point_input.fits   # pins the project name to "size_point"
+
+sources:
+  - position: [-6.0, 8.0]   # model convention: dra=+6.0, ddec=+8.0
+    axis_min: 0.25
+    axis_maj: 0.25
+    line: {width: 300, mean: 40.0, snr: 10}

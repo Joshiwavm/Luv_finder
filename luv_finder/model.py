@@ -90,14 +90,16 @@ class Gaussian:
     def width(self, v):
         self._width = v
 
+    def envelope(self, uvdata: SimpleNamespace) -> np.ndarray:
+        """Spatial envelope A(u, v): the source's visibility amplitude, 1 at zero spacing."""
+        return np.exp(-2 * np.pi**2 * ((self.bmaj * uvdata.uwaves) ** 2 + (self.bmin * uvdata.vwaves) ** 2))
+
     def _uvgauss_1D2D(self, uvdata: SimpleNamespace) -> SimpleNamespace:
         uvdata = copy.deepcopy(uvdata)
         flux_hz = self.total_flux * self.nu_center / C_KMS
         amp = flux_hz / (self.width * np.sqrt(2 * np.pi))
         spectral = amp * np.exp(-0.5 * ((uvdata.uvfreqs - self.nu_center) / self.width) ** 2)
-        spatial = np.exp(
-            -2 * np.pi**2 * ((self.bmaj * uvdata.uwaves) ** 2 + (self.bmin * uvdata.vwaves) ** 2)
-        ) * np.exp(2j * np.pi * (uvdata.uwaves * self.dra + uvdata.vwaves * self.ddec))
+        spatial = self.envelope(uvdata) * np.exp(2j * np.pi * (uvdata.uwaves * self.dra + uvdata.vwaves * self.ddec))
         uvdata.UVreals = spatial.real * spectral
         uvdata.UVimags = spatial.imag * spectral
         return uvdata
