@@ -1,6 +1,6 @@
 # Source FWHM = 1x the synthesized beam. Used by tests/test_source_size.py; declared snr is the optimal S/N.
-# Beam FWHM ~4.4" at 40 GHz (estimate, to be replaced by the value measured on the
-# point mock); axis_* are sigma = k * FWHM / 2.355.
+# Beam FWHM 4.78" at 40 GHz: sqrt(BMAJ*BMIN) of the centre channel (5.12" x 4.47")
+# measured on the noiseless size_point image; axis_* are sigma = k * FWHM / 2.355.
 cube_shape: [30, 256, 256]
 cell: 0.25arcsec
 dv: 100km/s
@@ -13,6 +13,6 @@ fits_filename: support/size_beam_input.fits   # pins the project name to "size_b
 
 sources:
   - position: [-6.0, 8.0]   # model convention: dra=+6.0, ddec=+8.0
-    axis_min: 1.87
-    axis_maj: 1.87
+    axis_min: 2.03
+    axis_maj: 2.03
     line: {width: 300, mean: 40.0, snr: 10}
