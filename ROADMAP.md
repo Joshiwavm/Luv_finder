@@ -1,7 +1,9 @@
 # Roadmap
 
 Current state: grid-search matched filter, in S/N units, on simulated
-single-pointing data. Work the three blocks below in order: the data
+single-pointing data. Resolved sources are handled: `weighting="template"`
+tapers by the source envelope and recovers the declared S/N for a point source
+and for Gaussians of 1 and 3 beams (`tests/test_source_size.py`). Work the three blocks below in order: the data
 representation has to change before performance work is worth doing, and both
 have to land before the real data is tractable.
 
