@@ -9,6 +9,7 @@
    .. autosummary::
    
       GRID_KEYS
+      WEIGHTINGS
    
    .. rubric:: Functions
 

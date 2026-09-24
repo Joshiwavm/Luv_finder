@@ -257,6 +257,9 @@
 <tr class="row-odd"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">GRID_KEYS</span></code></p></td>
 <td><p>Search axes that a grid may vary.</p></td>
 </tr>
+<tr class="row-even"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">WEIGHTINGS</span></code></p></td>
+<td><p>How visibilities are weighted when a channel is collapsed: by noise only (&quot;natural&quot;, optimal for a point source) or also by the source envelope A(u, v) (&quot;template&quot;, optimal for a resolved source of the trial size).</p></td>
+</tr>
 </tbody>
 </table>
 </div>
@@ -274,7 +277,7 @@
 <div class="table-wrapper autosummary longtable docutils container">
 <table class="autosummary longtable docutils align-default">
 <tbody>
-<tr class="row-odd"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">MatchedFilter</span></code>(data, mod)</p></td>
+<tr class="row-odd"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">MatchedFilter</span></code>(data, mod[, weighting])</p></td>
 <td><p>Evaluate a model kernel against the data over a parameter grid.</p></td>
 </tr>
 </tbody>
