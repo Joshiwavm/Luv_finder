@@ -3,9 +3,10 @@
 Current state: grid-search matched filter, in S/N units, on simulated
 single-pointing data. Resolved sources are handled: `weighting="template"`
 tapers by the source envelope and recovers the declared S/N for a point source
-and for Gaussians of 1 and 3 beams (`tests/test_source_size.py`). Work the three blocks below in order: the data
-representation has to change before performance work is worth doing, and both
-have to land before the real data is tractable.
+and for Gaussians of 1 and 3 beams (`tests/test_source_size.py`). Work the
+three blocks below in order: the data representation has to change before
+performance work is worth doing, and both have to land before the real data is
+tractable.
 
 ## 1. Data volume and layout
 
@@ -27,7 +28,8 @@ carry that much information. Band 3, per array:
 |---|---|---|---|
 | `UVreals`, `UVimags` | 5.6 GB each | 5.6 GB each | none |
 | `uwaves`, `vwaves` | 5.6 GB each | 44 MB each | 5.6 GB each |
-| `uvwghts`, `uvtimes` | 5.6 GB each | 44 MB each | 5.6 GB each |
+| `uvwghts` | 5.6 GB | 5.6 GB (per channel) | none |
+| `uvtimes` | 5.6 GB | 44 MB | 5.6 GB |
 | `uvdists` | 5.6 GB | derivable | 5.6 GB |
 | `uvfreqs` | 5.6 GB | 1 KB | 5.6 GB |
 
@@ -40,14 +42,24 @@ wrong with the numbers, they are just the same values repeated.
 
 - Keep `UVreals` and `UVimags` two-dimensional. Keep `u`, `v`, `time` per row and
   frequency per channel, and form `uwaves`, `uvfreqs` and `uvdists` on demand.
-- **Whiten on load.** Since everything downstream works in S/N units, store
-  `d * sqrt(w)` rather than `d` and `w` separately. The weights then never need
-  to be kept at full length; `sqrt(w)` per row is enough to whiten a template.
+- **Store `X = w * d` and `w`, both full length.** Real data carry per-channel
+  weights (`WEIGHT_SPECTRUM`), so `w` is not constant along a row and cannot be
+  reduced to one value per row. With `X` every weighted sum downstream is a
+  matrix product: the matched-filter signal `X @ t` and normalisation
+  `w @ t**2`, the continuum `(1 @ X) / (1 @ w)`, and uv binning `sum(X) /
+  sum(w)`. Storing `d * sqrt(w)` instead turns each of them back into an
+  elementwise product plus a reduction; section 2 has the timings.
+- **Read the spectral weights.** `load_data` and `utils.getuvweights` read only
+  `WEIGHT` and broadcast it along the row, and `uv_save` writes back channel 0's
+  weight for the whole row. Read `WEIGHT_SPECTRUM` when the MS has it, and write
+  it back the same way. The mocks carry one weight per row, so the current tests
+  cannot catch this.
 - Stay in float64. The weighted sums run over 10^8 terms and float32 does not
   have the precision for them.
 
-Band 3 goes from 45.0 GB to 11.4 GB, which is 1.6 GB per pointing. Band 1 goes
-from 37.6 GB to 9.5 GB. Both then fit comfortably.
+Band 3 goes from 45.0 GB to 17.0 GB, which is 2.4 GB per pointing. Band 1 goes
+from 37.6 GB to 14.2 GB. The full-length weights cost one array more than
+factored per-row weights would; both still fit.
 
 The uv binning in section 2 attacks the same problem from the other side, by
 reducing the number of visibilities rather than the bytes per visibility, and is
@@ -83,6 +95,27 @@ Gaussian, nearly all of it is redundant.
   to 3e-14. It needs computing once per (size, width), not once per grid point.
 - **The template transform is closed-form.** The Fourier transform of a Gaussian
   is a Gaussian, so `fft(kernel)` can be written down instead of computed.
+
+### Weighted sums as matrix products
+
+The weighted sums are memory-bound. `np.sum(w * t * d, axis=1)` materialises a
+full-size temporary and reduces it on one thread; `X @ t` makes one
+multithreaded BLAS pass with no temporary. Measured on a 48-core CPU, float64,
+128 channels x 500 k visibilities with weights varying per channel, all paths
+agreeing to 1e-12:
+
+| Operation | numpy elementwise | numpy `@` | jax `jit`, fused | jax `jit`, `@` |
+|---|---|---|---|---|
+| Channel collapse, one template | 333 ms | 7.8 ms | 37 ms | 10.7 ms |
+| Continuum per row, no `X` | 350 ms | | 20 ms | |
+| 64 templates, signal + normalisation | | 220 ms | 7070 ms (`vmap`) | 278 ms |
+
+- Precompute `X` once; it does not depend on the template. Many templates then
+  stack into one GEMM, about 3.4 ms per template here.
+- `jit` alone gains 17x where no matrix product exists, by fusing the multiply
+  into the reduction, but on CPU it does not beat BLAS for `@`.
+- Never `vmap` over templates: it materialises the templates x channels x
+  visibilities array, as in the JAX section below.
 
 ### uv binning, corrected for the primary beam
 
@@ -121,8 +154,8 @@ What it costs, and what has to be right:
   one frequency only. Per window the fractional bandwidth is about 2%, so
   gridding at the window centre is accurate to that level. Check it is
   acceptable rather than assuming.
-- Bin weight-aware, `V_cell = sum(w V) / sum(w)` with `w_cell = sum(w)`, which
-  the whitened storage of section 1 provides directly.
+- Bin weight-aware and per channel, `V_cell = sum(X) / sum(w)` with
+  `w_cell = sum(w)`, which the `X` storage of section 1 provides directly.
 
 This overlaps with the NUFFT below, since gridding is the first step of a type-1
 NUFFT, but the two are complementary. Binning is far cheaper than a transform
@@ -191,7 +224,7 @@ loop inside `jit` is unrolled at trace time. Measured at 16384 positions:
 fuse it away. `lax.map` sequences the batch and holds memory flat for about 1.5x
 the time.
 
-**Fitting the real data.** Even factored, a Band 3 pointing is 1.6 GB of
+**Fitting the real data.** Even factored, a Band 3 pointing is 2.4 GB of
 visibilities, and the NUFFT output is a dirty cube of `n_pos x n_freq x 8` bytes,
 which for a 512 x 512 grid over 128 channels is 34 GB. The frequency axis is the
 natural chunk: hold the visibilities resident, stream channels through the NUFFT,
@@ -231,14 +264,14 @@ masked as line-contaminated while fitting.
 **Continuum subtraction in the uv plane.** The in-package option. The continuum
 is estimated in S/N; subtraction and imaging are in Jy:
 
-1. Whiten first: `V' = V * sqrt(w)`, the same factors as "Whiten on load" in
-   section 1.
+1. Whiten first: `V' = V * sqrt(w) = X / sqrt(w)`, with `X` and `w` as stored
+   in section 1.
 2. Estimate the continuum of each visibility row along the line of sight,
    over its channels within one (field, spw). A plain mean of `V'` is only
    minimum-variance if `w` is constant across the row, so use the weighted
-   mean `sum(w V) / sum(w)`, which in S/N is `sqrt(w)` times that. Leave the
-   masked channels below out of the sum; an unmasked line biases it by roughly
-   its width over the window width.
+   mean `sum(w V) / sum(w) = (1 @ X) / (1 @ w)`, which in S/N is `sqrt(w)`
+   times that. Leave the masked channels below out of the sum; an unmasked
+   line biases it by roughly its width over the window width.
 3. Convert back to Jy (divide by `sqrt(w)`) and subtract the continuum from
    every channel of the row.
 4. Dirty map of the continuum, in Jy, with `jax-finufft`: the type-1 NUFFT of
