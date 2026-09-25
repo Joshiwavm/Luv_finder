@@ -228,24 +228,23 @@ it were line flux. Compare recovered line lists and S/N, then decide whether
 subtraction belongs upstream in `alma-data-prep` or here, and which channels are
 masked as line-contaminated while fitting.
 
-**Continuum subtraction in the uv plane.** The in-package option, done in S/N
-units throughout:
+**Continuum subtraction in the uv plane.** The in-package option. The continuum
+is estimated in S/N; subtraction and imaging are in Jy:
 
 1. Whiten first: `V' = V * sqrt(w)`, the same factors as "Whiten on load" in
-   section 1, so the continuum is estimated and subtracted in S/N.
-2. Average `V'` along the line of sight, over the channels of each visibility
-   row, within one (field, spw), and subtract that mean from every channel of
-   the row. If `w` varies across the channels of a row, a plain mean of `V'`
-   is not the minimum-variance continuum; check that `statwt` weights are
-   constant per row and spw, or use `sum(w V) / sum(w)` scaled by `sqrt(w)`.
-   Leave the masked channels below out of the average; an unmasked line biases
-   it by roughly its width over the window width.
-3. Dirty map of the continuum with `jax-finufft`: the type-1 NUFFT of
-   `sqrt(w) * V'` (natural weighting), normalised by `sqrt(sum w)`. Its noise
-   is then `sqrt(sum w) / sqrt(sum w) = 1`, so the map is in S/N.
-4. Multiply that map by the primary beam and save it as the continuum
-   diagnostic. Multiplying rather than dividing keeps the noise from blowing
-   up at the field edge; the map then reads S/N x PB, unit noise on axis.
+   section 1.
+2. Estimate the continuum of each visibility row along the line of sight,
+   over its channels within one (field, spw). A plain mean of `V'` is only
+   minimum-variance if `w` is constant across the row, so use the weighted
+   mean `sum(w V) / sum(w)`, which in S/N is `sqrt(w)` times that. Leave the
+   masked channels below out of the sum; an unmasked line biases it by roughly
+   its width over the window width.
+3. Convert back to Jy (divide by `sqrt(w)`) and subtract the continuum from
+   every channel of the row.
+4. Dirty map of the continuum, in Jy, with `jax-finufft`: the type-1 NUFFT of
+   the continuum visibilities with natural weights, `sum(w C e^{...}) /
+   sum(w)`. Multiply it by the primary beam and save it as the continuum
+   diagnostic.
 
 This shares the NUFFT with the position search in section 2, and the per-field
 chunking from section 1 bounds its memory.
