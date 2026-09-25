@@ -49,7 +49,6 @@ def test_jackknife_splits_by_integration_not_randomly(data):
         UVreals=times.copy(),
         UVimags=np.zeros(nt * nb),
         uvtimes=times.copy(),
-        uvdists=np.ones(nt * nb),
         uvwghts=np.ones(nt * nb),
         uvfreqs=np.full(nt * nb, 40e9),
         uwaves=np.ones(nt * nb),

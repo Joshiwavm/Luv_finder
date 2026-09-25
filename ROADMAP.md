@@ -16,12 +16,12 @@ Neither real dataset fits the current in-memory representation.
 |---|---|---|
 | On disk | 12 GB | 20 GB |
 | Visibility-channels | 588 M | 704 M |
-| As `uvdata` today | 37.6 GB | 45.0 GB |
+| As `uvdata` today | 32.9 GB | 39.4 GB |
 
 ### Where the inflation comes from
 
-`DataHandler` keeps eight float64 arrays, every one of them the full
-`n_freq x n_vis` length, so 64 bytes per visibility-channel. Only two of them
+`DataHandler` keeps seven float64 arrays, every one of them the full
+`n_freq x n_vis` length, so 56 bytes per visibility-channel. Only three of them
 carry that much information. Band 3, per array:
 
 | Array | Stored | Distinct values | Waste |
@@ -30,7 +30,6 @@ carry that much information. Band 3, per array:
 | `uwaves`, `vwaves` | 5.6 GB each | 44 MB each | 5.6 GB each |
 | `uvwghts` | 5.6 GB | 5.6 GB (per channel) | none |
 | `uvtimes` | 5.6 GB | 44 MB | 5.6 GB |
-| `uvdists` | 5.6 GB | derivable | 5.6 GB |
 | `uvfreqs` | 5.6 GB | 1 KB | 5.6 GB |
 
 `uvfreqs` is the clearest case: 128 distinct frequencies, written out 704 million
@@ -41,7 +40,7 @@ wrong with the numbers, they are just the same values repeated.
 ### Fix: store the factors, whiten once
 
 - Keep `UVreals` and `UVimags` two-dimensional. Keep `u`, `v`, `time` per row and
-  frequency per channel, and form `uwaves`, `uvfreqs` and `uvdists` on demand.
+  frequency per channel, and form `uwaves` and `uvfreqs` on demand.
 - **Store `X = w * d` and `w`, both full length.** Real data carry per-channel
   weights (`WEIGHT_SPECTRUM`), so `w` is not constant along a row and cannot be
   reduced to one value per row. With `X` every weighted sum downstream is a
@@ -49,16 +48,16 @@ wrong with the numbers, they are just the same values repeated.
   `w @ t**2`, the continuum `(1 @ X) / (1 @ w)`, and uv binning `sum(X) /
   sum(w)`. Storing `d * sqrt(w)` instead turns each of them back into an
   elementwise product plus a reduction; section 2 has the timings.
-- **Read the spectral weights.** `load_data` and `utils.getuvweights` read only
-  `WEIGHT` and broadcast it along the row, and `uv_save` writes back channel 0's
-  weight for the whole row. Read `WEIGHT_SPECTRUM` when the MS has it, and write
-  it back the same way. The mocks carry one weight per row, so the current tests
+- **Read the spectral weights.** `load_data` reads only `WEIGHT` and broadcasts
+  it along the row. Read `WEIGHT_SPECTRUM` when the MS has it. `simobserve`
+  leaves `WEIGHT = 1` and writes no `WEIGHT_SPECTRUM`, and
+  `utils.getstatwtweights` then sets one weight per row, so the current tests
   cannot catch this.
 - Stay in float64. The weighted sums run over 10^8 terms and float32 does not
   have the precision for them.
 
-Band 3 goes from 45.0 GB to 17.0 GB, which is 2.4 GB per pointing. Band 1 goes
-from 37.6 GB to 14.2 GB. The full-length weights cost one array more than
+Band 3 goes from 39.4 GB to 17.0 GB, which is 2.4 GB per pointing. Band 1 goes
+from 32.9 GB to 14.2 GB. The full-length weights cost one array more than
 factored per-row weights would; both still fit.
 
 The uv binning in section 2 attacks the same problem from the other side, by
@@ -133,7 +132,7 @@ baseline 100 klambda, primary beam 68.5 arcsec.
 The coverage is sparse relative to the number of (baseline, time) samples, so
 many integrations fall in the same cell. Searching the full primary beam wants
 the last row. Applied across every field and window that takes Band 3 from 704 M
-visibility-channels to roughly 18 M, so 45 GB becomes about 1.1 GB.
+visibility-channels to roughly 18 M, so 39 GB becomes about 1.0 GB.
 
 What it costs, and what has to be right:
 

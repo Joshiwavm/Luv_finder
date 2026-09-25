@@ -40,7 +40,6 @@ def _synthetic(nchan, snr, nvis=400, seed=0, size=0.0):
         vwaves=np.tile(vw, nchan),
         uvwghts=np.ones(nchan * nvis),
         uvtimes=np.tile(np.arange(nvis), nchan),
-        uvdists=np.tile(np.hypot(uw, vw), nchan) * 1e-3,
         jacked=False,
         UVreals=np.zeros(nchan * nvis),
         UVimags=np.zeros(nchan * nvis),

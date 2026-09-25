@@ -8,8 +8,6 @@ environment without CASA.
 from __future__ import annotations
 
 import copy
-import os
-import shutil
 from types import SimpleNamespace
 
 import astropy.constants as const
@@ -21,7 +19,6 @@ from ._casa import tools
 UV_FIELDS = (
     "UVreals",
     "UVimags",
-    "uvdists",
     "uvwghts",
     "uvtimes",
     "uvfreqs",
@@ -68,7 +65,7 @@ class Metadata:
 
     def minresolution(self) -> float:
         """Angular resolution in arcsec from the longest baseline."""
-        max_baseline_lambda = self.uvdata.uvdists.max() * 1e3
+        max_baseline_lambda = np.hypot(self.uvdata.uwaves, self.uvdata.vwaves).max()
         return np.rad2deg(1.0 / max_baseline_lambda) * 3600.0
 
 
@@ -78,8 +75,8 @@ class DataHandler:
     Attributes
     ----------
     uvdata : SimpleNamespace
-        Arrays ``UVreals, UVimags, uvdists [klambda], uvwghts, uvtimes,
-        uvfreqs [Hz], uwaves, vwaves [lambda]``, all of length
+        Arrays ``UVreals, UVimags, uvwghts, uvtimes, uvfreqs [Hz],
+        uwaves, vwaves [lambda]``, all of length
         ``n_freqs * n_visbs``, channel-major.
     metadata : Metadata
     """
@@ -100,11 +97,6 @@ class DataHandler:
 
     def n_visbs(self, uvdata: SimpleNamespace) -> int:
         return uvdata.UVreals.shape[0] // self.n_freqs(uvdata)
-
-    @staticmethod
-    def arcsec_to_uvdist(arcsec: float) -> float:
-        """Angular scale in arcsec -> uv-distance in lambda."""
-        return 1 / np.deg2rad(arcsec / 3600)
 
     # -------------------------------------------------------------- CASA I/O
     @staticmethod
@@ -140,7 +132,6 @@ class DataHandler:
                 ones = np.ones_like(uwave)
 
                 d = self.uvdata
-                d.uvdists = np.append(d.uvdists, np.hypot(uwave, vwave).flatten() * 1e-3)
                 d.UVreals = np.append(d.UVreals, uvreal.flatten())
                 d.UVimags = np.append(d.UVimags, uvimag.flatten())
                 d.uvwghts = np.append(d.uvwghts, (ones * uvwght.reshape(1, -1)).flatten())
@@ -148,45 +139,6 @@ class DataHandler:
                 d.uvfreqs = np.append(d.uvfreqs, (ones * freqs.reshape(-1, 1)).flatten())
                 d.uwaves = np.append(d.uwaves, uwave.flatten())
                 d.vwaves = np.append(d.vwaves, vwave.flatten())
-
-    def uv_save(self, output_name: str, uvdata: SimpleNamespace | None = None) -> str:
-        """Write ``uvdata`` into a copy of ``self.msfile`` named ``<base>_<output_name>.ms``."""
-        mstool = tools().ms
-        uvdata = self.uvdata if uvdata is None else uvdata
-        base_dir, base_name = os.path.split(self.msfile)
-        stem, ext = os.path.splitext(base_name)
-        new_path = os.path.join(base_dir, f"{stem}_{output_name}{ext}")
-        if os.path.exists(new_path):
-            shutil.rmtree(new_path)
-        shutil.copytree(self.msfile, new_path)
-
-        fields, spws = self._target_selection(new_path)
-        index = 0
-        for field in fields:
-            for spw in spws:
-                ms = mstool()
-                ms.open(new_path, nomodify=False)
-                ms.selectinit(reset=True)
-                ms.selectinit(datadescid=int(spw))
-                ms.select({"field_id": int(field)})
-                rec = ms.getdata(["data", "time", "weight"])
-                n_times = rec["time"].shape[0]
-                n_chans = rec["data"].shape[1]
-                n = n_times * n_chans
-
-                real = uvdata.UVreals[index : index + n].reshape(n_chans, n_times)
-                imag = uvdata.UVimags[index : index + n].reshape(n_chans, n_times)
-                wght = uvdata.uvwghts[index : index + n].reshape(n_chans, n_times)
-                index += n
-
-                rec["data"][0][:] = real + 1j * imag
-                rec["data"][1][:] = real + 1j * imag
-                rec["weight"][0] = wght[0, :] / 2
-                rec["weight"][1] = wght[0, :] / 2
-                ms.putdata(rec)
-                ms.reset()
-                ms.close()
-        return new_path
 
     # --------------------------------------------------------------- NPZ I/O
     def to_npz(self, path: str) -> None:
@@ -235,7 +187,7 @@ class DataHandler:
 
         uvdata.UVreals = 0.5 * (uvdata.UVreals[pos] - uvdata.UVreals[neg])
         uvdata.UVimags = 0.5 * (uvdata.UVimags[pos] - uvdata.UVimags[neg])
-        for k in ("uvdists", "uvtimes", "uvfreqs", "uvwghts", "uwaves", "vwaves"):
+        for k in ("uvtimes", "uvfreqs", "uvwghts", "uwaves", "vwaves"):
             arr = getattr(uvdata, k)
             setattr(uvdata, k, 0.5 * (arr[pos] + arr[neg]))
         uvdata.jacked = True
