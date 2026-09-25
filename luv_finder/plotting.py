@@ -56,7 +56,14 @@ def spectrum_check(data, dra, ddec, model_uv=None, plots_dir="plots", name="spec
             freqs, _weighted_spectrum(data.uvdata, nf, nv, part), c="C0", lw=1, alpha=0.6, label="data, phase centre"
         )
         ax.plot(freqs, _weighted_spectrum(shifted, nf, nv, sh), c="C1", lw=1.6, label="data, shifted")
-        ax.plot(freqs, _weighted_spectrum(jack_shift, nf, nv, sh), c="C7", lw=1, ls=":", label="jackknife, shifted")
+        ax.plot(
+            freqs,
+            _weighted_spectrum(jack_shift, nf, data.n_visbs(jack_shift), sh),
+            c="C7",
+            lw=1,
+            ls=":",
+            label="jackknife, shifted",
+        )
         if model_uv is not None:
             ms = data.apply_phase_shift(dra, ddec, model_uv)
             ax.plot(freqs, _weighted_spectrum(ms, nf, nv, sh), c="C2", lw=1.2, alpha=0.8, label="model, shifted")
