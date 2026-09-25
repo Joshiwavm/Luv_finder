@@ -36,3 +36,4 @@ the data gives the noise reference. Only simulated single-pointing data so far.
 - No notebooks outside `docs/source/tutorials/`. New workflows become CLI commands + tests.
 - Real-data organisation/concatenation belongs to `alma-data-prep`, not here.
 - Planned work and open problems (JAX, catalog, primary beam + mosaics): see ROADMAP.md.
+- Notion write-ups of the method (the Luv-finder page) read like a JOSS paper but are not for submission: explanation, math and code excerpts interleaved. Use the terminology of Vio & Andreani (2021, arXiv:2107.09378): H0/H1, template s, statistic T(x), SNR, P_FA, threshold gamma. Concise and accurate; state each thing once.
