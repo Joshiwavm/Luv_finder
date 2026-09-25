@@ -228,6 +228,28 @@ it were line flux. Compare recovered line lists and S/N, then decide whether
 subtraction belongs upstream in `alma-data-prep` or here, and which channels are
 masked as line-contaminated while fitting.
 
+**Continuum subtraction in the uv plane.** The in-package option, done in S/N
+units throughout:
+
+1. Whiten first: `V' = V * sqrt(w)`, the same factors as "Whiten on load" in
+   section 1, so the continuum is estimated and subtracted in S/N.
+2. Average `V'` along the line of sight, over the channels of each visibility
+   row, within one (field, spw), and subtract that mean from every channel of
+   the row. If `w` varies across the channels of a row, a plain mean of `V'`
+   is not the minimum-variance continuum; check that `statwt` weights are
+   constant per row and spw, or use `sum(w V) / sum(w)` scaled by `sqrt(w)`.
+   Leave the masked channels below out of the average; an unmasked line biases
+   it by roughly its width over the window width.
+3. Dirty map of the continuum with `jax-finufft`: the type-1 NUFFT of
+   `sqrt(w) * V'` (natural weighting), normalised by `sqrt(sum w)`. Its noise
+   is then `sqrt(sum w) / sqrt(sum w) = 1`, so the map is in S/N.
+4. Multiply that map by the primary beam and save it as the continuum
+   diagnostic. Multiplying rather than dividing keeps the noise from blowing
+   up at the field edge; the map then reads S/N x PB, unit noise on axis.
+
+This shares the NUFFT with the position search in section 2, and the per-field
+chunking from section 1 bounds its memory.
+
 For the masking decision specifically, a per-channel power statistic works
 directly on the visibilities: by Parseval, `sum_j w_j |V_j(nu)|^2` is the power of
 the dirty image in channel `nu`, so comparing it with its noise expectation flags
