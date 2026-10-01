@@ -1,4 +1,8 @@
-# Targeted: the injected source's position, width and size (sigma, arcsec).
+# Source FWHM = 1x the synthesized beam. A targeted search as a user would write it:
+# one position, width and size (sigma, arcsec). tests/test_source_size.py builds the
+# size_beam mock source from this file, so template and injected source always agree.
+# Beam FWHM 4.78" at 40 GHz: sqrt(BMAJ*BMIN) of the centre channel (5.12" x 4.47")
+# measured on the noiseless size_point image; k beams is sigma = k * 4.78 / 2.355.
 dra: 6.0                    # model convention, sign-flipped from the mock
 ddec: 8.0
 width: 300

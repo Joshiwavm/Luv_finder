@@ -45,6 +45,27 @@ def resolve_antenna_config(name: str) -> str:
     return path
 
 
+def source_from_grid(grid: dict | str, source: dict) -> dict:
+    """``source`` with position, size and line width taken from a targeted grid.
+
+    ``grid`` is a grid YAML (or its dict) with one value per key. It is written in model
+    convention, so ``dra`` flips sign for the image-convention mock position.
+    """
+    if not isinstance(grid, dict):
+        with open(grid) as f:
+            grid = yaml.safe_load(f)
+    multi = [k for k, v in grid.items() if not np.isscalar(v)]
+    if multi:
+        raise ValueError(f"a mock source needs one value per grid key, got several for {multi}")
+    return {
+        **source,
+        "position": [-grid["dra"], grid["ddec"]],
+        "axis_min": grid["bmin"],
+        "axis_maj": grid["bmaj"],
+        "line": {**source["line"], "width": grid["width"]},
+    }
+
+
 class MockObservation:
     """Build a line cube, observe it with ``simobserve``, image it, and move the products.
 
@@ -55,7 +76,8 @@ class MockObservation:
     sensitivity : str or float, per-channel rms in Jy (ignored if integration_time given)
     integration_time : str with units, e.g. "8min"
     sources : list of dict
-        ``position`` (dra, ddec) arcsec; optional ``axis_min``/``axis_maj`` arcsec;
+        ``position`` (dra, ddec) arcsec; optional ``axis_maj``/``axis_min``, the Gaussian
+        sigma in arcsec along RA/Dec (the model's ``bmaj``/``bmin``, default one cell);
         ``line`` {width km/s, mean GHz, snr}; ``continuum`` {snr}.
     alma_config : str
         Bare name of a CASA antenna configuration, e.g. ``alma.cycle13.3.cfg``,
@@ -112,10 +134,13 @@ class MockObservation:
             raise ValueError("either sensitivity or integration_time must be given")
 
     @classmethod
-    def from_yaml(cls, path: str, **overrides) -> MockObservation:
+    def from_yaml(cls, path: str, grid: dict | str | None = None, **overrides) -> MockObservation:
+        """Build from a YAML preset; ``grid`` sets the first source's geometry (see :func:`source_from_grid`)."""
         with open(path) as f:
             cfg = yaml.safe_load(f)
         cfg.update(overrides)
+        if grid is not None:
+            cfg["sources"] = [source_from_grid(grid, cfg["sources"][0]), *cfg["sources"][1:]]
         return cls(**cfg)
 
     # ------------------------------------------------------------ frequencies
@@ -172,11 +197,11 @@ class MockObservation:
             pos_y, pos_x, sig_maj, sig_min = self._source_pixels(src)
             spatial = models.Gaussian2D(
                 amplitude=1 / (2 * np.pi * sig_maj * sig_min),
-                x_mean=pos_y,
-                y_mean=pos_x,
+                x_mean=pos_x,
+                y_mean=pos_y,
                 x_stddev=sig_maj,
                 y_stddev=sig_min,
-            )(Y, X)
+            )(X, Y)
             if "line" in src:
                 width_chan = src["line"]["width"] / dv
                 mean_chan = (src["line"]["mean"] - f_start) / df

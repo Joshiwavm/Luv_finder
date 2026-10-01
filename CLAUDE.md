@@ -25,7 +25,7 @@ the data gives the noise reference. Only simulated single-pointing data so far.
 - `luv_finder/_casa.py` — the only place that imports `casatools`/`casatasks`. It presets `casaconfig.config.logfile` so CASA writes to `logs/` (override with `LUV_CASA_LOG_DIR`) instead of scattering `casa-<timestamp>.log` in the working directory. Never import CASA directly; use `tools()`/`tasks()`, or call `configure_logging()` first if you must.
 - `luv_finder/plotting.py` — all diagnostic figures; each takes a directory and returns the path written. `MatchedFilter.plot_response` is a thin wrapper.
 - `luv_finder/cli/` — argparse wrappers only; no science logic.
-- `configs/mocks/` and `configs/grids/` pair by filename; `configs/README.md` covers the pairing and the `dra` sign flip. Antenna configs are not vendored: presets name files CASA ships (`alma.cycle13.3.cfg`), resolved by `mock.resolve_antenna_config`. `data/ output/ support/ plots/ logs/` are gitignored products.
+- `configs/mocks/` and `configs/grids/` pair by filename; the `size_*` mocks take their source from the grid (`--grid`); `configs/README.md` covers the pairing and the `dra` sign flip. Antenna configs are not vendored: presets name files CASA ships (`alma.cycle13.3.cfg`), resolved by `mock.resolve_antenna_config`. `data/ output/ support/ plots/ logs/` are gitignored products.
 - Test configs live in `configs/`, not under `tests/`: `tests/test_mock.py` loads `configs/mocks/smoke.yaml` and `configs/grids/smoke.yaml` rather than hardcoding parameters, so presets and tests cannot drift apart.
 
 ## Conventions
