@@ -288,11 +288,10 @@ What remains is the PB factor and the combination.
 ## 3. Sources that are not Gaussians
 
 The matched filter is only optimal when the template resembles the source, and
-everything here assumes an elliptical Gaussian. It does not even have a position
-angle yet: `bmaj` lies along RA and `bmin` along Dec, in the model and the mock
-alike, and nothing keeps `bmaj >= bmin`. Add `pa` as a grid key (rotate u, v in
-`Gaussian.envelope`, `theta` in the mock's `Gaussian2D`) before searching for
-elongated sources. Lensed systems break the Gaussian assumption badly:
+everything here assumes an elliptical Gaussian, with its major axis at the
+position angle `pa` (a grid key, degrees east of north). Nothing keeps
+`bmaj >= bmin`, so a grid spanning both orders repeats each shape rotated by 90
+degrees. Lensed systems break the Gaussian assumption badly:
 SDP.81 shows dense-gas tracers and continuum along an Einstein arc, where a single
 Gaussian is a poor match and costs real S/N.
 

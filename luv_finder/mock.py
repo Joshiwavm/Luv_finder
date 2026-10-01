@@ -62,6 +62,7 @@ def source_from_grid(grid: dict | str, source: dict) -> dict:
         "position": [-grid["dra"], grid["ddec"]],
         "axis_min": grid["bmin"],
         "axis_maj": grid["bmaj"],
+        "pa": grid.get("pa", 0.0),
         "line": {**source["line"], "width": grid["width"]},
     }
 
@@ -77,7 +78,8 @@ class MockObservation:
     integration_time : str with units, e.g. "8min"
     sources : list of dict
         ``position`` (dra, ddec) arcsec; optional ``axis_maj``/``axis_min``, the Gaussian
-        sigma in arcsec along RA/Dec (the model's ``bmaj``/``bmin``, default one cell);
+        sigma in arcsec (the model's ``bmaj``/``bmin``, default one cell), and ``pa``, the
+        major axis' position angle in degrees east of north (default 0);
         ``line`` {width km/s, mean GHz, snr}; ``continuum`` {snr}.
     alma_config : str
         Bare name of a CASA antenna configuration, e.g. ``alma.cycle13.3.cfg``,
@@ -201,6 +203,8 @@ class MockObservation:
                 y_mean=pos_y,
                 x_stddev=sig_maj,
                 y_stddev=sig_min,
+                # pixel x runs west and y north, so a major axis at pa east of north is pa + 90 deg from +x
+                theta=np.deg2rad(src.get("pa", 0.0) + 90.0),
             )(X, Y)
             if "line" in src:
                 width_chan = src["line"]["width"] / dv

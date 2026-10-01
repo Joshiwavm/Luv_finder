@@ -79,7 +79,7 @@ def test_recovers_declared_snr(name, weighting, request):
     drawn = _response(noisy, grid_cfg, weighting)
     peak = expected.response[0].max()
 
-    a = Gaussian(bmin=grid_cfg["bmin"], bmaj=grid_cfg["bmaj"]).envelope(chunk)
+    a = Gaussian(bmin=grid_cfg["bmin"], bmaj=grid_cfg["bmaj"], pa=grid_cfg.get("pa", 0.0)).envelope(chunk)
     kept = np.sum(chunk.w * a) / np.sqrt(np.sum(chunk.w) * np.sum(chunk.w * a**2))
     predicted = declared if weighting == "template" else declared * kept
 

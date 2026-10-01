@@ -26,6 +26,8 @@ class Gaussian:
         Integrated line flux, Jy km/s.
     bmin, bmaj : float
         Source axes (sigma), arcsec.
+    pa : float
+        Position angle of the ``bmaj`` axis, degrees east of north.
     nu_center : float
         Line centre, Hz.
     width : float
@@ -34,11 +36,12 @@ class Gaussian:
 
     positive = True
 
-    def __init__(self, dra=0.0, ddec=0.0, total_flux=1.0, bmin=0.0, bmaj=0.0, nu_center=0.0, width=100.0):
+    def __init__(self, dra=0.0, ddec=0.0, total_flux=1.0, bmin=0.0, bmaj=0.0, pa=0.0, nu_center=0.0, width=100.0):
         self.dra = dra
         self.ddec = ddec
         self._bmin = bmin
         self._bmaj = bmaj
+        self.pa = pa
         self.total_flux = total_flux
         self.nu_center = nu_center
         self._width = width
@@ -74,7 +77,10 @@ class Gaussian:
     def envelope(self, chunk) -> np.ndarray:
         """Spatial envelope A(u, v): the source's visibility amplitude, 1 at zero spacing, (n_chan, n_row)."""
         uw, vw = chunk.uv_waves()
-        return np.exp(-2 * np.pi**2 * ((self.bmaj * uw) ** 2 + (self.bmin * vw) ** 2))
+        # u, v pair with east, north; the major axis points along (sin pa, cos pa)
+        sin, cos = np.sin(np.deg2rad(self.pa)), np.cos(np.deg2rad(self.pa))
+        u_maj, u_min = uw * sin + vw * cos, uw * cos - vw * sin
+        return np.exp(-2 * np.pi**2 * ((self.bmaj * u_maj) ** 2 + (self.bmin * u_min) ** 2))
 
     def spectrum(self, freq: np.ndarray) -> np.ndarray:
         """Line profile in Jy at ``freq`` (Hz)."""

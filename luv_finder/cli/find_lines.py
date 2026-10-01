@@ -24,7 +24,7 @@ def build_grid(data: DataHandler, cfg: dict | None) -> dict:
     Positions default to multiples of half the resolution, counted from the reference
     direction and covering ``fov_fraction`` of the primary beam around the loaded field. The
     lattice comes from dataset-level metadata, so every pointing of a mosaic gets the same
-    points. Sizes default to a tenth of the resolution.
+    points. Sizes default to a tenth of the resolution, the position angle to 0.
     """
     fov = data.metadata.primarybeamsize()
     res = data.metadata.minresolution()
@@ -52,6 +52,7 @@ def build_grid(data: DataHandler, cfg: dict | None) -> dict:
         "ddec": rng("ddec", lattice(ddec)),
         "bmin": rng("bmin", res / 10),
         "bmaj": rng("bmaj", res / 10),
+        "pa": rng("pa", 0.0),
         "width": rng("width", [200.0, 300.0, 400.0]),
     }
 

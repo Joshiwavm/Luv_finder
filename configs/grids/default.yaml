@@ -1,5 +1,6 @@
 # Blind search. Omitted keys are derived from the data: dra/ddec span
 # +-fov_fraction * primary beam in steps of resolution/2, bmin/bmaj = resolution/10.
+# pa is the bmaj axis' position angle in degrees east of north (default 0).
 # Values may be a scalar (fixed), a list, or {start, stop, step}. Cost is their product.
 fov_fraction: 0.4
 width: [200, 300, 400]      # km/s

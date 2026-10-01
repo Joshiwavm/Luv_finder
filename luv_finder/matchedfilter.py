@@ -17,7 +17,7 @@ from .model import Model
 
 #: Search axes that a grid may vary. ``total_flux`` is deliberately absent: the
 #: kernel normalisation is scale-invariant, so varying it duplicates grid points.
-GRID_KEYS = ("dra", "ddec", "bmin", "bmaj", "width")
+GRID_KEYS = ("dra", "ddec", "bmin", "bmaj", "pa", "width")
 
 #: How visibilities are weighted when a channel is collapsed: by noise only
 #: ("natural", optimal for a point source) or also by the source envelope A(u, v)
