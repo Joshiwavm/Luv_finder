@@ -1,94 +1,43 @@
 # Roadmap
 
-Current state: grid-search matched filter, in S/N units, on simulated
-single-pointing data. Resolved sources are handled: `weighting="template"`
-tapers by the source envelope and recovers the declared S/N for a point source
-and for Gaussians of 1 and 3 beams (`tests/test_source_size.py`). Work the
-three blocks below in order: the data representation has to change before
-performance work is worth doing, and both have to land before the real data is
-tractable.
+Current state: grid-search matched filter, in S/N units. Resolved sources are
+handled: `weighting="template"` tapers by the source envelope and recovers the
+declared S/N for every `configs/grids/size_*.yaml` preset, with the mock built
+from the same grid file (`tests/test_source_size.py`).
 
-## 1. Data volume and layout
-
-Neither real dataset fits the current in-memory representation.
+The data are stored per (field, spw) as `X = w * V` and a channel flag mask,
+with `u`, `v`, time and weight per row and frequency per channel: 17 bytes per
+visibility-channel instead of 56. Stokes I comes from `WEIGHT` (set by `statwt`
+in alma-data-prep; neither dataset has `WEIGHT_SPECTRUM`) and `FLAG`, and
+autocorrelations and flagged rows are dropped on reading. Positions are in one
+sky frame per dataset, so a mosaic is searched pointing by pointing on a shared
+grid. Measured with `luv-export`:
 
 | | Band 1 | Band 3 |
 |---|---|---|
-| On disk | 12 GB | 20 GB |
-| Visibility-channels | 588 M | 704 M |
-| As `uvdata` today | 32.9 GB | 39.4 GB |
+| Visibility-channels kept | 557 M of 588 M | 581 M of 704 M |
+| In memory, old layout | 32.9 GB | 39.4 GB |
+| In memory, as stored | 9.5 GB | 10.1 GB (1.4 GB per pointing) |
+| Export time, peak RSS | 1:36, 14.7 GB | 1:44, 2.6 GB |
+| 3 x 3 grid + jackknife, 9 workers | 3:02, 18 GB | 0:17, 7 GB (one pointing) |
 
-### Where the inflation comes from
+Memory for the search is the data, shared copy-on-write by the workers, plus
+channel blocks of about 256 MB per temporary in each worker.
 
-`DataHandler` keeps seven float64 arrays, every one of them the full
-`n_freq x n_vis` length, so 56 bytes per visibility-channel. Only three of them
-carry that much information. Band 3, per array:
+Work the two blocks below in order: performance has to land before the real
+data are tractable as a blind search.
 
-| Array | Stored | Distinct values | Waste |
-|---|---|---|---|
-| `UVreals`, `UVimags` | 5.6 GB each | 5.6 GB each | none |
-| `uwaves`, `vwaves` | 5.6 GB each | 44 MB each | 5.6 GB each |
-| `uvwghts` | 5.6 GB | 5.6 GB (per channel) | none |
-| `uvtimes` | 5.6 GB | 44 MB | 5.6 GB |
-| `uvfreqs` | 5.6 GB | 1 KB | 5.6 GB |
-
-`uvfreqs` is the clearest case: 128 distinct frequencies, written out 704 million
-times. `uwaves` is `u * nu / c`, an outer product of 5.5 M baseline coordinates
-with 128 frequencies, stored as if all 704 M entries were independent. Nothing is
-wrong with the numbers, they are just the same values repeated.
-
-### Fix: store the factors, whiten once
-
-- Keep `UVreals` and `UVimags` two-dimensional. Keep `u`, `v`, `time` per row and
-  frequency per channel, and form `uwaves` and `uvfreqs` on demand.
-- **Store `X = w * d` and `w`, both full length.** Real data carry per-channel
-  weights (`WEIGHT_SPECTRUM`), so `w` is not constant along a row and cannot be
-  reduced to one value per row. With `X` every weighted sum downstream is a
-  matrix product: the matched-filter signal `X @ t` and normalisation
-  `w @ t**2`, the continuum `(1 @ X) / (1 @ w)`, and uv binning `sum(X) /
-  sum(w)`. Storing `d * sqrt(w)` instead turns each of them back into an
-  elementwise product plus a reduction; section 2 has the timings.
-- **Read the spectral weights.** `load_data` reads only `WEIGHT` and broadcasts
-  it along the row. Read `WEIGHT_SPECTRUM` when the MS has it. `simobserve`
-  leaves `WEIGHT = 1` and writes no `WEIGHT_SPECTRUM`, and
-  `utils.getstatwtweights` then sets one weight per row, so the current tests
-  cannot catch this.
-- Stay in float64. The weighted sums run over 10^8 terms and float32 does not
-  have the precision for them.
-
-Band 3 goes from 39.4 GB to 17.0 GB, which is 2.4 GB per pointing. Band 1 goes
-from 32.9 GB to 14.2 GB. The full-length weights cost one array more than
-factored per-row weights would; both still fit.
-
-The uv binning in section 2 attacks the same problem from the other side, by
-reducing the number of visibilities rather than the bytes per visibility, and is
-worth a factor of tens. If it holds up, it largely dissolves this section.
-
-### Fix: chunk by (field, spw)
-
-`load_data` concatenates every field and window into one flat array and then
-reshapes to `(n_freq, n_vis)`. That reshape assumes a single rectangular channel
-grid. It is invalid for Band 1, which mixes three 128-channel windows with one
-960-channel window, and it silently merges the seven Band 3 pointings into one
-block. Process one (field, spw) at a time and combine at the response level,
-which is what the mosaic step needs anyway.
-
-Both datasets came from `alma-data-prep`, so its export path is the natural place
-to put this chunking, and doing it there is a concrete first step toward merging
-the two repositories.
-
-## 2. Performance
+## 1. Performance
 
 ### Analytic evaluation instead of per-grid-point exponentials
 
-81% of the time per grid point is the model evaluation plus the two phase
-shifts, all complex exponentials over every visibility. Because the model is a
-Gaussian, nearly all of it is redundant.
+Most of the time per grid point is complex exponentials over every
+visibility. Because the model is a Gaussian, much of it is redundant. The model
+phase is already gone: shifted onto its own position the model is the phase-free
+`A(u,v) * S(nu)`, so the kernel is built that way and only the data are
+phase-shifted. On Band 1 (557 M visibility-channels, one pointing) a grid point
+takes about 70 s per worker.
 
-- **The model phase cancels.** The model is generated at (dra, ddec) and then
-  phase-shifted by the same offset, so the kernel is the phase-free envelope
-  `A(u,v) * S(nu)`. Verified: the imaginary part after shifting is 1e-16 of the
-  real part. One complex exponential per grid point is pure waste.
 - **The kernel is position-independent.** `A(u,v; bmin, bmaj)` does not contain
   dra or ddec, so the normalised kernel is identical at every position, verified
   to 3e-14. It needs computing once per (size, width), not once per grid point.
@@ -109,8 +58,10 @@ agreeing to 1e-12:
 | Continuum per row, no `X` | 350 ms | | 20 ms | |
 | 64 templates, signal + normalisation | | 220 ms | 7070 ms (`vmap`) | 278 ms |
 
-- Precompute `X` once; it does not depend on the template. Many templates then
-  stack into one GEMM, about 3.4 ms per template here.
+- `X` is stored, so it is computed once; it does not depend on the template.
+  Many templates then stack into one GEMM, about 3.4 ms per template here. The
+  stored weight is `w_row` per row times the channel flag mask, so the
+  normalisation `w @ t**2` is `(~flag * t**2) @ w_row`.
 - `jit` alone gains 17x where no matrix product exists, by fusing the multiply
   into the reduction, but on CPU it does not beat BLAS for `@`.
 - Never `vmap` over templates: it materialises the templates x channels x
@@ -119,7 +70,7 @@ agreeing to 1e-12:
 ### uv binning, corrected for the primary beam
 
 Averaging visibilities that land in the same uv cell reduces `N_vis`, which is
-the dominant axis in both the memory problem of section 1 and the cost here.
+the dominant axis of both the memory and the cost here.
 Measured on Band 3, field 0, window 0: 196,508 rows at 85.0 GHz, longest
 baseline 100 klambda, primary beam 68.5 arcsec.
 
@@ -143,7 +94,7 @@ What it costs, and what has to be right:
   smaller than the nominal one.
 - **Bin within (field, spw), never across pointings.** Visibilities from
   different pointings carry differently PB-weighted skies, so averaging them into
-  one cell mixes them. Combining pointings stays at the response level in 3.4.
+  one cell mixes them. Combining pointings stays at the response level in 2.4.
 - **Divide the recovered S/N by PB(theta).** The primary beam attenuates
   off-axis sources within every pointing, so a raw response understates the
   intrinsic line flux away from the phase centre.
@@ -154,7 +105,7 @@ What it costs, and what has to be right:
   gridding at the window centre is accurate to that level. Check it is
   acceptable rather than assuming.
 - Bin weight-aware and per channel, `V_cell = sum(X) / sum(w)` with
-  `w_cell = sum(w)`, which the `X` storage of section 1 provides directly.
+  `w_cell = sum(w)`, which the stored `X` provides directly.
 
 This overlaps with the NUFFT below, since gridding is the first step of a type-1
 NUFFT, but the two are complementary. Binning is far cheaper than a transform
@@ -223,7 +174,7 @@ loop inside `jit` is unrolled at trace time. Measured at 16384 positions:
 fuse it away. `lax.map` sequences the batch and holds memory flat for about 1.5x
 the time.
 
-**Fitting the real data.** Even factored, a Band 3 pointing is 2.4 GB of
+**Fitting the real data.** As stored, a Band 3 pointing is 1.4 GB of
 visibilities, and the NUFFT output is a dirty cube of `n_pos x n_freq x 8` bytes,
 which for a 512 x 512 grid over 128 channels is 34 GB. The frequency axis is the
 natural chunk: hold the visibilities resident, stream channels through the NUFFT,
@@ -239,7 +190,7 @@ fundamentally Apple GPUs have no double precision, which conflicts with the
 float64 decision above. Worth retesting in a throwaway environment rather than
 the working one, but do not plan around it.
 
-## 3. Real data: SPT-CL J0459-4947
+## 2. Real data: SPT-CL J0459-4947
 
 | | Band 1 | Band 3 |
 |---|---|---|
@@ -253,7 +204,7 @@ the working one, but do not plan around it.
 Lines sit at different sky positions in both bands, so this is a genuine blind
 search. Each step below is a gate.
 
-### 3.1 Decide whether continuum subtraction is needed
+### 2.1 Decide whether continuum subtraction is needed
 Run the finder on a single pointing with and without `uvcontsub`. A continuum
 source biases the filter because the template integrates a smooth component as if
 it were line flux. Compare recovered line lists and S/N, then decide whether
@@ -264,7 +215,7 @@ masked as line-contaminated while fitting.
 is estimated in S/N; subtraction and imaging are in Jy:
 
 1. Whiten first: `V' = V * sqrt(w) = X / sqrt(w)`, with `X` and `w` as stored
-   in section 1.
+   per (field, spw).
 2. Estimate the continuum of each visibility row along the line of sight,
    over its channels within one (field, spw). A plain mean of `V'` is only
    minimum-variance if `w` is constant across the row, so use the weighted
@@ -278,8 +229,8 @@ is estimated in S/N; subtraction and imaging are in Jy:
    sum(w)`. Multiply it by the primary beam and save it as the continuum
    diagnostic.
 
-This shares the NUFFT with the position search in section 2, and the per-field
-chunking from section 1 bounds its memory.
+This shares the NUFFT with the position search in section 1, and the
+per-(field, spw) chunks bound its memory.
 
 For the masking decision specifically, a per-channel power statistic works
 directly on the visibilities: by Parseval, `sum_j w_j |V_j(nu)|^2` is the power of
@@ -288,18 +239,22 @@ bright channels with no imaging at all. It is spatially integrated, so it dilute
 a faint compact line across the field and will only catch the bright ones, which
 is exactly what continuum masking needs.
 
-### 3.2 Detection inference on one pointing
+### 2.2 Detection inference on one pointing
 Single Band 3 pointing. Turn the response cube into a catalogue: position,
 frequency, width and S/N per candidate. Calibrate the false-positive rate from
 the jackknife response over the same grid.
 
-**Jackknife weights (parked).** `jackknife` keeps the pair-averaged weight `w`,
-but `(V_a - V_b)/2` has inverse variance `4/(1/w_a + 1/w_b)`, i.e. `2w`. The
-jackknife dirty image has the right noise, but the S/N normalisation uses half the
-weight, so the jackknife response has variance 1/2 (measured on the fixture:
-standard deviation 0.71 against 1.01 for the data). A false-positive rate
-calibrated on it is optimistic by `sqrt(2)` in S/N. Fix the weights before this
-calibration.
+**Correlated channels.** On real data the response is not yet unit-variance.
+The weights are right (whitened jackknife visibilities have variance 1.02), but
+adjacent channels of the 128-channel windows are correlated by +0.67 and
+next-nearest by +0.17, the Hanning spectral response; the 960-channel Band 1
+window, spectrally averaged, shows +0.11. The filter assumes independent
+channels, so the jackknife response has a standard deviation of 1.3-1.7 in the
+128-channel windows and 1.07 in the 960-channel one. Either put the channel
+covariance into the kernel normalisation (a tridiagonal-plus term per window)
+or calibrate thresholds on the jackknife per window; until then, real-data S/N
+is inflated by up to ~1.6. The jackknife weight itself is fixed: the pair
+difference carries `4/(1/w_a + 1/w_b)`.
 
 **Grouping and clipping.** One source does not produce one detection. The
 response is correlated across neighbouring positions on the beam scale and across
@@ -311,22 +266,33 @@ The false-positive calibration has to count groups rather than grid points,
 otherwise the trials factor is badly wrong. Bright-line subtraction before
 searching for faint ones belongs here as well.
 
-### 3.3 Joint Band 1 and Band 3 identification
+### 2.3 Joint Band 1 and Band 3 identification
 One pointing per band. A line in each band at the same sky position is a redshift
 confirmation, since the bands sample different transitions of the same ladder.
 Needs co-spatial matching with a tolerance set by the coarser beam, a way to
 combine two independent significances, and a catalogue format that spans bands.
 
-### 3.4 All seven Band 3 pointings
+### 2.4 All seven Band 3 pointings
 Mosaic. Pointings overlapping the same sky position have different primary-beam
 attenuation, so visibilities cannot simply be concatenated. Candidate approach: a
 per-pointing PB factor in the UV model, and a joint response summed over pointings
-with PB-squared weighting. Requires the per-field chunking from section 1.
+with PB-squared weighting. The shared grid exists: positions are offsets from one
+reference direction, each field's phase centre is stored in that frame, and
+`luv-find --field` searches one pointing on lattice points common to all of them.
+Checked on the brightest line of the CASA dirty mosaic cube (84.57 GHz, 2" east
+and 20.5" north of field 0): every pointing recovers it at that WCS position to
+within 1-2", at S/N 14-17 in the three pointings ~20" away and falling with
+distance as the primary beam does, so the model's `dra` is east on real data.
+What remains is the PB factor and the combination.
 
-## 4. Sources that are not Gaussians
+## 3. Sources that are not Gaussians
 
 The matched filter is only optimal when the template resembles the source, and
-everything here assumes an elliptical Gaussian. Lensed systems break that badly:
+everything here assumes an elliptical Gaussian. It does not even have a position
+angle yet: `bmaj` lies along RA and `bmin` along Dec, in the model and the mock
+alike, and nothing keeps `bmaj >= bmin`. Add `pa` as a grid key (rotate u, v in
+`Gaussian.envelope`, `theta` in the mock's `Gaussian2D`) before searching for
+elongated sources. Lensed systems break the Gaussian assumption badly:
 SDP.81 shows dense-gas tracers and continuum along an Einstein arc, where a single
 Gaussian is a poor match and costs real S/N.
 
@@ -339,7 +305,8 @@ caveat in the catalogue.
 ## Longer term
 
 - **Merge with [alma-data-prep](https://github.com/Joshiwavm/alma-data-prep).**
-  Start with the chunked export described in section 1.
+  The per-(field, spw) reader in `data.py` is the piece to share: Stokes I from
+  `WEIGHT` and `FLAG`, the selection alma-data-prep's own export applies.
 - **Bright-line subtraction.** Subtract the best-fit UV model and re-run on the
   residual. Needs a bright-plus-faint fixture. Detection does not need the
   moment-8 machinery in `alma_data_prep.export_cube.ExportCube`: that map is
@@ -348,7 +315,7 @@ caveat in the catalogue.
   cannot move into the visibility plane either, because `max` is nonlinear and
   pointwise in space while the Fourier relation is linear; Parseval gives total
   power, not a per-pixel maximum. The reason to want it there, avoiding a CASA
-  imaging pass, is solved instead by the NUFFT in section 2, which produces the
+  imaging pass, is solved instead by the NUFFT in section 1, which produces the
   dirty cube directly.
 - **The `dra` sign flip** between image and model conventions is documented and
   asserted but not fixed. Fixing it means regenerating the committed fixture.
