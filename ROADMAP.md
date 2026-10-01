@@ -19,53 +19,34 @@ grid. Measured with `luv-export`:
 | In memory, old layout | 32.9 GB | 39.4 GB |
 | In memory, as stored | 9.5 GB | 10.1 GB (1.4 GB per pointing) |
 | Export time, peak RSS | 1:36, 14.7 GB | 1:44, 2.6 GB |
-| 3 x 3 grid + jackknife, 9 workers | 3:02, 18 GB | 0:17, 7 GB (one pointing) |
 
-Memory for the search is the data, shared copy-on-write by the workers, plus
-channel blocks of about 256 MB per temporary in each worker.
+The matched filter runs in JAX, float64, on a whole window at once. Per channel,
+the position search is one complex matrix product over a `dra x ddec` grid,
+with the phase factors advanced from channel to channel by recurrence; the line
+template is then centred on every channel and normalised over the channels it
+covers. A line peaks on its own channel at its S/N: on the size mocks the
+template weighting gives 10.000 for a declared 10 at every size, with symmetric
+neighbours and no response at the window edges. The process pins itself to a
+quarter of the cores, at most all but two. Blind search with the default grid
+(+-0.4 primary beam in half-resolution steps, three widths) and its jackknife,
+on 12 of 48 cores:
 
-Work the two blocks below in order: performance has to land before the real
-data are tractable as a blind search.
+| | Band 1 | Band 3, one pointing |
+|---|---|---|
+| Grid points x channels | 21,675 x 1,344 | 11,907 x 512 |
+| Data, jackknife | 6:39, 3:19 | 0:39, 0:21 |
+| Total with loading, peak RSS | 10:55, 22 GB | 1:10, 3.3 GB |
+
+The per-point code this replaced needed about 8 s per grid point and pass on a
+Band 3 pointing, roughly 26 CPU-hours for the same grid. Beyond 12 cores the
+search does not get faster (16 cores: 43 s against 39 s; 8 cores: 51 s), so the
+core budget costs nothing.
+
+Section 2 is next: one pointing searches in about a minute, so the real-data
+work no longer waits on performance. The rest of section 1 is about scaling to
+larger grids.
 
 ## 1. Performance
-
-### Analytic evaluation instead of per-grid-point exponentials
-
-Most of the time per grid point is complex exponentials over every
-visibility. Because the model is a Gaussian, much of it is redundant. The model
-phase is already gone: shifted onto its own position the model is the phase-free
-`A(u,v) * S(nu)`, so the kernel is built that way and only the data are
-phase-shifted. On Band 1 (557 M visibility-channels, one pointing) a grid point
-takes about 70 s per worker.
-
-- **The kernel is position-independent.** `A(u,v; bmin, bmaj)` does not contain
-  dra or ddec, so the normalised kernel is identical at every position, verified
-  to 3e-14. It needs computing once per (size, width), not once per grid point.
-- **The template transform is closed-form.** The Fourier transform of a Gaussian
-  is a Gaussian, so `fft(kernel)` can be written down instead of computed.
-
-### Weighted sums as matrix products
-
-The weighted sums are memory-bound. `np.sum(w * t * d, axis=1)` materialises a
-full-size temporary and reduces it on one thread; `X @ t` makes one
-multithreaded BLAS pass with no temporary. Measured on a 48-core CPU, float64,
-128 channels x 500 k visibilities with weights varying per channel, all paths
-agreeing to 1e-12:
-
-| Operation | numpy elementwise | numpy `@` | jax `jit`, fused | jax `jit`, `@` |
-|---|---|---|---|---|
-| Channel collapse, one template | 333 ms | 7.8 ms | 37 ms | 10.7 ms |
-| Continuum per row, no `X` | 350 ms | | 20 ms | |
-| 64 templates, signal + normalisation | | 220 ms | 7070 ms (`vmap`) | 278 ms |
-
-- `X` is stored, so it is computed once; it does not depend on the template.
-  Many templates then stack into one GEMM, about 3.4 ms per template here. The
-  stored weight is `w_row` per row times the channel flag mask, so the
-  normalisation `w @ t**2` is `(~flag * t**2) @ w_row`.
-- `jit` alone gains 17x where no matrix product exists, by fusing the multiply
-  into the reduction, but on CPU it does not beat BLAS for `@`.
-- Never `vmap` over templates: it materialises the templates x channels x
-  visibilities array, as in the JAX section below.
 
 ### uv binning, corrected for the primary beam
 
@@ -127,68 +108,26 @@ d(nu; dra, ddec) = sum_j w_j Re[ V_j(nu) exp(-2i pi (u_j dra + v_j ddec)) ] / su
 Read as a function of `(dra, ddec)`, that is a Fourier transform of the weighted
 visibilities from the irregular `(u, v)` samples onto a regular position grid: a
 type-1 NUFFT, and physically just the dirty image of that channel. Looping over
-positions is therefore computing the dirty image one pixel at a time, at
-`O(N_pos * N_vis)`. One NUFFT per channel produces every position at once, at
-roughly `O(N_vis + N_grid log N_grid)`. It has to be per channel because
-`u * nu / c` rescales with frequency, which is ordinary spectral-cube gridding.
+positions is therefore computing the dirty image one pixel at a time. The filter
+already does that as a matrix product: on a `dra x ddec` grid the phase factorises
+into `exp(-2i pi u dra) * exp(-2i pi v ddec)`, so every channel is one complex
+GEMM over all positions, `O(n_dra * n_ddec * N_vis)`, and the phase factors
+advance from channel to channel by recurrence instead of new exponentials. One
+NUFFT per channel would produce every position at roughly
+`O(N_vis + N_grid log N_grid)`. It has to be per channel because `u * nu / c`
+rescales with frequency, which is ordinary spectral-cube gridding.
 
-**Spectral.** `delay_transform` slides the template along frequency. This part
-does not change. It runs on an array of shape `(n_pos, n_freq)`, negligible next
-to the visibilities, and vectorises trivially.
+**Spectral.** The line template centred on every channel, normalised per lag, is
+a matrix over the channel axis (`_spectral`). This part does not change. It runs
+on an array of shape `(n_freq, n_pos)`, negligible next to the visibilities.
 
-So the restructured pipeline is: one NUFFT per channel to build the weighted
-dirty cube, one kernel normalisation per template shape, then the existing FFT
-along frequency for every position. The two transforms are along different axes
-and compose; the NUFFT replaces the phase-shift loop, not `delay_transform`.
+So a NUFFT would replace only the per-channel GEMM in `_collapse`. One constraint
+it adds: the position grid must be regular, where the GEMM takes any `dra` and
+`ddec` lists. A blind search wants a regular grid anyway.
 
-One constraint this introduces: the position grid must be regular. The current
-code accepts arbitrary `dra`/`ddec` lists, which stays useful for targeted
-checks, but a blind search wants a regular grid anyway.
-
-### JAX, jit and large volumes
-
-Measured on the fixture, 256 positions, CPU, float64, agreeing with the current
-path to 5e-9:
-
-| Path | Time |
-|---|---|
-| Current numpy | 1510 ms |
-| Analytic, kernel hoisted | 166 ms |
-| `vmap`, no jit | 95 ms |
-| `vmap` + `jit` | 11 ms |
-
-The restructuring is also a precondition, not an alternative:
-`_grid_point_response` deep-copies a `SimpleNamespace` and mutates model
-attributes with `setattr`, neither of which is traceable, so the present code
-cannot be jitted at all.
-
-**Batching is an explicit choice.** JAX does not parallelise a Python loop; a
-loop inside `jit` is unrolled at trace time. Measured at 16384 positions:
-
-| | Time | Memory growth |
-|---|---|---|
-| `vmap` | 1250 ms | 8.6 GB |
-| `lax.map` | 1860 ms | ~0 GB |
-
-`vmap` materialises the `n_pos x n_freq x n_vis` intermediate and XLA does not
-fuse it away. `lax.map` sequences the batch and holds memory flat for about 1.5x
-the time.
-
-**Fitting the real data.** As stored, a Band 3 pointing is 1.4 GB of
-visibilities, and the NUFFT output is a dirty cube of `n_pos x n_freq x 8` bytes,
-which for a 512 x 512 grid over 128 channels is 34 GB. The frequency axis is the
-natural chunk: hold the visibilities resident, stream channels through the NUFFT,
-and reduce along frequency as you go rather than materialising the cube. Use
-`lax.map` over channel chunks with `vmap` inside each, and keep the chunk shape
-fixed so compilation is reused; going from 256 to 300 positions retriggers a
-73 ms compile against 10 ms cached.
-
-**GPU.** On the cluster this is CUDA, where float64 works. On this Mac it is not
-currently available: `jax-metal` last released 0.1.1 in October 2024 against the
-jaxlib 0.4.34 plugin interface while the environment has jax 0.11.2, and more
-fundamentally Apple GPUs have no double precision, which conflicts with the
-float64 decision above. Worth retesting in a throwaway environment rather than
-the working one, but do not plan around it.
+Where it starts to matter: the GEMM cost grows with the number of positions times
+visibilities, so the Band 1 default grid (21,675 points, 415 k rows in the
+960-channel window) takes 6.6 minutes per pass where a Band 3 pointing takes 39 s.
 
 ## 2. Real data: SPT-CL J0459-4947
 
@@ -251,8 +190,9 @@ next-nearest by +0.17, the Hanning spectral response; the 960-channel Band 1
 window, spectrally averaged, shows +0.11. The filter assumes independent
 channels, so the jackknife response has a standard deviation of 1.3-1.7 in the
 128-channel windows and 1.07 in the 960-channel one. Either put the channel
-covariance into the kernel normalisation (a tridiagonal-plus term per window)
-or calibrate thresholds on the jackknife per window; until then, real-data S/N
+covariance into the per-lag normalisation of `_spectral` (`sqrt(k^T C k)` with
+a tridiagonal-plus `C` per window) or calibrate thresholds on the jackknife per
+window; until then, real-data S/N
 is inflated by up to ~1.6. The jackknife weight itself is fixed: the pair
 difference carries `4/(1/w_a + 1/w_b)`.
 
@@ -316,6 +256,10 @@ caveat in the catalogue.
   power, not a per-pixel maximum. The reason to want it there, avoiding a CASA
   imaging pass, is solved instead by the NUFFT in section 1, which produces the
   dirty cube directly.
+- **GPU.** The filter is device-agnostic JAX. miscanti has a Tesla T4 but no
+  CUDA jaxlib, and the T4's float64 rate is 1/32 of its float32 rate, so it is
+  unlikely to beat the CPU; Apple GPUs have no float64 at all. Worth trying on
+  a cluster GPU with real float64 throughput (A100/H100).
 - **The `dra` sign flip** between image and model conventions is documented and
   asserted but not fixed. Fixing it means regenerating the committed fixture.
 - **Other exploration methods** beyond grid search, once it is understood on real
