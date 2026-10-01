@@ -50,7 +50,7 @@ def test_response_figure(data, truth, plots):
     mod = Model()
     mod.addcomponent(g)
     mf = MatchedFilter(data, mod)
-    mf.run(pool=1, jackknife=True)
+    mf.run(jackknife=True)
     path = response_check(
         mf, plots_dir=str(plots), name="filter_response", line_ghz=truth["sources"][0]["line"]["mean"]
     )

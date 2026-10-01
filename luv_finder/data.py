@@ -136,7 +136,8 @@ class Chunk:
         a, b = np.flatnonzero(first)[ia], np.flatnonzero(~first)[ib]
 
         w_row = pair_weight(self.w_row[a], self.w_row[b])
-        flag = self.flag[:, a] | self.flag[:, b]
+        # column indexing returns Fortran-ordered arrays; keep chunks row-major
+        flag = np.ascontiguousarray(self.flag[:, a] | self.flag[:, b])
         diff = 0.5 * (self.X[:, a] / self.w_row[a] - self.X[:, b] / self.w_row[b])
         return dataclasses.replace(
             self,

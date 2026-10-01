@@ -72,7 +72,7 @@ def test_grid_preset_recovers_the_line(smoke):
     mod = Model()
     mod.addcomponent(comp)
     mf = MatchedFilter(data, mod)
-    mf.run(pool=1)
+    mf.run()
 
     src = cfg["sources"][0]
     peak_ghz = mf.frequencies()[np.argmax(mf.response[mf.best_index])]

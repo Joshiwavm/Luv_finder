@@ -15,6 +15,19 @@ C_KMS = c.to(u.km / u.s).value
 FWHM_TO_SIGMA = 1 / 2.355
 
 
+def envelope(uw, vw, bmaj, bmin, pa, xp=np):
+    """Visibility amplitude of a unit-flux elliptical Gaussian at (uw, vw) wavelengths.
+
+    ``bmaj``/``bmin`` are the axes' sigma in rad and ``pa`` the major axis' position angle in
+    degrees east of north. ``xp`` is the array module, so the matched filter can pass
+    ``jax.numpy``.
+    """
+    # u, v pair with east, north; the major axis points along (sin pa, cos pa)
+    sin, cos = xp.sin(xp.deg2rad(pa)), xp.cos(xp.deg2rad(pa))
+    u_maj, u_min = uw * sin + vw * cos, uw * cos - vw * sin
+    return xp.exp(-2 * np.pi**2 * ((bmaj * u_maj) ** 2 + (bmin * u_min) ** 2))
+
+
 class Gaussian:
     """2D spatial x 1D spectral Gaussian evaluated directly in the UV plane.
 
@@ -76,11 +89,7 @@ class Gaussian:
 
     def envelope(self, chunk) -> np.ndarray:
         """Spatial envelope A(u, v): the source's visibility amplitude, 1 at zero spacing, (n_chan, n_row)."""
-        uw, vw = chunk.uv_waves()
-        # u, v pair with east, north; the major axis points along (sin pa, cos pa)
-        sin, cos = np.sin(np.deg2rad(self.pa)), np.cos(np.deg2rad(self.pa))
-        u_maj, u_min = uw * sin + vw * cos, uw * cos - vw * sin
-        return np.exp(-2 * np.pi**2 * ((self.bmaj * u_maj) ** 2 + (self.bmin * u_min) ** 2))
+        return envelope(*chunk.uv_waves(), self.bmaj, self.bmin, self.pa)
 
     def spectrum(self, freq: np.ndarray) -> np.ndarray:
         """Line profile in Jy at ``freq`` (Hz)."""

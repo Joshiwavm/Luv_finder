@@ -63,7 +63,7 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("--grid", default=None, help="YAML grid ranges (see configs/grids/default.yaml)")
     p.add_argument("--field", type=int, default=None, help="field to search; required for a mosaic")
     p.add_argument("--jackknife", action="store_true", help="also run on a jackknifed noise realisation")
-    p.add_argument("--pool", type=int, default=None, help="worker processes (default 25%% of cores)")
+    p.add_argument("--cores", type=int, default=None, help="cores to use (default: a quarter, at most all but two)")
     p.add_argument("--plots-dir", default="plots")
     p.add_argument("--out", default=None, help="save responses + grid to this .npz")
     args = p.parse_args(argv)
@@ -76,7 +76,7 @@ def main(argv: list[str] | None = None) -> None:
     mod.addcomponent(comp)
 
     mf = MatchedFilter(data, mod)
-    mf.run(pool=args.pool, jackknife=args.jackknife)
+    mf.run(jackknife=args.jackknife, cores=args.cores)
 
     os.makedirs(args.plots_dir, exist_ok=True)
     mf.plot_response(os.path.join(args.plots_dir, "filter_response.png"))

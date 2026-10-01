@@ -55,7 +55,7 @@ def _response(data, grid_cfg, weighting):
     mod = Model()
     mod.addcomponent(comp)
     mf = MatchedFilter(data, mod, weighting=weighting)
-    mf.run(pool=1)
+    mf.run()
     return mf
 
 

@@ -54,6 +54,20 @@ the null, so the peak height is the line's signal-to-noise ratio. It does not
 depend on the template amplitude, which cancels in the kernel normalisation, so
 ``total_flux`` is not a search axis and passing it in a grid raises an error.
 
+Column ``i`` of the response is a line template centred exactly on channel ``i``.
+Each column is normalised over the channels its template covers, so the variance
+stays one at the window edges and next to flagged channels, and a line near an
+edge is reported at the S/N of its observed part. Rows follow ``grid_params``:
+the product of the ``dra, ddec, bmin, bmaj, pa, width`` axes, in that order.
+
+The search runs in JAX with float64, all positions of a window at once: on a
+``dra x ddec`` grid the phase shift factorises, so each channel is one complex
+matrix product, and the phase factors advance from channel to channel by
+recurrence. Large grids are split into blocks of ``dra`` rows to bound memory.
+On a shared machine the search pins itself to a quarter of the cores, never more
+than all but two (``luv-find --cores`` or ``MatchedFilter.run(cores=...)`` to
+change it; Linux only).
+
 Diagnostic figures
 ------------------
 
