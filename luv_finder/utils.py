@@ -5,7 +5,7 @@ from __future__ import annotations
 import numpy as np
 
 from ._casa import tools
-from .data import DataHandler
+from .data import pair_weight, target_selection
 
 
 def getstatwtweights(vis: str, seed: int = 0) -> None:
@@ -16,7 +16,7 @@ def getstatwtweights(vis: str, seed: int = 0) -> None:
     per-channel weights; mocks built this way do not.
     """
     rng = np.random.default_rng(seed)
-    fields, spws = DataHandler._target_selection(vis)
+    fields, spws = target_selection(vis)
     for field in fields:
         for spw in spws:
             ms = tools().ms()
@@ -25,7 +25,7 @@ def getstatwtweights(vis: str, seed: int = 0) -> None:
             ms.selectinit(datadescid=int(spw))
             ms.select({"field_id": int(field)})
             rec = ms.getdata(["data", "weight", "time"])
-            uvwght = 4.0 / (1.0 / rec["weight"][0] + 1.0 / rec["weight"][1])
+            uvwght = pair_weight(rec["weight"][0], rec["weight"][1])
 
             uvreal = (rec["data"][0].real + rec["data"][1].real) / 2.0
             uvtime = np.ones_like(uvreal) * rec["time"].reshape(1, -1)

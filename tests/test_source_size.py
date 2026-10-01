@@ -12,6 +12,7 @@ The mocks are exported to ``output/npz/size_<name>{,_noiseless}.npz`` and rebuil
 either YAML is newer than them.
 """
 
+import dataclasses
 from pathlib import Path
 
 import numpy as np
@@ -69,17 +70,17 @@ def test_recovers_declared_snr(name, weighting, request):
 
     noisy = DataHandler.from_npz(str(noisy_path))
     # expectation: the noiseless signal with the noise model of the noisy data
-    clean = DataHandler.from_npz(str(clean_path))
-    assert np.array_equal(clean.uvdata.uvtimes, noisy.uvdata.uvtimes)
-    clean.uvdata.uvwghts = noisy.uvdata.uvwghts
+    (signal,) = DataHandler.from_npz(str(clean_path)).chunks
+    (chunk,) = noisy.chunks
+    assert np.array_equal(signal.time, chunk.time)
+    clean = DataHandler(chunks=[dataclasses.replace(chunk, X=chunk.w * signal.vis)], metadata=noisy.metadata)
 
     expected = _response(clean, grid_cfg, weighting)
     drawn = _response(noisy, grid_cfg, weighting)
     peak = expected.response[0].max()
 
-    a = Gaussian(bmin=grid_cfg["bmin"], bmaj=grid_cfg["bmaj"]).envelope(noisy.uvdata)
-    w = noisy.uvdata.uvwghts
-    kept = np.sum(w * a) / np.sqrt(np.sum(w) * np.sum(w * a**2))
+    a = Gaussian(bmin=grid_cfg["bmin"], bmaj=grid_cfg["bmaj"]).envelope(chunk)
+    kept = np.sum(chunk.w * a) / np.sqrt(np.sum(chunk.w) * np.sum(chunk.w * a**2))
     predicted = declared if weighting == "template" else declared * kept
 
     if request.config.getoption("--plots"):

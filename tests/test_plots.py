@@ -4,12 +4,9 @@ Assertions here are deliberately weak: the point is to produce something to look
 at. The numerical checks live in the other test modules.
 """
 
-import functools
-
 import numpy as np
 
 from luv_finder import Gaussian, MatchedFilter, Model
-from luv_finder.matchedfilter import nu_center_func
 from luv_finder.plotting import response_check, spectrum_check
 
 
@@ -26,12 +23,12 @@ def test_spectrum_per_source(data, truth, plots):
             bmaj=res / 10,
             nu_center=src["line"]["mean"] * 1e9,
             width=src["line"]["width"],
-        ).profile(data.uvdata)
+        )
         path = spectrum_check(
             data,
             dra,
             ddec,
-            model_uv=model,
+            model=model,
             plots_dir=str(plots),
             name=f"spectrum_src{i}",
             line_ghz=src["line"]["mean"],
@@ -49,7 +46,6 @@ def test_response_figure(data, truth, plots):
         "bmin": data.metadata.minresolution() / 10,
         "bmaj": data.metadata.minresolution() / 10,
         "width": 300.0,
-        "nu_center": functools.partial(nu_center_func, uvfreq_min=data.uvdata.uvfreqs.min()),
     }
     mod = Model()
     mod.addcomponent(g)

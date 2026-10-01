@@ -25,51 +25,30 @@ def _save(fig, plots_dir: str, name: str) -> str:
     return path
 
 
-def _weighted_spectrum(uvdata, n_freq, n_vis, attr="UVreals"):
-    """Weighted mean of ``attr`` over visibilities, one value per channel."""
-    return np.average(
-        getattr(uvdata, attr).reshape(n_freq, n_vis),
-        weights=uvdata.uvwghts.reshape(n_freq, n_vis),
-        axis=1,
-    )
-
-
-def spectrum_check(data, dra, ddec, model_uv=None, plots_dir="plots", name="spectrum", line_ghz=None):
+def spectrum_check(data, dra, ddec, model=None, plots_dir="plots", name="spectrum", line_ghz=None):
     """Real and imaginary visibility spectra: data, jackknife and model.
 
-    Each is shown at the phase centre and phase-shifted onto (``dra``, ``ddec``).
-    A real source is flat at the phase centre and peaks once shifted; the
-    jackknife should stay consistent with zero in both.
+    The data are shown at the reference direction and phase-shifted onto (``dra``, ``ddec``);
+    the jackknife and the model (a source component) only shifted. A real source is flat at
+    the reference and peaks once shifted; the jackknife should stay consistent with zero.
     """
-    nf, nv = data.n_freqs(data.uvdata), data.n_visbs(data.uvdata)
-    freqs = data.uvdata.uvfreqs.reshape(nf, nv)[:, 0] / 1e9
-
-    shifted = data.apply_phase_shift(dra, ddec, data.uvdata)
-    jack = data.jackknife(data.uvdata)
-    jack_shift = data.apply_phase_shift(dra, ddec, jack)
+    freqs = data.freqs / 1e9
+    curves = [
+        ("data, phase centre", data.spectrum(), {"c": "C0", "lw": 1, "alpha": 0.6}),
+        ("data, shifted", data.spectrum(dra, ddec), {"c": "C1", "lw": 1.6}),
+        ("jackknife, shifted", data.jackknife().spectrum(dra, ddec), {"c": "C7", "lw": 1, "ls": ":"}),
+    ]
+    if model is not None:
+        curves.append(("model, shifted", data.spectrum(dra, ddec, model), {"c": "C2", "lw": 1.2, "alpha": 0.8}))
 
     fig, axes = plt.subplots(2, 1, sharex=True, figsize=(7.5, 6.5))
-    for ax, part in zip(axes, ("UVreals", "UVimags"), strict=True):
-        sh = part + "_shifted"
+    for ax, part, label in zip(axes, (np.real, np.imag), ("Re", "Im"), strict=True):
         ax.axhline(0, c="gray", ls="--", lw=0.8)
-        ax.plot(
-            freqs, _weighted_spectrum(data.uvdata, nf, nv, part), c="C0", lw=1, alpha=0.6, label="data, phase centre"
-        )
-        ax.plot(freqs, _weighted_spectrum(shifted, nf, nv, sh), c="C1", lw=1.6, label="data, shifted")
-        ax.plot(
-            freqs,
-            _weighted_spectrum(jack_shift, nf, data.n_visbs(jack_shift), sh),
-            c="C7",
-            lw=1,
-            ls=":",
-            label="jackknife, shifted",
-        )
-        if model_uv is not None:
-            ms = data.apply_phase_shift(dra, ddec, model_uv)
-            ax.plot(freqs, _weighted_spectrum(ms, nf, nv, sh), c="C2", lw=1.2, alpha=0.8, label="model, shifted")
+        for curve, spectrum, style in curves:
+            ax.plot(freqs, part(spectrum), label=curve, **style)
         if line_ghz is not None:
             ax.axvline(line_ghz, c="C3", ls="--", lw=0.8)
-        ax.set_ylabel(f"{'Re' if part == 'UVreals' else 'Im'}(V)  [Jy]")
+        ax.set_ylabel(f"{label}(V)  [Jy]")
     axes[0].legend(fontsize=8, ncol=2)
     axes[1].set_xlabel("Frequency [GHz]")
     axes[0].set_title(f'Visibility spectrum at dra={dra:+.2f}", ddec={ddec:+.2f}"')

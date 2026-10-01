@@ -3,23 +3,29 @@
 from __future__ import annotations
 
 import argparse
-import functools
 import os
 
 import numpy as np
 import yaml
 
 from ..data import DataHandler
-from ..matchedfilter import MatchedFilter, nu_center_func
+from ..matchedfilter import MatchedFilter
 from ..model import Gaussian, Model
 
 
-def load_data(path: str) -> DataHandler:
-    return DataHandler.from_npz(path) if path.endswith(".npz") else DataHandler(path)
+def load_data(path: str, field: int | None = None) -> DataHandler:
+    fields = None if field is None else [field]
+    return DataHandler.from_npz(path, fields) if path.endswith(".npz") else DataHandler(path, fields=fields)
 
 
 def build_grid(data: DataHandler, cfg: dict | None) -> dict:
-    """Grid ranges from YAML; positions default to the primary beam, sizes to the resolution."""
+    """Grid ranges from YAML, positions in the dataset's sky frame (arcsec from the reference).
+
+    Positions default to multiples of half the resolution, counted from the reference
+    direction and covering ``fov_fraction`` of the primary beam around the loaded field. The
+    lattice comes from dataset-level metadata, so every pointing of a mosaic gets the same
+    points. Sizes default to a tenth of the resolution.
+    """
     fov = data.metadata.primarybeamsize()
     res = data.metadata.minresolution()
     cfg = dict(cfg or {})
@@ -35,14 +41,18 @@ def build_grid(data: DataHandler, cfg: dict | None) -> dict:
             return np.arange(v["start"], v["stop"], v["step"])
         return np.atleast_1d(v)
 
-    half = cfg.get("fov_fraction", 0.4) * fov
+    half, step = cfg.get("fov_fraction", 0.4) * fov, res / 2
+
+    def lattice(centre):
+        return step * np.arange(np.ceil((centre - half) / step), np.floor((centre + half) / step) + 1)
+
+    dra, ddec = data.chunks[0].offset
     return {
-        "dra": rng("dra", {"start": -half, "stop": half, "step": res / 2}),
-        "ddec": rng("ddec", {"start": -half, "stop": half, "step": res / 2}),
+        "dra": rng("dra", lattice(dra)),
+        "ddec": rng("ddec", lattice(ddec)),
         "bmin": rng("bmin", res / 10),
         "bmaj": rng("bmaj", res / 10),
         "width": rng("width", [200.0, 300.0, 400.0]),
-        "nu_center": functools.partial(nu_center_func, uvfreq_min=data.uvdata.uvfreqs.min()),
     }
 
 
@@ -50,13 +60,14 @@ def main(argv: list[str] | None = None) -> None:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--ms", required=True, help=".ms directory or .npz from luv-export")
     p.add_argument("--grid", default=None, help="YAML grid ranges (see configs/grids/default.yaml)")
+    p.add_argument("--field", type=int, default=None, help="field to search; required for a mosaic")
     p.add_argument("--jackknife", action="store_true", help="also run on a jackknifed noise realisation")
     p.add_argument("--pool", type=int, default=None, help="worker processes (default 25%% of cores)")
     p.add_argument("--plots-dir", default="plots")
     p.add_argument("--out", default=None, help="save responses + grid to this .npz")
     args = p.parse_args(argv)
 
-    data = load_data(args.ms)
+    data = load_data(args.ms, args.field)
     grid_cfg = yaml.safe_load(open(args.grid)) if args.grid else None
     comp = Gaussian()
     comp.grid = build_grid(data, grid_cfg)

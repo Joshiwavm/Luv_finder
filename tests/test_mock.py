@@ -50,8 +50,9 @@ def test_simulated_shape_matches_preset(smoke):
     mock, cfg, _ = smoke
     data = DataHandler(mock.ms_noisy)
     nchan = cfg["cube_shape"][0]
-    assert data.n_freqs(data.uvdata) == nchan
-    assert data.uvdata.UVreals.size == nchan * data.n_visbs(data.uvdata)
+    (chunk,) = data.chunks
+    assert len(chunk.freq) == nchan
+    assert chunk.X.shape == (nchan, len(chunk.u))
 
 
 @pytest.mark.casa

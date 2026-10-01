@@ -4,7 +4,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Blind spectral-line finding in the UV plane for ALMA data: a UV-domain Gaussian line
 model is grid-searched against visibilities with a matched filter; a jackknifed copy of
-the data gives the noise reference. Only simulated single-pointing data so far.
+the data gives the noise reference. Real data (SPT-CL J0459-4947, Band 1 and the
+Band 3 mosaic) export and search per pointing; see ROADMAP.md for what is still open.
 
 ## Environment and commands
 
@@ -18,9 +19,9 @@ the data gives the noise reference. Only simulated single-pointing data so far.
 
 ## Architecture
 
-- `luv_finder/data.py` — `DataHandler`: flattens an MS into channel-major arrays (`uvdata`), NPZ round-trip, phase shift, `jackknife(mode="scan"|"random")`. CASA is reached lazily through `_casa.py`, so the NPZ path works without it.
+- `luv_finder/data.py` — `DataHandler` holds one frozen `Chunk` per (field, spw): `X = w * V` and `flag` as `(n_chan, n_row)`, `u`/`v`/`time`/`baseline`/`w_row` per row, `freq` per channel. Stokes I from `WEIGHT` and `FLAG`; autocorrelations and flagged rows dropped on reading. Positions are arcsec east/north of `Metadata.ref`, and each chunk's `offset` is its field centre in that frame, so one grid serves every pointing. `Metadata` is dataset-level. NPZ is written streaming, one chunk at a time; `from_npz(fields=...)` loads only those fields. `jackknife()` pairs integrations by baseline. CASA is reached lazily through `_casa.py`, so the NPZ path works without it.
 - `luv_finder/model.py` — `Model` + `Gaussian` (2D spatial x 1D spectral, evaluated analytically in UV). Parameters are exposed as `src_{NN}_{attr}`; the matched filter routes values back via `key.split("_", 2)[-1]`.
-- `luv_finder/matchedfilter.py` — `MatchedFilter`: expands `Model.grid` (scalar = fixed, array = enumerate, callable = derived from width), multiprocessing over grid points, FFT delay transform. The response is in S/N units (unit variance under the null); `total_flux` cancels in the kernel normalisation and is rejected as a grid key. `weighting="natural"` (noise weights only; the trial size cancels) or `"template"` (also weights by the source envelope A(u,v), optimal for resolved sources). Mock `snr` is the optimal S/N.
+- `luv_finder/matchedfilter.py` — `MatchedFilter`: expands `Model.grid` (scalar = fixed, array = enumerate), one field at a time, multiprocessing over grid points (data passed once per worker), channel blocks bound memory, FFT delay transform per spw with the kernel placed in each window. The response is in S/N units (unit variance under the null); `total_flux` cancels in the kernel normalisation and is rejected as a grid key. `weighting="natural"` (noise weights only; the trial size cancels) or `"template"` (also weights by the source envelope A(u,v), optimal for resolved sources). Mock `snr` is the optimal S/N.
 - `luv_finder/mock.py` — `MockObservation`: cube -> `simobserve` -> `tclean` -> `output/ms_files/<name>/`. YAML presets in `configs/mocks/`.
 - `luv_finder/_casa.py` — the only place that imports `casatools`/`casatasks`. It presets `casaconfig.config.logfile` so CASA writes to `logs/` (override with `LUV_CASA_LOG_DIR`) instead of scattering `casa-<timestamp>.log` in the working directory. Never import CASA directly; use `tools()`/`tasks()`, or call `configure_logging()` first if you must.
 - `luv_finder/plotting.py` — all diagnostic figures; each takes a directory and returns the path written. `MatchedFilter.plot_response` is a thin wrapper.

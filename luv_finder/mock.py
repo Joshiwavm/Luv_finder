@@ -349,8 +349,11 @@ class MockObservation:
                 continue
             dra, ddec = src.get("position", (0.0, 0.0))
             # model convention flips the sign of dra relative to the image
-            shifted = clean.apply_phase_shift(-dra, ddec, clean.uvdata)
-            out.append(float(np.sqrt(np.sum(noisy.uvdata.uvwghts * shifted.UVreals_shifted**2))))
+            snr2 = sum(
+                np.sum(n.w * (c.vis * c.phase(-dra, ddec)).real ** 2)
+                for c, n in zip(clean.chunks, noisy.chunks, strict=True)
+            )
+            out.append(float(np.sqrt(snr2)))
         return out
 
     def _calibrate(self) -> list[float]:

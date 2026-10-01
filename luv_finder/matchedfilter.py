@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import copy
-import functools
 import multiprocessing
 import os
 from itertools import product
@@ -13,17 +12,20 @@ import numpy as np
 from astropy.constants import c
 from tqdm import tqdm
 
-from .data import DataHandler
+from .data import Chunk, DataHandler
 from .model import Model
 
 #: Search axes that a grid may vary. ``total_flux`` is deliberately absent: the
 #: kernel normalisation is scale-invariant, so varying it duplicates grid points.
-GRID_KEYS = ("dra", "ddec", "bmin", "bmaj", "width", "nu_center")
+GRID_KEYS = ("dra", "ddec", "bmin", "bmaj", "width")
 
 #: How visibilities are weighted when a channel is collapsed: by noise only
 #: ("natural", optimal for a point source) or also by the source envelope A(u, v)
 #: ("template", optimal for a resolved source of the trial size).
 WEIGHTINGS = ("natural", "template")
+
+#: Channels are processed in blocks whose (channels x rows) complex temporaries stay near this size.
+BLOCK_BYTES = 256 * 2**20
 
 
 def nu_center_func(width: float, uvfreq_min: float) -> float:
@@ -36,43 +38,17 @@ def _default_pool(pool: int | None) -> int:
     return pool if pool is not None else max(1, int(multiprocessing.cpu_count() * 0.25))
 
 
-def _grid_point_response(args):
-    """Signal-to-noise spectrum of one grid point (module-level for multiprocessing).
+_FINDER: MatchedFilter | None = None
 
-    The kernel is normalised by ``sqrt(k^T N^-1 k)``, so the returned array is the
-    matched-filter statistic ``k^T N^-1 d / sqrt(k^T N^-1 k)``: unit variance under
-    the null, and equal to the line's S/N when the template matches. That
-    normalisation also makes the result independent of the template amplitude.
-    """
-    params, finder, n_vis, n_freq = args
-    data = finder.data
-    model_uv = finder._get_model(params)
-    model_uv = data.apply_phase_shift(params["src_00_dra"], params["src_00_ddec"], model_uv)
-    data_uv = data.apply_phase_shift(params["src_00_dra"], params["src_00_ddec"], data.uvdata)
 
-    signal = data_uv.UVreals_shifted.reshape(n_freq, n_vis)
-    kernel = model_uv.UVreals_shifted.reshape(n_freq, n_vis)
-    weight = data_uv.uvwghts.reshape(n_freq, n_vis)
-    # "natural" weights each visibility by its noise weight only, which is optimal for a
-    # point source; "template" also weights by the source envelope A(u, v), which is the
-    # full-visibility matched filter for a resolved source. Per channel the collapsed data
-    # sum(w t V) / sum(w t^2) has variance 1 / sum(w t^2), with t = 1 or A.
-    taper = 1.0
-    if finder.weighting == "template":
-        taper = finder.mod.component(0).envelope(data.uvdata).reshape(n_freq, n_vis)
-    weight_mean = np.sum(weight * taper**2, axis=1)
-    signal_mean = np.sum(weight * taper * signal, axis=1) / weight_mean
-    kernel_mean = np.sum(weight * taper * kernel, axis=1) / weight_mean
-    kernel_norm = kernel_mean * weight_mean / np.sqrt(kernel_mean @ (kernel_mean * weight_mean))
+def _init_worker(finder: MatchedFilter) -> None:
+    # Set once per worker, so tasks carry only grid points; with fork the data are shared.
+    global _FINDER
+    _FINDER = finder
 
-    width_hz = (4 / 2.355 * (params["src_00_width"] * u.km / u.s) / c * params["src_00_nu_center"] * u.Hz).to(u.Hz)
-    df = np.median(np.diff(np.unique(data.uvdata.uvfreqs))) * u.Hz
-    pad = int(width_hz / df + 0.5)
 
-    signal_p = np.pad(signal_mean, (0, 2 * pad), mode="reflect")
-    kernel_p = np.pad(kernel_norm, (0, 2 * pad), mode="reflect")
-    response = MatchedFilter.delay_transform(signal_p, kernel_p)
-    return response[pad:-pad], params
+def _worker(params: dict):
+    return _FINDER.response_at(params), params
 
 
 class MatchedFilter:
@@ -85,6 +61,7 @@ class MatchedFilter:
     Parameters
     ----------
     data : DataHandler
+        One field; pointings of a mosaic are searched one at a time on a common grid.
     mod : Model
         With one component whose ``grid`` dict defines the search ranges.
     weighting : {"natural", "template"}
@@ -94,7 +71,12 @@ class MatchedFilter:
     def __init__(self, data: DataHandler, mod: Model, weighting: str = "natural"):
         if weighting not in WEIGHTINGS:
             raise ValueError(f"weighting must be one of {WEIGHTINGS}, got {weighting!r}")
-        self.data = copy.deepcopy(data)
+        if len(data.fields) > 1:
+            raise ValueError(
+                f"data hold fields {data.fields}; the matched filter runs on one field at a time. "
+                "Load one with DataHandler(..., fields=[i]) or luv-find --field i."
+            )
+        self.data = data
         self.mod = copy.deepcopy(mod)
         self.weighting = weighting
         self.response = None
@@ -107,11 +89,50 @@ class MatchedFilter:
         """Circular cross-correlation via FFT."""
         return np.fft.ifft(np.fft.fft(signal, axis=0) * np.fft.fft(kernel, axis=0), axis=0).real
 
-    def _get_model(self, theta: dict):
+    def response_at(self, params: dict) -> np.ndarray:
+        """Signal-to-noise spectrum of one grid point, the windows concatenated in frequency order.
+
+        The kernel is normalised by ``sqrt(k^T N^-1 k)``, so this is the matched-filter
+        statistic ``k^T N^-1 d / sqrt(k^T N^-1 k)``: unit variance under the null, and equal to
+        the line's S/N when the template matches. That normalisation also makes the result
+        independent of the template amplitude.
+        """
         comp = self.mod.component(0)
-        for key, value in theta.items():
+        for key, value in params.items():
             setattr(comp, key.split("_", 2)[-1], value)
-        return comp.profile(self.data.uvdata)
+        return np.concatenate([self._window_response(chunk, comp) for chunk in self.data.chunks])
+
+    def _window_response(self, chunk: Chunk, comp) -> np.ndarray:
+        # the kernel line sits 4 sigma above the window's lowest channel; the delay transform
+        # slides it across the window
+        comp.nu_center = nu_center_func(comp._width, chunk.freq[0])
+        n_chan = len(chunk.freq)
+        weight_sum, signal_sum, kernel_sum = np.zeros(n_chan), np.zeros(n_chan), np.zeros(n_chan)
+        step = max(1, BLOCK_BYTES // (16 * len(chunk.u)))
+        for start in range(0, n_chan, step):
+            sl = slice(start, start + step)
+            block = chunk.channels(sl)
+            # "natural" weights each visibility by its noise weight only, which is optimal for a
+            # point source; "template" also weights by the source envelope A(u, v), which is the
+            # full-visibility matched filter for a resolved source. Per channel the collapsed data
+            # sum(w t V) / sum(w t^2) has variance 1 / sum(w t^2), with t = 1 or A. Shifted onto
+            # its own position the model is the real A(u, v) S(nu), so the kernel has no phase.
+            envelope = comp.envelope(block)
+            taper = envelope if self.weighting == "template" else 1.0
+            weighted = block.w * taper
+            weight_sum[sl] = np.sum(weighted * taper, axis=1)
+            signal_sum[sl] = np.sum(taper * (block.X * block.phase(comp.dra, comp.ddec)).real, axis=1)
+            kernel_sum[sl] = np.sum(weighted * envelope, axis=1) * comp.spectrum(block.freq)
+
+        # fully flagged channels carry no weight and contribute nothing
+        ok = weight_sum > 0
+        signal = np.divide(signal_sum, weight_sum, out=np.zeros(n_chan), where=ok)
+        kernel = kernel_sum / np.sqrt(np.sum(kernel_sum[ok] ** 2 / weight_sum[ok]))
+
+        pad = int(4 * comp.width / np.median(np.diff(chunk.freq)) + 0.5)
+        signal_p = np.pad(signal, (0, 2 * pad), mode="reflect")
+        kernel_p = np.pad(kernel, (0, 2 * pad), mode="reflect")
+        return self.delay_transform(signal_p, kernel_p)[pad : pad + n_chan]
 
     def _expand_grid(self) -> list[dict]:
         unknown = [k for k in self.mod.grid if k.split("_", 2)[-1] not in GRID_KEYS]
@@ -121,51 +142,28 @@ class MatchedFilter:
                 "total_flux in particular cancels in the kernel normalisation, so varying it "
                 "only duplicates grid points."
             )
-        variable, fixed, funcs = {}, {}, {}
-        for key, val in self.mod.grid.items():
-            if callable(val):
-                funcs[key] = val
-            else:
-                arr = np.atleast_1d(val)
-                (variable if arr.size > 1 else fixed)[key] = arr if arr.size > 1 else arr.item()
+        keys = list(self.mod.grid)
+        values = [np.atleast_1d(self.mod.grid[k]).tolist() for k in keys]
+        return [dict(zip(keys, combo, strict=True)) for combo in product(*values)]
 
-        keys = list(variable)
-        points = []
-        for combo in product(*(variable[k] for k in keys)):
-            p = dict(fixed, **dict(zip(keys, combo, strict=True)))
-            for key, fn in funcs.items():
-                raw = fn.func if isinstance(fn, functools.partial) else fn
-                nargs = raw.__code__.co_argcount
-                if isinstance(fn, functools.partial):
-                    nargs -= len(fn.args) + len(fn.keywords or {})
-                if nargs == 1:
-                    width = next((v for k, v in p.items() if k.endswith("width")), None)
-                    if width is None:
-                        raise ValueError(f"no width parameter available for derived grid key {key}")
-                    p[key] = fn(width)
-                else:
-                    p[key] = fn(p)
-            points.append(p)
-        return points
-
-    def get_response(self, pool: int | None = None, uvdata=None):
-        """Return (responses[n_grid, n_freq], grid_params) for ``uvdata`` (default: the data)."""
-        original = self.data.uvdata
-        self.data.uvdata = original if uvdata is None else uvdata
-        n_vis = self.data.n_visbs(self.data.uvdata)
-        n_freq = self.data.n_freqs(self.data.uvdata)
-        args = [(p, self, n_vis, n_freq) for p in self._expand_grid()]
-        with multiprocessing.Pool(_default_pool(pool)) as p:
-            results = list(tqdm(p.imap_unordered(_grid_point_response, args), total=len(args), desc="Grid search"))
-        self.data.uvdata = original
+    def get_response(self, pool: int | None = None, data: DataHandler | None = None):
+        """Return (responses[n_grid, n_freq], grid_params) for ``data`` (default: the data)."""
+        original = self.data
+        self.data = original if data is None else data
+        points = self._expand_grid()
+        try:
+            with multiprocessing.Pool(_default_pool(pool), initializer=_init_worker, initargs=(self,)) as p:
+                results = list(tqdm(p.imap_unordered(_worker, points), total=len(points), desc="Grid search"))
+        finally:
+            self.data = original
         responses, params = zip(*results, strict=True)
         return np.array(responses), list(params)
 
     def run(self, pool: int | None = None, jackknife: bool = False) -> None:
         self.response, self.grid_params = self.get_response(pool)
         if jackknife:
-            jacked = self.data.jackknife(self.data.uvdata)
-            self.response_jackknife, self.grid_params_jackknife = self.get_response(pool, uvdata=jacked)
+            jacked = self.data.jackknife()
+            self.response_jackknife, self.grid_params_jackknife = self.get_response(pool, data=jacked)
 
     @property
     def best_index(self) -> int:
@@ -177,13 +175,7 @@ class MatchedFilter:
 
     def frequencies(self) -> np.ndarray:
         """Channel frequencies in GHz."""
-        n_vis = self.data.n_visbs(self.data.uvdata)
-        n_freq = self.data.n_freqs(self.data.uvdata)
-        return self.data.uvdata.uvfreqs.reshape(n_freq, n_vis)[:, 0] / 1e9
-
-    def getmodel(self):
-        """Model visibilities at the best grid point."""
-        return self._get_model(self.best_params)
+        return self.data.freqs / 1e9
 
     def plot_response(
         self, filename: str = "plots/filter_response.png", show: bool = False, vline: float | None = None
