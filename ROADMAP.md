@@ -163,10 +163,10 @@ is estimated in S/N; subtraction and imaging are in Jy:
    line biases it by roughly its width over the window width.
 3. Convert back to Jy (divide by `sqrt(w)`) and subtract the continuum from
    every channel of the row.
-4. Dirty map of the continuum, in Jy, with `jax-finufft`: the type-1 NUFFT of
-   the continuum visibilities with natural weights, `sum(w C e^{...}) /
-   sum(w)`. Multiply it by the primary beam and save it as the continuum
-   diagnostic.
+4. Dirty map of the continuum, in Jy: `matchedfilter.dirty_maps` already gives
+   the natural-weighted continuum and moment-8 maps on the search grid (the
+   search's spatial collapse, no NUFFT). Multiply by the primary beam and save it
+   as the continuum diagnostic.
 
 This shares the NUFFT with the position search in section 1, and the
 per-(field, spw) chunks bound its memory.
@@ -254,8 +254,8 @@ caveat in the catalogue.
   cannot move into the visibility plane either, because `max` is nonlinear and
   pointwise in space while the Fourier relation is linear; Parseval gives total
   power, not a per-pixel maximum. The reason to want it there, avoiding a CASA
-  imaging pass, is solved instead by the NUFFT in section 1, which produces the
-  dirty cube directly.
+  imaging pass, is solved: `matchedfilter.dirty_cube` produces the dirty cube on
+  the search grid, and `dirty_maps` the moment-8 from it.
 - **GPU.** The filter is device-agnostic JAX. miscanti has a Tesla T4 but no
   CUDA jaxlib, and the T4's float64 rate is 1/32 of its float32 rate, so it is
   unlikely to beat the CPU; Apple GPUs have no float64 at all. Worth trying on

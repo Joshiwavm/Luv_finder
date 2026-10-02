@@ -102,6 +102,84 @@ def _spectral(sig, weight, amplitude, freq, widths):
     return num * norm[:, :, None, None, :]
 
 
+def _one_field(data: DataHandler) -> None:
+    if len(data.fields) > 1:
+        raise ValueError(
+            f"data hold fields {data.fields}; the matched filter runs on one field at a time. "
+            "Load one with DataHandler(..., fields=[i]) or luv-find --field i."
+        )
+
+
+def _blocks(chunk: Chunk, dra, ddec, shapes: tuple, template: bool):
+    """Run :func:`_collapse` on one window in blocks of ``dra`` rows; yields (rows, (sig, weight, amplitude)).
+
+    Must be iterated inside ``jax.enable_x64(True)``.
+    """
+    dfreq = np.diff(chunk.freq)
+    if dfreq.size and not np.allclose(dfreq, dfreq[0], rtol=1e-9):
+        raise ValueError(f"channels of field {chunk.field} spw {chunk.spw} are not uniformly spaced")
+    arrays = [jnp.asarray(a) for a in (chunk.u, chunk.v, chunk.X, chunk.w_row, chunk.flag, chunk.freq)]
+    dra = np.asarray(dra) - chunk.offset[0]
+    ddec = jnp.asarray(np.asarray(ddec) - chunk.offset[1])
+    n_complex = 2 + (len(shapes[0]) if template else 1)
+    block = max(1, min(len(dra), BLOCK_BYTES // (16 * n_complex * len(chunk.u))))
+    for start in range(0, len(dra), block):
+        rows = dra[start : start + block]
+        # pad the last block to the same shape, so the compiled scan is reused
+        padded = jnp.asarray(np.pad(rows, (0, block - len(rows)), mode="edge"))
+        step = dfreq[0] if dfreq.size else 0.0
+        shape = (jnp.asarray(s) for s in shapes)
+        yield len(rows), _collapse(*arrays, step, padded, ddec, *shape, template=template)
+
+
+def dirty_cube(data: DataHandler, dra, ddec, cores: int | None = None):
+    """Natural-weighted dirty cube of one field on the ``dra x ddec`` grid (arcsec, sky frame).
+
+    Returns the cube in Jy/beam, ``(n_chan, n_dra, n_ddec)`` with the windows in frequency order,
+    and the channel weights ``W``: the noise of channel ``i`` is ``1 / sqrt(W[i])``. This is the
+    search's spatial collapse for a point source, so it costs as much as one search pass.
+    """
+    _one_field(data)
+    limit_cores(cores)
+    point = (np.zeros(1), np.zeros(1), np.zeros(1))
+    cube, weights = [], []
+    with jax.enable_x64(True):
+        for chunk in data.chunks:
+            blocks = [
+                (n, np.asarray(sig)[:, 0, :n], np.asarray(w)[:, 0])
+                for n, (sig, w, _) in _blocks(chunk, dra, ddec, point, False)
+            ]
+            sig, weight = np.concatenate([b[1] for b in blocks], axis=1), blocks[0][2]
+            ok = weight[:, None, None] > 0
+            cube.append(np.divide(sig, weight[:, None, None], out=np.zeros_like(sig), where=ok))
+            weights.append(weight)
+    return np.concatenate(cube), np.concatenate(weights)
+
+
+def dirty_maps(data: DataHandler, dra, ddec, cores: int | None = None):
+    """Moment-8 and continuum dirty maps of one field on the ``dra x ddec`` grid.
+
+    Returns ``(moment8, continuum, sigma)``:
+
+    * ``continuum``: the weighted mean of the dirty cube over every channel, Jy/beam, with noise
+      ``sigma``;
+    * ``moment8``: for every position the largest channel value over its noise, in S/N, after
+      subtracting each window's own weighted-mean continuum, so a continuum source does not
+      dominate it (``max_nu [I / sigma_nu]``, as in alma-data-prep's moment-8).
+    """
+    cube, weight = dirty_cube(data, dra, ddec, cores)
+    continuum = np.tensordot(weight, cube, 1) / weight.sum()
+    edges = np.cumsum([len(c.freq) for c in data.chunks])[:-1]
+    line = np.concatenate(
+        [
+            part - np.tensordot(w, part, 1) / w.sum()
+            for part, w in zip(np.split(cube, edges), np.split(weight, edges), strict=False)
+        ]
+    )
+    moment8 = (line * np.sqrt(weight)[:, None, None]).max(axis=0)
+    return moment8, continuum, 1 / np.sqrt(weight.sum())
+
+
 class MatchedFilter:
     """Evaluate a model kernel against the data over a parameter grid.
 
@@ -124,11 +202,7 @@ class MatchedFilter:
     def __init__(self, data: DataHandler, mod: Model, weighting: str = "natural"):
         if weighting not in WEIGHTINGS:
             raise ValueError(f"weighting must be one of {WEIGHTINGS}, got {weighting!r}")
-        if len(data.fields) > 1:
-            raise ValueError(
-                f"data hold fields {data.fields}; the matched filter runs on one field at a time. "
-                "Load one with DataHandler(..., fields=[i]) or luv-find --field i."
-            )
+        _one_field(data)
         self.data = data
         self.weighting = weighting
         self.axes = self._grid_axes(mod)
@@ -173,28 +247,10 @@ class MatchedFilter:
         return response.transpose(4, 5, 0, 1, 2, 3, 6).reshape(-1, response.shape[-1])
 
     def _window(self, chunk: Chunk, axes: dict, shapes: tuple) -> np.ndarray:
-        dfreq = np.diff(chunk.freq)
-        if dfreq.size and not np.allclose(dfreq, dfreq[0], rtol=1e-9):
-            raise ValueError(f"channels of field {chunk.field} spw {chunk.spw} are not uniformly spaced")
-        arrays = [jnp.asarray(a) for a in (chunk.u, chunk.v, chunk.X, chunk.w_row, chunk.flag, chunk.freq)]
-        dra, ddec = axes["dra"] - chunk.offset[0], jnp.asarray(axes["ddec"] - chunk.offset[1])
-        n_complex = 2 + (len(shapes[0]) if self.weighting == "template" else 1)
-        block = max(1, min(len(dra), BLOCK_BYTES // (16 * n_complex * len(chunk.u))))
         out = []
-        for start in range(0, len(dra), block):
-            rows = dra[start : start + block]
-            # pad the last block to the same shape, so the compiled scan is reused
-            padded = jnp.asarray(np.pad(rows, (0, block - len(rows)), mode="edge"))
-            sig, weight, amplitude = _collapse(
-                *arrays,
-                dfreq[0] if dfreq.size else 0.0,
-                padded,
-                ddec,
-                *(jnp.asarray(s) for s in shapes),
-                template=self.weighting == "template",
-            )
-            response = _spectral(sig, weight, amplitude, arrays[-1], jnp.asarray(axes["width"]))
-            out.append(np.asarray(response)[:, :, : len(rows)])
+        widths = jnp.asarray(axes["width"])
+        for n, collapsed in _blocks(chunk, axes["dra"], axes["ddec"], shapes, self.weighting == "template"):
+            out.append(np.asarray(_spectral(*collapsed, jnp.asarray(chunk.freq), widths))[:, :, :n])
         return np.concatenate(out, axis=2)
 
     @property

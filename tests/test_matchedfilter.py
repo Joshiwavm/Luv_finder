@@ -6,7 +6,7 @@ import pytest
 
 from luv_finder import DataHandler, Gaussian, MatchedFilter, Model
 from luv_finder.data import C, Chunk, Metadata
-from luv_finder.matchedfilter import default_cores
+from luv_finder.matchedfilter import default_cores, dirty_cube, dirty_maps
 from luv_finder.model import FWHM_TO_SIGMA
 
 C_KMS = 299792.458
@@ -250,6 +250,32 @@ def test_template_weighting_recovers_a_resolved_source():
     assert template == pytest.approx(10.0, abs=0.01)
     assert natural == pytest.approx(10.0 * kept, abs=0.05)
     assert kept < 0.8
+
+
+def test_dirty_cube_of_a_point_source_is_its_flux():
+    """Natural weighting: the dirty map of a point source peaks at its flux, in every channel."""
+    chunk = _chunk(20, 500, offset=(3.0, 1.0))
+    data = DataHandler(
+        chunks=[dataclasses.replace(chunk, X=2.0 * np.conj(chunk.phase(5.0, -3.0)))], metadata=_metadata(chunk)
+    )
+    cube, weight = dirty_cube(data, [-10.0, 0.0, 5.0], [-3.0, 0.0, 8.0])
+    assert cube.shape == (20, 3, 3)
+    assert np.allclose(cube[:, 2, 0], 2.0)
+    assert np.allclose(weight, 500.0)
+
+
+def test_dirty_maps_separate_continuum_and_line():
+    """The continuum map shows the continuum source; the moment-8 the line, not the continuum."""
+    chunk = _chunk(40, 800)
+    continuum = 0.5 * np.conj(chunk.phase(20.0, -15.0))
+    line = Gaussian(dra=-10.0, ddec=8.0, nu_center=chunk.freq[20], width=300.0, total_flux=4.0).profile(chunk)
+    data = DataHandler(chunks=[dataclasses.replace(chunk, X=continuum + line)], metadata=_metadata(chunk))
+    axis = np.arange(-30.0, 31.0, 5.0)
+    moment8, cont, sigma = dirty_maps(data, axis, axis)
+    assert sigma == pytest.approx(1 / np.sqrt(40 * 800))
+    assert np.unravel_index(np.argmax(cont), cont.shape) == (10, 3)  # (+20, -15)
+    assert np.unravel_index(np.argmax(moment8), moment8.shape) == (4, 8)  # (-10, +8)
+    assert moment8[10, 3] < 0.2 * moment8.max()
 
 
 @pytest.mark.parametrize(("total", "used"), [(48, 12), (8, 2), (4, 1), (2, 1), (1, 1)])
