@@ -55,3 +55,57 @@ def test_response_figure(data, truth, plots):
         mf, plots_dir=str(plots), name="filter_response", line_ghz=truth["sources"][0]["line"]["mean"]
     )
     assert path.endswith(".png")
+
+
+def test_search_figures(data, truth, plots):
+    """S/N map with the injected sources circled, phase centre against the sources, and noise statistics."""
+    from luv_finder.plotting import noise_check, responses_check, snr_map
+
+    g = Gaussian()
+    axis = np.arange(-30.0, 30.1, 2.0)
+    g.grid = {"dra": axis, "ddec": axis, "bmin": 0.3, "bmaj": 0.3, "width": 300.0}
+    mod = Model()
+    mod.addcomponent(g)
+    mf = MatchedFilter(data, mod)
+    mf.run(jackknife=True)
+    marks = {f"line {s['line']['mean']} GHz": s["position_model"] for s in truth["sources"]}
+    assert snr_map(mf, plots_dir=str(plots), name="snr_map", marks=marks).endswith(".png")
+    assert noise_check(mf, plots_dir=str(plots), name="noise").endswith(".png")
+
+    points = {"phase centre": (0.0, 0.0), **{k: tuple(v) for k, v in marks.items()}}
+    single = Gaussian()
+    single.grid = {"dra": [p[0] for p in points.values()], "ddec": [p[1] for p in points.values()], "width": 300.0}
+    mod = Model()
+    mod.addcomponent(single)
+    pick = MatchedFilter(data, mod)
+    pick.run()
+    rows = {k: pick.response[i * (len(points) + 1)] for i, k in enumerate(points)}  # the (dra_i, ddec_i) diagonal
+    path = responses_check(pick.frequencies(), rows, "Phase centre vs sources", plots_dir=str(plots))
+    assert path.endswith(".png")
+
+
+def test_layout_and_scan_figures(data, plots):
+    from luv_finder.plotting import mosaic_layout, scan_check, uv_profile
+
+    pb = data.metadata.primarybeamsize()
+    offsets = {0: (0.0, 0.0), 1: (-17.0, -30.0), 2: (17.0, -30.0)}
+    assert mosaic_layout(offsets, pb, plots_dir=str(plots), marks={"line": (2.0, 20.5)}).endswith(".png")
+    models = {"point": Gaussian(), "2 arcsec": Gaussian(bmin=2.0, bmaj=2.0)}
+    path = uv_profile({k: data for k in models}, 4.25, 23.5, models, 39.9, plots_dir=str(plots))
+    assert path.endswith(".png")
+    x = np.linspace(0, 4, 9)
+    assert scan_check(x, {"demo": np.exp(-((x - 2) ** 2))}, "size", "scan", truth=2.0, plots_dir=str(plots)).endswith(
+        ".png"
+    )
+
+
+def test_amp_phase_and_dirty_map_figures(data, truth, plots):
+    from luv_finder.matchedfilter import dirty_maps
+    from luv_finder.plotting import amp_phase_check, dirty_maps_check
+
+    marks = {f"line {s['line']['mean']} GHz": s["position_model"] for s in truth["sources"]}
+    positions = {"phase centre": (0.0, 0.0), **marks}
+    assert amp_phase_check(data, positions, plots_dir=str(plots), line_ghz=39.9).endswith(".png")
+    axis = np.arange(-40.0, 40.1, 1.5)
+    moment8, continuum, sigma = dirty_maps(data, axis, axis)
+    assert dirty_maps_check(axis, axis, moment8, continuum, sigma, plots_dir=str(plots), marks=marks).endswith(".png")
