@@ -42,13 +42,28 @@ Band 3 pointing, roughly 26 CPU-hours for the same grid. Beyond 12 cores the
 search does not get faster (16 cores: 43 s against 39 s; 8 cores: 51 s), so the
 core budget costs nothing.
 
+Primary beam and mosaics. `utils.primary_beam` is an Airy pattern scaled to the
+FWHM the ALMA Technical Handbook gives for the real antennas, 1.13 lambda/D (63"
+at 92 GHz); simobserve's CASA beam measures 1.165 lambda/D, matched within 1% at
+0-35" (`tests/test_primary_beam.py`). A pointing's search is divided by its PB
+(S/N unchanged, masked below PB = 0.2) and the pointings are combined with weights
+PB^2 / sigma^2 on their shared lattice; their dirty cubes form linear mosaics for
+the moment-8 and continuum maps. The five pointings that cover the 84.57 GHz line
+agree in PB-corrected peak flux (0.76-1.06 mJy, chi^2 = 5.9 for 4 degrees of
+freedom) and combine to S/N 28.8 (sqrt of the summed S/N^2: 28.9), a line flux of
+0.206 +- 0.007 Jy km/s. The whole Band 3 mosaic, 195 x 183 positions x 3 widths x
+512 channels with its jackknife, takes 17 minutes on 12 cores at 15.5 GB; it
+raises the CASA cube's second line (85.17 GHz, +41", -38") to S/N 24 and several
+more candidates to 13-23, against a jackknife maximum of 8.6 (S/N still inflated
+by the channel correlation, 2.2).
+
 Section 2 is next: one pointing searches in about a minute, so the real-data
 work no longer waits on performance. The rest of section 1 is about scaling to
 larger grids.
 
 ## 1. Performance
 
-### uv binning, corrected for the primary beam
+### uv binning
 
 Averaging visibilities that land in the same uv cell reduces `N_vis`, which is
 the dominant axis of both the memory and the cost here.
@@ -75,10 +90,8 @@ What it costs, and what has to be right:
   smaller than the nominal one.
 - **Bin within (field, spw), never across pointings.** Visibilities from
   different pointings carry differently PB-weighted skies, so averaging them into
-  one cell mixes them. Combining pointings stays at the response level in 2.4.
-- **Divide the recovered S/N by PB(theta).** The primary beam attenuates
-  off-axis sources within every pointing, so a raw response understates the
-  intrinsic line flux away from the phase centre.
+  one cell mixes them. Pointings are combined at the response level
+  (`combine_pointings`), after `pb_corrected` divides each by its primary beam.
 - **Do not bin in frequency.** The lines are narrow, and Band 1's 960-channel
   window exists precisely to resolve them.
 - `u` and `v` scale with frequency, so a grid fixed in wavelengths is exact at
@@ -163,13 +176,12 @@ is estimated in S/N; subtraction and imaging are in Jy:
    line biases it by roughly its width over the window width.
 3. Convert back to Jy (divide by `sqrt(w)`) and subtract the continuum from
    every channel of the row.
-4. Dirty map of the continuum, in Jy: `matchedfilter.dirty_maps` already gives
-   the natural-weighted continuum and moment-8 maps on the search grid (the
-   search's spatial collapse, no NUFFT). Multiply by the primary beam and save it
-   as the continuum diagnostic.
+4. Dirty map of the continuum, in Jy: `mosaic_dirty_maps` already gives the
+   PB-corrected continuum (and moment-8) mosaic on the search grid; save it as
+   the continuum diagnostic.
 
-This shares the NUFFT with the position search in section 1, and the
-per-(field, spw) chunks bound its memory.
+It shares the search's spatial collapse, and the per-(field, spw) chunks bound
+its memory.
 
 For the masking decision specifically, a per-channel power statistic works
 directly on the visibilities: by Parseval, `sum_j w_j |V_j(nu)|^2` is the power of
@@ -178,10 +190,14 @@ bright channels with no imaging at all. It is spatially integrated, so it dilute
 a faint compact line across the field and will only catch the bright ones, which
 is exactly what continuum masking needs.
 
-### 2.2 Detection inference on one pointing
-Single Band 3 pointing. Turn the response cube into a catalogue: position,
-frequency, width and S/N per candidate. Calibrate the false-positive rate from
-the jackknife response over the same grid.
+### 2.2 Detection inference
+Turn a search into a catalogue: position, frequency, width, flux and S/N per
+candidate, for one pointing or the PB-combined mosaic. The input is a
+`SearchResult`: S/N, PB-corrected peak flux density and its error per position x
+template x channel, a coverage map, and the jackknife on the same grid.
+Calibrate the false-positive rate from that jackknife. On a mosaic the noise
+varies across the field (the coverage is `sqrt(sum PB^2)`), so thresholds and
+false-positive counts have to follow the coverage rather than be one number.
 
 **Correlated channels.** On real data the response is not yet unit-variance.
 The weights are right (whitened jackknife visibilities have variance 1.02), but
@@ -211,19 +227,6 @@ One pointing per band. A line in each band at the same sky position is a redshif
 confirmation, since the bands sample different transitions of the same ladder.
 Needs co-spatial matching with a tolerance set by the coarser beam, a way to
 combine two independent significances, and a catalogue format that spans bands.
-
-### 2.4 All seven Band 3 pointings
-Mosaic. Pointings overlapping the same sky position have different primary-beam
-attenuation, so visibilities cannot simply be concatenated. Candidate approach: a
-per-pointing PB factor in the UV model, and a joint response summed over pointings
-with PB-squared weighting. The shared grid exists: positions are offsets from one
-reference direction, each field's phase centre is stored in that frame, and
-`luv-find --field` searches one pointing on lattice points common to all of them.
-Checked on the brightest line of the CASA dirty mosaic cube (84.57 GHz, 2" east
-and 20.5" north of field 0): every pointing recovers it at that WCS position to
-within 1-2", at S/N 14-17 in the three pointings ~20" away and falling with
-distance as the primary beam does, so the model's `dra` is east on real data.
-What remains is the PB factor and the combination.
 
 ## 3. Sources that are not Gaussians
 
@@ -256,6 +259,11 @@ caveat in the catalogue.
   power, not a per-pixel maximum. The reason to want it there, avoiding a CASA
   imaging pass, is solved: `matchedfilter.dirty_cube` produces the dirty cube on
   the search grid, and `dirty_maps` the moment-8 from it.
+- **Primary beam for extended sources.** The correction is point-like: one PB
+  per position. For a source comparable to the beam the PB varies across it;
+  folding PB into the template envelope (per pointing) would handle that.
+- **Moment maps of found lines.** Moment-0/1 maps of catalogued lines from the
+  visibilities; install `jax-finufft` (the `jax` extra) for that.
 - **GPU.** The filter is device-agnostic JAX. miscanti has a Tesla T4 but no
   CUDA jaxlib, and the T4's float64 rate is 1/32 of its float32 rate, so it is
   unlikely to beat the CPU; Apple GPUs have no float64 at all. Worth trying on

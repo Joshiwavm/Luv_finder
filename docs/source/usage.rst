@@ -23,7 +23,29 @@ The science preset uses the 12 m array and 50 channels:
 Each mock preset has a grid preset of the same name. ``configs/README.md``
 documents the pairing and the ``dra`` sign flip.
 
-A mosaic is searched one pointing at a time, on one sky grid:
+A mosaic is searched one pointing at a time, on one sky grid. In Python each pointing's
+search is corrected for its primary beam and the pointings are combined:
+
+.. code-block:: python
+
+   results = []
+   for field in fields:
+       data = DataHandler.from_npz("mosaic.npz", fields=[field])
+       g = Gaussian()
+       g.grid = build_grid(data, {"pb_limit": 0.2})   # this pointing's PB >= 0.2 region
+       mod = Model()
+       mod.addcomponent(g)
+       mf = MatchedFilter(data, mod)
+       mf.run(jackknife=True)
+       results.append(pb_corrected(mf.result, data))
+   mosaic = combine_pointings(results)
+
+The primary beam (:func:`luv_finder.utils.primary_beam`) is an Airy pattern scaled to the
+FWHM the ALMA Technical Handbook gives for the real antennas, 1.13 lambda/D. Dividing by it
+leaves a pointing's S/N unchanged; the combination weights every pointing by PB^2/sigma^2,
+so overlaps gain S/N, and a pointing contributes nothing where its PB is below ``pb_limit``.
+
+From the command line:
 
 .. code-block:: bash
 
