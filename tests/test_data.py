@@ -5,6 +5,7 @@ import pytest
 
 from luv_finder import DataHandler, Gaussian
 from luv_finder.data import ARCSEC, CHUNK_ARRAYS, Chunk, Metadata, pair_weight, sky_offset, stokes_i
+from luv_finder.utils import X_HALF, C, primary_beam, primary_beam_fwhm, primary_beam_radius
 
 
 def _chunk(times, baselines, values=None, n_chan=3, field=0, spw=0, freq0=40e9):
@@ -47,6 +48,46 @@ def test_npz_loads_only_the_selected_fields(tmp_path):
 def test_metadata_scales(data):
     assert 10 < data.metadata.primarybeamsize() < 300  # arcsec, band 1-ish at 40 GHz
     assert data.metadata.minresolution() < data.metadata.primarybeamsize()
+
+
+def test_primary_beam_is_unity_on_axis_and_half_at_half_the_fwhm():
+    fwhm = primary_beam_fwhm(92e9, 12.0)
+    assert primary_beam(0.0, 92e9, 12.0) == 1.0
+    assert primary_beam(fwhm / 2, 92e9, 12.0) == pytest.approx(0.5, abs=1e-9)
+    assert X_HALF == pytest.approx(1.6163, abs=1e-4)
+
+
+def test_primary_beam_decreases_over_the_main_lobe():
+    offsets = np.linspace(0, primary_beam_radius(1e-3, 92e9, 12.0), 200)
+    assert np.all(np.diff(primary_beam(offsets, 92e9, 12.0)) < 0)
+
+
+def test_primary_beam_broadcasts_over_offsets_and_channels():
+    offsets = np.linspace(0, 60, 5)[:, None]
+    freqs = np.array([90e9, 92e9, 94e9])
+    pb = primary_beam(offsets, freqs, 12.0)
+    assert pb.shape == (5, 3)
+    assert np.all(pb[0] == 1.0)
+    assert np.all(np.diff(pb[1:], axis=1) < 0)  # a higher frequency has a narrower beam
+
+
+def test_primary_beam_fwhm_scales_inversely_with_frequency():
+    assert primary_beam_fwhm(184e9, 12.0) == pytest.approx(primary_beam_fwhm(92e9, 12.0) / 2)
+    assert primary_beam_fwhm(92e9, 12.0) == pytest.approx(1.13 * C / 92e9 / 12.0 / ARCSEC)
+
+
+def test_primary_beam_radius_inverts_the_beam():
+    fwhm = primary_beam_fwhm(92e9, 12.0)
+    assert primary_beam_radius(0.5, 92e9, 12.0) == pytest.approx(fwhm / 2)
+    assert primary_beam(primary_beam_radius(0.2, 92e9, 12.0), 92e9, 12.0) == pytest.approx(0.2)
+    assert primary_beam_radius(1.0, 92e9, 12.0) == 0.0
+
+
+def test_metadata_primarybeamsize_is_the_fwhm():
+    meta = Metadata(12.0, (0.0, 0.0), 92e9, 1e4)
+    assert meta.primarybeamsize() == pytest.approx(63.3, abs=0.1)
+    assert meta.primarybeamsize() == pytest.approx(primary_beam_fwhm(92e9, 12.0))
+    assert meta.primarybeamsize(7.0) == pytest.approx(63.3 * 12 / 7, abs=0.2)
 
 
 def test_phase_shift_recentres_model(data):

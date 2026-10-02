@@ -19,13 +19,10 @@ import zipfile
 from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 
-import astropy.constants as const
 import numpy as np
 
 from ._casa import tools
-
-C = const.c.value
-ARCSEC = np.deg2rad(1 / 3600)
+from .utils import ARCSEC, C, primary_beam_fwhm
 
 #: Arrays stored per chunk in an NPZ, under ``{field}_{spw}_{name}``.
 CHUNK_ARRAYS = ("offset", "freq", "u", "v", "time", "baseline", "X", "w_row", "flag")
@@ -188,9 +185,9 @@ class Metadata:
         return cls(dish, ref, float(freqs.mean()), float(np.hypot(uvw[0], uvw[1]).max() * freqs.max() / C))
 
     def primarybeamsize(self, dish_diameter: float | None = None) -> float:
-        """Half-power primary beam width in arcsec (1.22 lambda / D)."""
+        """Primary-beam FWHM in arcsec at the central frequency (1.13 lambda / D)."""
         d = self.dish_diameter if dish_diameter is None else dish_diameter
-        return 1.22 * C / self.central_frequency / d / ARCSEC
+        return float(primary_beam_fwhm(self.central_frequency, d))
 
     def minresolution(self) -> float:
         """Angular resolution in arcsec from the longest baseline."""
