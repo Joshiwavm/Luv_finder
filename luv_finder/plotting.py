@@ -126,6 +126,11 @@ def responses_check(freqs, curves, title, plots_dir="plots", name="responses", l
     return _save(fig, plots_dir, name)
 
 
+def _nanmax(a, axis=None):
+    """Maximum ignoring NaN; NaN where everything is NaN, without np.nanmax's warning."""
+    return np.fmax.reduce(a, axis=axis)
+
+
 def _sky_axes(ax):
     """East to the left, as on the sky."""
     ax.set_aspect("equal")
@@ -145,21 +150,22 @@ def snr_map(mf, plots_dir="plots", name="snr_map", marks=None):
     """Peak S/N over channels, widths and sizes at every (dra, ddec) of the grid.
 
     The data and, when it was run, the jackknife are shown side by side on one colour scale.
-    ``marks`` maps a label to a (dra, ddec) position to circle, e.g. an injected source.
+    ``marks`` maps a label to a (dra, ddec) position to circle, e.g. an injected source. Positions
+    where the response is NaN (outside every primary beam of a mosaic) are left blank.
     """
     dra, ddec = np.asarray(mf.axes["dra"]), np.asarray(mf.axes["ddec"])
     panels = {"data": mf.response}
     if mf.response_jackknife is not None:
         panels["jackknife"] = mf.response_jackknife
-    peaks = {k: r.reshape(len(dra), len(ddec), -1).max(axis=-1) for k, r in panels.items()}
-    vmax = max(p.max() for p in peaks.values())
+    peaks = {k: _nanmax(r.reshape(len(dra), len(ddec), -1), axis=-1) for k, r in panels.items()}
+    vmax = max(_nanmax(p) for p in peaks.values())
     fig, axes = plt.subplots(1, len(peaks), figsize=(5.2 * len(peaks), 4.6), squeeze=False)
     for ax, (label, peak) in zip(axes[0], peaks.items(), strict=True):
         mesh = ax.pcolormesh(dra, ddec, peak.T, shading="nearest", vmin=0, vmax=vmax, cmap="magma")
         fig.colorbar(mesh, ax=ax, label="peak S/N")
         _mark(ax, marks)
         _sky_axes(ax)
-        ax.set_title(f"{label}: max {peak.max():.1f}")
+        ax.set_title(f"{label}: max {_nanmax(peak):.1f}")
     return _save(fig, plots_dir, name)
 
 
@@ -188,11 +194,12 @@ def noise_check(mf, plots_dir="plots", name="noise"):
     Left: the distribution of the response over all grid points and channels. Right: how many
     of them exceed a threshold, which is what a detection threshold has to be calibrated on.
     Neighbouring grid points and channels are correlated, so the counts are not independent.
+    NaN entries (positions outside every primary beam of a mosaic) are dropped.
     """
     from scipy.stats import norm
 
     panels = {"data": mf.response, "jackknife": mf.response_jackknife}
-    panels = {k: v.ravel() for k, v in panels.items() if v is not None}
+    panels = {k: v[np.isfinite(v)] for k, v in panels.items() if v is not None}
     fig, (left, right) = plt.subplots(1, 2, figsize=(11, 4))
     bins = np.linspace(-7, 7, 141)
     for i, (label, values) in enumerate(panels.items()):
@@ -300,24 +307,82 @@ def dirty_maps_check(dra, ddec, moment8, continuum, sigma, plots_dir="plots", na
     """Moment-8 (S/N), continuum (mJy/beam), and the moment-8 with continuum contours.
 
     Takes the output of :func:`luv_finder.matchedfilter.dirty_maps` on the ``dra x ddec`` grid.
-    Contours are at -3 (dashed) and 3, 5, 10, 20, 50 times the continuum noise ``sigma``.
+    Contours are at -3 (dashed) and 3, 5, 10, 20, 50 times the continuum noise ``sigma``, a scalar
+    or a per-pixel map shaped like ``continuum`` (a mosaic's noise varies across the field).
+    NaN pixels, outside every primary beam, are left blank. The colour scales are robust to a few
+    extreme pixels: continuum 1st to 99th percentile of the well-covered area (noise within twice
+    its minimum), moment-8 0 to 99.9th percentile.
     """
     dra, ddec = np.asarray(dra), np.asarray(ddec)
-    levels = np.array([3, 5, 10, 20, 50]) * sigma
+    noise = f"noise {1e6 * sigma:.1f}" if np.ndim(sigma) == 0 else f"noise from {1e6 * np.nanmin(sigma):.1f}"
+    snr = continuum / sigma
     fig, axes = plt.subplots(1, 3, figsize=(16, 4.8))
+    continuum_mjy = 1e3 * continuum
+    moment8_limits = (0, np.nanpercentile(moment8, 99.9))
+    covered = np.where(sigma <= 2 * np.nanmin(sigma), continuum_mjy, np.nan)
+    continuum_limits = np.nanpercentile(covered, [1, 99])
     panels = (
-        (axes[0], moment8, "moment-8 (line S/N)", "S/N", "magma"),
-        (axes[1], 1e3 * continuum, f"continuum, noise {1e6 * sigma:.1f} uJy/beam", "mJy/beam", "viridis"),
-        (axes[2], moment8, "moment-8 + continuum contours", "S/N", "magma"),
+        (axes[0], moment8, "moment-8 (line S/N)", "S/N", "magma", moment8_limits),
+        (axes[1], continuum_mjy, f"continuum, {noise} uJy/beam", "mJy/beam", "viridis", continuum_limits),
+        (axes[2], moment8, "moment-8 + continuum contours", "S/N", "magma", moment8_limits),
     )
-    for ax, image, title, unit, cmap in panels:
-        mesh = ax.pcolormesh(dra, ddec, image.T, shading="nearest", cmap=cmap)
+    for ax, image, title, unit, cmap, (vmin, vmax) in panels:
+        mesh = ax.pcolormesh(dra, ddec, image.T, shading="nearest", cmap=cmap, vmin=vmin, vmax=vmax)
         fig.colorbar(mesh, ax=ax, label=unit)
         ax.set_title(title)
         _mark(ax, marks)
         _sky_axes(ax)
-    axes[2].contour(dra, ddec, continuum.T, levels=levels, colors="w", linewidths=0.8)
-    axes[2].contour(dra, ddec, continuum.T, levels=[-3 * sigma], colors="w", linewidths=0.8, linestyles="--")
+    axes[2].contour(dra, ddec, snr.T, levels=[3, 5, 10, 20, 50], colors="w", linewidths=0.8)
+    axes[2].contour(dra, ddec, snr.T, levels=[-3], colors="w", linewidths=0.8, linestyles="--")
+    return _save(fig, plots_dir, name)
+
+
+def pointings_check(freqs_ghz, pointings, combined, beam, plots_dir="plots", name="pointings", line_ghz=None):
+    """One position seen through several pointings of a mosaic, and the combination.
+
+    ``pointings`` maps a label to a dict with ``distance`` (arcsec from that pointing's centre),
+    ``pb`` (primary beam at the line) and ``flux`` [Jy, primary-beam corrected], ``error`` [Jy]
+    and ``snr`` over ``freqs_ghz`` (NaN where the pointing does not cover the position);
+    ``combined`` has ``flux``, ``error`` and ``snr``; ``beam`` is (offsets, response) of the
+    primary beam at the line. Left: where each pointing sits on the beam, hollow if it never
+    covers the position. Middle: flux density with the combined ``+-`` 1 sigma band. Right: S/N,
+    which the beam correction leaves unchanged. Pointings that never cover are left out of both.
+    """
+    freqs = np.asarray(freqs_ghz)
+    unused = {label for label, p in pointings.items() if np.isnan(p["flux"]).all()}
+    fig, (beam_ax, flux_ax, snr_ax) = plt.subplots(1, 3, figsize=(16, 4.5))
+    beam_ax.plot(*beam, c="k", lw=1.2)
+    for i, (label, p) in enumerate(pointings.items()):
+        face = "none" if label in unused else f"C{i}"
+        beam_ax.plot(p["distance"], p["pb"], "o", c=f"C{i}", markerfacecolor=face)
+        text = f"{label} (not used)" if label in unused else label
+        beam_ax.annotate(text, (p["distance"], p["pb"]), xytext=(6, 6), textcoords="offset points", fontsize=8)
+    beam_ax.set_xlabel("Offset from pointing centre [arcsec]")
+    beam_ax.set_ylabel("Primary beam response")
+    beam_ax.set_ylim(0, 1.05)
+    beam_ax.set_title("Primary beam" if line_ghz is None else f"Primary beam at {line_ghz:.3f} GHz")
+
+    flux_ax.axhline(0, ls="--", c="gray", lw=0.8)
+    snr_ax.axhline(0, ls="--", c="gray", lw=0.8)
+    snr_ax.axhline(5, ls=":", c="C3", lw=0.8)
+    curves = {**pointings, "combined": combined}
+    for ax, key, scale, fmt in ((flux_ax, "flux", 1e3, "{:.3g} mJy"), (snr_ax, "snr", 1, "{:.1f}")):
+        for i, (label, p) in enumerate(curves.items()):
+            if label in unused:
+                continue
+            y = scale * np.asarray(p[key])
+            style = dict(c="k", lw=2.2) if p is combined else dict(c=f"C{i}", lw=1)
+            ax.plot(freqs, y, label=f"{label} (peak {fmt.format(_nanmax(y))})", **style)
+        if line_ghz is not None:
+            ax.axvline(line_ghz, c="C3", ls="--", lw=0.8)
+        ax.set_xlabel("Frequency [GHz]")
+        ax.legend(fontsize=7)
+    flux, error = (1e3 * np.asarray(combined[k]) for k in ("flux", "error"))
+    flux_ax.fill_between(freqs, flux - error, flux + error, color="k", alpha=0.2)
+    flux_ax.set_ylabel("Primary-beam corrected flux density [mJy]")
+    snr_ax.set_ylabel("S/N")
+    flux_ax.set_title(r"Flux density, combined $\pm 1\sigma$")
+    snr_ax.set_title("S/N per pointing and combined")
     return _save(fig, plots_dir, name)
 
 

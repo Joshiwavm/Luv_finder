@@ -4,6 +4,8 @@ Assertions here are deliberately weak: the point is to produce something to look
 at. The numerical checks live in the other test modules.
 """
 
+from types import SimpleNamespace
+
 import numpy as np
 
 from luv_finder import Gaussian, MatchedFilter, Model
@@ -109,3 +111,77 @@ def test_amp_phase_and_dirty_map_figures(data, truth, plots):
     axis = np.arange(-40.0, 40.1, 1.5)
     moment8, continuum, sigma = dirty_maps(data, axis, axis)
     assert dirty_maps_check(axis, axis, moment8, continuum, sigma, plots_dir=str(plots), marks=marks).endswith(".png")
+
+
+def _circle_mask(axis, radius):
+    """True where the (dra, ddec) grid point lies inside ``radius``, as a dra x ddec array."""
+    return np.hypot(*np.meshgrid(axis, axis, indexing="ij")) < radius
+
+
+def test_pointings_figure(plots):
+    """One position through four pointings: three of different S/N (the last partly covering), one not covering."""
+    from luv_finder.plotting import pointings_check
+    from luv_finder.utils import primary_beam
+
+    line_ghz, noise, dish = 39.9, 5e-5, 12.0
+    freqs = np.linspace(39.5, 40.3, 160)
+    offsets = np.linspace(0, 160, 300)
+    beam = (offsets, primary_beam(offsets, line_ghz * 1e9, dish))
+    pointings = {}
+    fields = (("field 0", 20.0, 8.0), ("field 1", 70.0, 5.0), ("field 2", 110.0, 3.0), ("field 3", 150.0, 2.0))
+    for label, distance, snr in fields:
+        pb = float(primary_beam(distance, line_ghz * 1e9, dish))
+        raw = snr * noise * np.exp(-0.5 * ((freqs - line_ghz) / 0.04) ** 2)
+        pointings[label] = {
+            "distance": distance,
+            "pb": pb,
+            "flux": raw / pb,
+            "error": np.full_like(freqs, noise / pb),
+            "snr": raw / noise,
+        }
+    for key in ("flux", "error", "snr"):
+        pointings["field 2"][key][:30] = np.nan
+        pointings["field 3"][key][:] = np.nan
+    flux, error = (np.array([p[k] for p in pointings.values()]) for k in ("flux", "error"))
+    weight = 1 / error**2
+    combined = {
+        "flux": np.nansum(weight * flux, axis=0) / np.nansum(weight, axis=0),
+        "error": 1 / np.sqrt(np.nansum(weight, axis=0)),
+    }
+    combined["snr"] = combined["flux"] / combined["error"]
+    path = pointings_check(freqs, pointings, combined, beam, plots_dir=str(plots), line_ghz=line_ghz)
+    assert path.endswith(".png")
+
+
+def test_dirty_maps_with_noise_map(plots):
+    """Mosaic-style dirty maps: per-pixel noise rising outwards, NaN outside the covered region."""
+    from luv_finder.plotting import dirty_maps_check
+
+    axis = np.arange(-40.0, 40.1, 1.5)
+    x, y = np.meshgrid(axis, axis, indexing="ij")
+    rng = np.random.default_rng(0)
+    sigma = 1e-5 * (1 + (np.hypot(x, y) / 30) ** 2)
+    moment8 = 4 + 10 * np.exp(-0.5 * (np.hypot(x - 10, y + 5) / 3) ** 2) + rng.normal(size=x.shape)
+    continuum = sigma * (12 * np.exp(-0.5 * (np.hypot(x + 15, y - 10) / 4) ** 2) + rng.normal(size=x.shape))
+    outside = ~_circle_mask(axis, 35)
+    for image in (sigma, moment8, continuum):
+        image[outside] = np.nan
+    path = dirty_maps_check(axis, axis, moment8, continuum, sigma, plots_dir=str(plots), name="dirty_maps_noise_map")
+    assert path.endswith(".png")
+
+
+def test_search_figures_with_nan(plots):
+    """S/N map and noise statistics when positions outside every primary beam are NaN."""
+    from luv_finder.plotting import noise_check, snr_map
+
+    axis = np.arange(-40.0, 40.1, 2.0)
+    rng = np.random.default_rng(1)
+    outside = ~_circle_mask(axis, 30).ravel()
+    responses = []
+    for _ in range(2):
+        response = rng.normal(size=(len(axis) ** 2, 50))
+        response[outside] = np.nan
+        responses.append(response)
+    mf = SimpleNamespace(axes={"dra": axis, "ddec": axis}, response=responses[0], response_jackknife=responses[1])
+    assert snr_map(mf, plots_dir=str(plots), name="snr_map_nan", marks={"x": (5.0, 5.0)}).endswith(".png")
+    assert noise_check(mf, plots_dir=str(plots), name="noise_nan").endswith(".png")
