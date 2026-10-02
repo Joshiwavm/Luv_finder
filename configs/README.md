@@ -15,6 +15,7 @@ adding a grid changes the template and the injected source together.
 | `smoke` | ACA, 10 antennas | ~7 MB, ~20 s — used by `tests/test_mock.py` |
 | `line13_line9` | 12 m, 43 antennas | ~180 MB |
 | `size_*` | 12 m | one source per grid (currently 0, 1 and 3 beam FWHM), used by `tests/test_source_size.py` |
+| `pb_offsets` | 12 m, 92 GHz | four point sources 0-35" off-centre, measures simobserve's primary beam in `tests/test_primary_beam.py` |
 | `default` grid | — | blind search, ranges derived from the data |
 
 Antenna configurations are not vendored. `alma_config` names a file that CASA
