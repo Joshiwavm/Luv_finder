@@ -5,9 +5,19 @@ import numpy as np
 import pytest
 
 from luv_finder import DataHandler, Gaussian, MatchedFilter, Model
+from luv_finder.cli.find_lines import build_grid
 from luv_finder.data import C, Chunk, Metadata
-from luv_finder.matchedfilter import default_cores, dirty_cube, dirty_maps
+from luv_finder.matchedfilter import (
+    SearchResult,
+    combine_pointings,
+    default_cores,
+    dirty_cube,
+    dirty_maps,
+    mosaic_dirty_maps,
+    pb_corrected,
+)
 from luv_finder.model import FWHM_TO_SIGMA
+from luv_finder.utils import primary_beam, primary_beam_radius
 
 C_KMS = 299792.458
 
@@ -258,10 +268,35 @@ def test_dirty_cube_of_a_point_source_is_its_flux():
     data = DataHandler(
         chunks=[dataclasses.replace(chunk, X=2.0 * np.conj(chunk.phase(5.0, -3.0)))], metadata=_metadata(chunk)
     )
-    cube, weight = dirty_cube(data, [-10.0, 0.0, 5.0], [-3.0, 0.0, 8.0])
-    assert cube.shape == (20, 3, 3)
-    assert np.allclose(cube[:, 2, 0], 2.0)
-    assert np.allclose(weight, 500.0)
+    c = dirty_cube(data, [-10.0, 0.0, 5.0], [-3.0, 0.0, 8.0])
+    assert c.cube.shape == (20, 3, 3)
+    assert np.allclose(c.cube[:, 2, 0], 2.0)
+    assert np.allclose(c.weight, 500.0)
+    assert (c.dra, c.ddec, c.window_sizes) == ([-10.0, 0.0, 5.0], [-3.0, 0.0, 8.0], [20])
+    assert np.array_equal(c.offset, (3.0, 1.0)) and np.array_equal(c.freqs, chunk.freq)
+
+
+def test_natural_search_hands_back_its_dirty_cube(monkeypatch):
+    """run(cube=True) gives dirty_cube's cube from the search's own collapse; template weighting has none."""
+    monkeypatch.setattr("luv_finder.matchedfilter.BLOCK_BYTES", 2 * 16 * 3 * 300)  # two dra rows per block
+    r = np.random.default_rng(5)
+    chunks = []
+    for spw, nchan in ((0, 30), (1, 20)):
+        chunk = _chunk(nchan, 300, seed=spw, spw=spw, offset=(4.0, -2.0), freq0=40e9 + spw * 2e9)
+        flag = r.random(chunk.flag.shape) < 0.1
+        flag[3] = True
+        vis = r.normal(size=flag.shape) + 1j * r.normal(size=flag.shape)
+        chunks.append(dataclasses.replace(chunk, X=np.where(flag, 0, vis), flag=flag))
+    data = DataHandler(chunks=chunks, metadata=_metadata(chunks[0]))
+    dra, ddec = [-3.0, 0.0, 5.0], [1.0, 7.0]
+    mf = _finder(data, dra=dra, ddec=ddec, width=[150.0, 300.0])
+    mf.run(jackknife=True, cube=True)
+    expected = dirty_cube(data, dra, ddec)
+    assert np.allclose(mf.cube.cube, expected.cube, rtol=0, atol=1e-12)
+    assert np.array_equal(mf.cube.weight, expected.weight)
+    assert (mf.cube.dra, mf.cube.ddec, mf.cube.window_sizes) == (dra, ddec, [30, 20])
+    with pytest.raises(ValueError, match="natural weighting"):
+        _finder(data, "template", dra=dra, ddec=ddec).run(cube=True)
 
 
 def test_dirty_maps_separate_continuum_and_line():
@@ -276,6 +311,155 @@ def test_dirty_maps_separate_continuum_and_line():
     assert np.unravel_index(np.argmax(cont), cont.shape) == (10, 3)  # (+20, -15)
     assert np.unravel_index(np.argmax(moment8), moment8.shape) == (4, 8)  # (-10, +8)
     assert moment8[10, 3] < 0.2 * moment8.max()
+
+
+FREQ = _chunk(50, 1).freq
+
+
+def _line(dra=0.0, ddec=0.0):
+    """A point source with a 2 Jy km/s line of 300 km/s on channel 25 of a 50-channel window."""
+    return Gaussian(dra=dra, ddec=ddec, nu_center=FREQ[25], width=300.0, total_flux=2.0)
+
+
+def _seen_by(offset, src, field=0):
+    """Noiseless unit-weight pointing at ``offset`` that sees ``src`` through its primary beam."""
+    chunk = _chunk(50, 400, seed=field, field=field, offset=offset)
+    pb = primary_beam(np.hypot(src.dra - offset[0], src.ddec - offset[1]), chunk.freq, 12.0)
+    X = pb[:, None] * src.profile(chunk)
+    return DataHandler(chunks=[dataclasses.replace(chunk, X=X)], metadata=_metadata(chunk))
+
+
+def _point_search(data, dra, ddec):
+    mf = _finder(data, dra=dra, ddec=ddec, bmin=0.0, bmaj=0.0)
+    mf.run(jackknife=True)
+    return mf.result
+
+
+def test_flux_is_the_injected_peak_flux_density():
+    """S/N times error is the line's peak flux density, its integrated flux the injected total flux."""
+    src = _line()
+    r = _point_search(_seen_by((0.0, 0.0), src), 0.0, 0.0)
+    assert r.snr.shape == r.flux.shape == r.error.shape == (1, 1, 1, 50)
+    assert np.all(r.coverage == 1.0)
+    assert r.flux[0, 0, 0, 25] == pytest.approx(src.spectrum(FREQ[25]), rel=1e-6)
+    profile = np.exp(-0.5 * ((FREQ - FREQ[25]) / (FREQ[25] * 300.0 * FWHM_TO_SIGMA / C_KMS)) ** 2)
+    assert r.error[0, 0, 0, 25] == pytest.approx(1 / np.sqrt(400 * np.sum(profile**2)))
+    flux, error = r.integrated_flux()
+    assert flux[0, 0, 0, 25] == pytest.approx(2.0, rel=1e-9)
+    assert error[0, 0, 0, 25] == pytest.approx(r.error[0, 0, 0, 25] * flux[0, 0, 0, 25] / r.flux[0, 0, 0, 25])
+
+
+def test_pb_correction_divides_the_flux_and_masks_the_beam_edge():
+    src = _line(dra=40.0)
+    data = _seen_by((0.0, 0.0), src)
+    raw = _point_search(data, np.arange(-160.0, 161.0, 40.0), [0.0, 40.0])
+    out = pb_corrected(raw, data, pb_limit=0.2)
+    distance = np.hypot(*np.meshgrid(raw.axes["dra"], raw.axes["ddec"], indexing="ij"))
+    pb = primary_beam(distance[..., None], raw.freqs, 12.0)
+    keep = pb >= 0.2
+    assert 0 < keep.sum() < keep.size
+    for corrected, uncorrected in ((out, raw), (out.jackknife, raw.jackknife)):
+        snr, flux, error = (getattr(corrected, k)[:, :, 0] for k in ("snr", "flux", "error"))
+        assert np.array_equal(snr[keep], uncorrected.snr[:, :, 0][keep])
+        assert np.allclose(flux[keep], uncorrected.flux[:, :, 0][keep] / pb[keep], rtol=1e-12, atol=0)
+        assert np.allclose(error[keep], uncorrected.error[:, :, 0][keep] / pb[keep], rtol=1e-12, atol=0)
+        assert np.all(np.isnan(snr[~keep]) & np.isnan(flux[~keep]) & np.isnan(error[~keep]))
+        assert np.array_equal(corrected.coverage, np.where(keep, pb, 0.0))
+    assert (out.best_params["src_00_dra"], out.best_params["src_00_ddec"]) == (40.0, 0.0)
+    assert out.flux[5, 0, 0, 25] == pytest.approx(src.spectrum(FREQ[25]), rel=1e-6)
+
+
+def test_combined_pointings_recover_the_flux_and_add_snr_in_quadrature():
+    """Inverse-variance weights restore the flux; a pointing beyond its pb_limit changes nothing."""
+    src = _line(dra=20.0)
+
+    def pointing(field, offset, dra, ddec):
+        data = _seen_by(offset, src, field)
+        return pb_corrected(_point_search(data, dra, ddec), data)
+
+    a = pointing(0, (0.0, 0.0), [-20.0, 0.0, 20.0, 40.0], [-20.0, 0.0, 20.0])
+    b = pointing(1, (60.0, 0.0), [20.0, 40.0, 60.0, 80.0], [0.0, 20.0])
+    far = pointing(2, (220.0, 0.0), np.arange(20.0, 221.0, 20.0), [0.0])
+    pair, mosaic = combine_pointings([a, b]), combine_pointings([a, b, far])
+    assert mosaic.axes["dra"] == np.arange(-20.0, 221.0, 20.0).tolist()
+    assert mosaic.axes["ddec"] == [-20.0, 0.0, 20.0]
+
+    def at(r, dra=20.0, ddec=0.0):
+        return r.axes["dra"].index(dra), r.axes["ddec"].index(ddec)
+
+    single = [r.snr[(*at(r), 0, 25)] for r in (a, b)]
+    for r in (pair, mosaic):
+        i, j = at(r)
+        assert r.flux[i, j, 0, 25] == pytest.approx(src.spectrum(FREQ[25]), rel=1e-6)
+        assert r.snr[i, j, 0, 25] == pytest.approx(np.hypot(*single), rel=1e-12)
+        assert r.coverage[i, j, 25] == pytest.approx(np.hypot(a.coverage[(*at(a), 25)], b.coverage[(*at(b), 25)]))
+    for k in ("snr", "flux", "error"):
+        assert np.array_equal(getattr(pair, k)[at(pair)], getattr(mosaic, k)[at(mosaic)])
+    nowhere = at(mosaic, 220.0, -20.0)  # on no pointing's grid
+    assert np.all(np.isnan(mosaic.snr[nowhere])) and np.all(mosaic.coverage[nowhere] == 0)
+
+    # the jackknives are combined with their own inverse-variance weights
+    snr, error = (np.array([getattr(r.jackknife, k)[at(r)][0] for r in (a, b)]) for k in ("snr", "error"))
+    expected = np.sum(snr / error, axis=0) / np.sqrt(np.sum(error**-2.0, axis=0))
+    assert mosaic.jackknife.snr[at(mosaic)][0] == pytest.approx(expected, rel=1e-12)
+    assert combine_pointings([dataclasses.replace(a, jackknife=None), b]).jackknife is None
+
+
+def test_combine_pointings_rejects_other_templates_channels_and_lattices():
+    def result(dra, width=(300.0,), freqs=FREQ):
+        shape = (len(dra), 1, len(width), len(freqs))
+        axes = {"dra": list(dra), "ddec": [0.0], "bmin": [0.0], "bmaj": [0.0], "pa": [0.0], "width": list(width)}
+        ones = np.ones(shape)
+        return SearchResult(axes, freqs, ones, ones, ones, np.ones((*shape[:2], len(freqs))))
+
+    ref = result([0.0, 5.0])
+    assert combine_pointings([ref, result([15.0, 20.0])]).axes["dra"] == [0.0, 5.0, 10.0, 15.0, 20.0]
+    with pytest.raises(ValueError, match="width templates"):
+        combine_pointings([ref, result([0.0, 5.0], width=(300.0, 400.0))])
+    with pytest.raises(ValueError, match="frequencies"):
+        combine_pointings([ref, result([0.0, 5.0], freqs=FREQ * 1.0001)])
+    with pytest.raises(ValueError, match="lattice"):
+        combine_pointings([ref, result([2.5, 7.5])])  # half a step off
+    with pytest.raises(ValueError, match="lattice"):
+        combine_pointings([ref, result([0.0, 10.0, 20.0])])  # a coarser step
+
+
+def test_mosaic_dirty_maps_restore_a_continuum_source():
+    """Two pointings see a continuum source through their beams; the linear mosaic restores its flux."""
+    pos, flux, ivar, cubes = (20.0, 0.0), 2.0, 0.0, []
+    pointings = (
+        ((0.0, 0.0), 500, [-20.0, 0.0, 20.0], [0.0, 20.0]),
+        ((60.0, 0.0), 300, [20.0, 40.0, 60.0, 80.0, 240.0], [-20.0, 0.0]),
+    )
+    for field, (offset, nvis, dra, ddec) in enumerate(pointings):
+        chunk = _chunk(20, nvis, seed=field, field=field, offset=offset)
+        pb = primary_beam(np.hypot(pos[0] - offset[0], pos[1] - offset[1]), chunk.freq, 12.0)
+        X = flux * pb[:, None] * np.conj(chunk.phase(*pos))
+        data = DataHandler(chunks=[dataclasses.replace(chunk, X=X)], metadata=_metadata(chunk))
+        cubes.append(dirty_cube(data, dra, ddec))
+        ivar += np.sum(pb**2 * nvis)
+    dra, ddec, moment8, continuum, sigma = mosaic_dirty_maps(cubes, pb_limit=0.2)
+    assert dra.tolist() == np.arange(-20.0, 241.0, 20.0).tolist()
+    assert ddec.tolist() == [-20.0, 0.0, 20.0]
+    assert continuum[2, 1] == pytest.approx(flux, rel=1e-9)
+    assert sigma[2, 1] == pytest.approx(1 / np.sqrt(ivar), rel=1e-9)
+    assert abs(moment8[2, 1]) < 1e-6  # no line, so the continuum is all subtracted
+    # (-20, -20) is on neither grid; (240, 0) only on the second, beyond its pb_limit
+    for i, j in ((0, 0), (13, 1)):
+        assert np.isnan(moment8[i, j]) and np.isnan(continuum[i, j]) and np.isnan(sigma[i, j])
+    assert np.all(np.isfinite(continuum[:5, 1]))
+
+
+def test_build_grid_with_pb_limit_reaches_the_beam_radius_on_the_same_lattice():
+    data = _synthetic(20, snr=1.0, offset=(10.0, -5.0))
+    default, wide = build_grid(data, None), build_grid(data, {"pb_limit": 0.2})
+    half = primary_beam_radius(0.2, data.freqs.min(), data.metadata.dish_diameter)
+    step = data.metadata.minresolution() / 2
+    for axis, centre in zip(("dra", "ddec"), data.chunks[0].offset, strict=True):
+        offsets = np.abs(wide[axis] - centre)
+        assert offsets.max() <= half < offsets.max() + step
+        assert np.allclose(wide[axis] / step, np.round(wide[axis] / step))
+        assert np.all(np.isin(default[axis], wide[axis]))
 
 
 @pytest.mark.parametrize(("total", "used"), [(48, 12), (8, 2), (4, 1), (2, 1), (1, 1)])

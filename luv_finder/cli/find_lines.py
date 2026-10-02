@@ -11,6 +11,7 @@ import yaml
 from ..data import DataHandler
 from ..matchedfilter import MatchedFilter
 from ..model import Gaussian, Model
+from ..utils import primary_beam_radius
 
 
 def load_data(path: str, field: int | None = None) -> DataHandler:
@@ -22,8 +23,11 @@ def build_grid(data: DataHandler, cfg: dict | None) -> dict:
     """Grid ranges from YAML, positions in the dataset's sky frame (arcsec from the reference).
 
     Positions default to multiples of half the resolution, counted from the reference
-    direction and covering ``fov_fraction`` of the primary beam around the loaded field. The
-    lattice comes from dataset-level metadata, so every pointing of a mosaic gets the same
+    direction and covering ``fov_fraction`` (default 0.4) of the primary-beam FWHM on either
+    side of the loaded field. With ``pb_limit`` they instead reach the radius where the primary
+    beam of the lowest channel, the widest, falls to ``pb_limit``, so every channel's
+    ``PB >= pb_limit`` region is covered (see :func:`luv_finder.matchedfilter.pb_corrected`).
+    The lattice comes from dataset-level metadata, so every pointing of a mosaic gets the same
     points. Sizes default to a tenth of the resolution, the position angle to 0.
     """
     fov = data.metadata.primarybeamsize()
@@ -41,7 +45,11 @@ def build_grid(data: DataHandler, cfg: dict | None) -> dict:
             return np.arange(v["start"], v["stop"], v["step"])
         return np.atleast_1d(v)
 
-    half, step = cfg.get("fov_fraction", 0.4) * fov, res / 2
+    if "pb_limit" in cfg:
+        half = primary_beam_radius(cfg["pb_limit"], data.freqs.min(), data.metadata.dish_diameter)
+    else:
+        half = cfg.get("fov_fraction", 0.4) * fov
+    step = res / 2
 
     def lattice(centre):
         return step * np.arange(np.ceil((centre - half) / step), np.floor((centre + half) / step) + 1)
