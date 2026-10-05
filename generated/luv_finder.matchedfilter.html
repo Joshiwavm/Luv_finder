@@ -273,7 +273,11 @@ the template <code class="docutils literal notranslate"><span class="pre">g_i</s
 <code class="docutils literal notranslate"><span class="pre">c_i</span> <span class="pre">=</span> <span class="pre">P^T</span> <span class="pre">W</span> <span class="pre">g_i</span></code>: <code class="docutils literal notranslate"><span class="pre">num</span> <span class="pre">-</span> <span class="pre">c_i^T</span> <span class="pre">M^-1</span> <span class="pre">P^T</span> <span class="pre">sig</span></code> and <code class="docutils literal notranslate"><span class="pre">var</span> <span class="pre">-</span> <span class="pre">c_i^T</span> <span class="pre">M^-1</span> <span class="pre">c_i</span></code> replace them.
 Normalised per lag over the channels it covers, the response <code class="docutils literal notranslate"><span class="pre">num</span> <span class="pre">/</span> <span class="pre">sqrt(var)</span></code> has unit
 variance under the null at every channel, window edges and flagged channels included, and
-peaks on the line’s own channel at its S/N, less the little the continuum fit takes.</p></li>
+peaks on the line’s own channel at its S/N, less the little the continuum fit takes.
+Neighbouring channels share noise (ALMA’s Hanning response correlates them by 2/3 and 1/6),
+so the variance is <code class="docutils literal notranslate"><span class="pre">h^T</span> <span class="pre">C</span> <span class="pre">h</span></code> instead, <code class="docutils literal notranslate"><span class="pre">h</span></code> the template less its continuum projection and
+<code class="docutils literal notranslate"><span class="pre">C</span></code> the channel correlation measured on the jackknife (<code class="docutils literal notranslate"><span class="pre">channel_correlation</span></code>): exact,
+and one number per template and lag, since <code class="docutils literal notranslate"><span class="pre">h</span></code> does not depend on the position.</p></li>
 </ol>
 <p>The S/N times <code class="docutils literal notranslate"><span class="pre">1</span> <span class="pre">/</span> <span class="pre">sqrt(var)</span></code> is the best-fit peak flux density of the template line, the
 continuum being a nuisance; <code class="xref py py-class docutils literal notranslate"><span class="pre">SearchResult</span></code> holds both. <code class="xref py py-func docutils literal notranslate"><span class="pre">pb_corrected()</span></code> divides them by

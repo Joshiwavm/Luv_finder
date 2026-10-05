@@ -256,11 +256,11 @@ yet a catalogue: one source lights up many neighbouring grid points, and how oft
 reaches a given S/N is not known. Both are measured on the search’s jackknife, one realisation of
 the data’s noise without the sky. <code class="xref py py-func docutils literal notranslate"><span class="pre">catalogue()</span></code> takes these steps:</p>
 <ol class="arabic simple">
-<li><p>The S/N is the filter’s, which assumes independent channels. ALMA’s Hanning spectral response
-correlates neighbouring channels, so the noise is underestimated and the S/N too high; this is
-not corrected. The jackknife carries the same correlated noise, so the tests below, which only
-compare the data with the jackknife, are not biased by it. <code class="xref py py-func docutils literal notranslate"><span class="pre">jackknife_spread()</span></code> reports
-how far the jackknife’s S/N spread is from 1, as a flag.</p></li>
+<li><p>The S/N is the filter’s, which accounts for the noise correlation between channels (ALMA’s
+Hanning response) measured on the jackknife, so the jackknife’s S/N has unit variance.
+<code class="xref py py-func docutils literal notranslate"><span class="pre">jackknife_spread()</span></code> reports how far its spread is from 1, as a check; a search run with
+<code class="docutils literal notranslate"><span class="pre">channel_correlation=None</span></code> on Hanning data gives about 1.4-1.6. The tests below compare the
+data with the jackknife, so they would be unbiased either way.</p></li>
 <li><p><code class="xref py py-func docutils literal notranslate"><span class="pre">noise_correlation()</span></code> measures the correlation function rho of the response under the null
 over positions, channels and templates. A matched source’s expected response has the same
 shape, <code class="docutils literal notranslate"><span class="pre">E[r(p)]</span> <span class="pre">=</span> <span class="pre">(S/N)_0</span> <span class="pre">rho(p</span> <span class="pre">-</span> <span class="pre">s)</span></code> (Vio &amp; Andreani 2021): spatially the dirty beam,

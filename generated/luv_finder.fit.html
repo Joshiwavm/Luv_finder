@@ -274,9 +274,13 @@ linear in <code class="docutils literal notranslate"><span class="pre">A</span><
 position and shape are optimised on that profiled chi^2 by Nelder-Mead, one collapse per covering
 pointing per step.</p>
 <p>Errors are the inverse Fisher matrix, half the numerical Hessian of chi^2 in every free parameter at
-the optimum. They are formal: the visibility weights are taken as the noise and channels as
-independent. ALMA’s Hanning response correlates neighbouring channels (+0.67, +0.17), which is not
-modelled, so these errors are underestimated, most for broad lines.</p>
+the optimum, with the visibility weights as the noise. Neighbouring channels share noise (ALMA’s
+Hanning response correlates them by 2/3 and 1/6), which the chi^2 treats as independent: the fit is
+still unbiased, but its errors would be too small. They are corrected by the sandwich estimator
+<code class="docutils literal notranslate"><span class="pre">F^-1</span> <span class="pre">(J^T</span> <span class="pre">R</span> <span class="pre">J)</span> <span class="pre">F^-1</span></code> over the channels, <code class="docutils literal notranslate"><span class="pre">J</span></code> the whitened derivatives of the spectrum model and
+<code class="docutils literal notranslate"><span class="pre">R</span></code> the channel correlation measured on the jackknife
+(<code class="xref py py-func docutils literal notranslate"><span class="pre">channel_correlation()</span></code>): a factor per spectral parameter, and one for the
+spatial parameters, whose information follows the model spectrum.</p>
 <p class="rubric">Module Attributes</p>
 <div class="table-wrapper autosummary longtable docutils container">
 <table class="autosummary longtable docutils align-default">

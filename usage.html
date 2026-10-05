@@ -340,11 +340,12 @@ change it; Linux only).</p>
 combined mosaic, on a uniform position lattice) into an astropy table of line candidates; the
 jackknife, which has the data’s noise and no sky, is the reference throughout:</p>
 <ol class="arabic simple">
-<li><p>the S/N is the filter’s, which assumes independent channels. ALMA’s Hanning spectral response
-correlates neighbouring channels; this is not corrected, so the noise is underestimated and the
-S/N too high (<code class="xref py py-func docutils literal notranslate"><span class="pre">jackknife_spread()</span></code> reports by how much). The jackknife
-carries the same correlated noise, so the tests below, which compare data and jackknife, are
-not biased by it;</p></li>
+<li><p>the S/N is the filter’s. ALMA’s Hanning spectral response correlates neighbouring channels
+(2/3 and 1/6); the search measures that correlation on the jackknife per spectral window
+(<code class="xref py py-func docutils literal notranslate"><span class="pre">channel_correlation()</span></code>) and normalises every template by its exact
+variance, so the S/N has unit variance under the null
+(<code class="xref py py-func docutils literal notranslate"><span class="pre">jackknife_spread()</span></code> checks it). Data averaged in frequency, with
+less correlation, are measured the same way;</p></li>
 <li><p>the correlation function of the jackknife response is measured; it is also the expected shape
 of a matched line’s response (Vio &amp; Andreani 2021), so its half-power ellipsoid in position and
 frequency is what one source occupies;</p></li>
@@ -392,9 +393,9 @@ A faint line may not constrain its size: if the Gaussian fit fails, an axis runs
 (twice the resolution) or both collapse to zero, the line is refitted as a point source
 (<code class="docutils literal notranslate"><span class="pre">fit_point</span></code>); <code class="docutils literal notranslate"><span class="pre">point=True</span></code> asks for that directly and <code class="docutils literal notranslate"><span class="pre">fixed_position=True</span></code> keeps the
 catalogue position.</p>
-<p>The errors are formal, from the Hessian of chi^2 with the visibility weights as the noise and the
-channels independent. ALMA’s Hanning response correlates neighbouring channels (+0.67, +0.17),
-which the fit does not model, so these errors are underestimated, most for broad lines.</p>
+<p>The errors are formal, from the Hessian of chi^2 with the visibility weights as the noise,
+corrected for the channel correlation measured on the jackknife by a sandwich estimator over the
+channels (see <a class="reference internal" href="generated/luv_finder.fit.html#module-luv_finder.fit" title="luv_finder.fit"><code class="xref py py-mod docutils literal notranslate"><span class="pre">luv_finder.fit</span></code></a>).</p>
 </section>
 <section id="diagnostic-figures">
 <h2>Diagnostic figures<a class="headerlink" href="#diagnostic-figures" title="Link to this heading">¶</a></h2>

@@ -15,6 +15,7 @@
 
    .. autosummary::
    
+      channel_correlation
       fields_in
       iter_chunks
       load
