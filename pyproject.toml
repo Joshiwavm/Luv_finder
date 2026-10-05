@@ -7,7 +7,7 @@ name = "luv-finder"
 version = "0.2.0"
 description = "Blind spectral-line finding in the UV plane for interferometric data"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.12"  # jax >= 0.11 (jax.enable_x64) needs 3.12
 license = { text = "MIT" }
 authors = [{ name = "Joshiwa van Marrewijk", email = "joshiwa01@gmail.com" }]
 keywords = ["ALMA", "interferometry", "spectral lines", "matched filter"]
@@ -18,7 +18,7 @@ classifiers = [
 ]
 dependencies = [
   "numpy",
-  "jax",
+  "jax>=0.11",
   "scipy",
   "astropy",
   "matplotlib",
@@ -60,7 +60,7 @@ include = ["luv_finder*"]
 
 [tool.ruff]
 line-length = 120
-target-version = "py310"
+target-version = "py312"
 extend-exclude = ["docs/source/tutorials"]
 
 [tool.ruff.lint]

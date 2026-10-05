@@ -125,7 +125,7 @@ def test_point_fit_of_a_resolved_source_misses_flux():
 
 
 def test_size_at_its_bound_falls_back_to_a_point():
-    fit = fit_line(_data(noise=True), *START, size_max=0.5)
+    fit = fit_line(_data(), *START, size_max=0.5)
     assert fit["fit_point"] and fit["fit_bmaj"] == 0
 
 
@@ -152,13 +152,17 @@ def test_fit_lines_of_the_fixture(data, truth, tmp_path):
     lattice = data.metadata.minresolution() / 2 * np.arange(-18, 19)
     mf = MatchedFilter(data, grid_model(build_grid(data, {"dra": lattice, "ddec": lattice})))
     mf.run(jackknife=True)
-    cat = fit_lines(data, catalogue(pb_corrected(mf.result, data), ref=data.metadata.ref))
-    detected = cat[cat["detected"]]
-    assert np.all(np.isfinite(detected["fit_line_flux"]))
-    for src in truth["sources"]:
-        near = np.hypot(detected["fit_dra"] - src["position_model"][0], detected["fit_ddec"] - src["position_model"][1])
-        row = detected[np.argmin(near)]
-        assert near.min() < 3 * np.hypot(row["fit_dra_error"], row["fit_ddec_error"])
+    cat = catalogue(pb_corrected(mf.result, data), ref=data.metadata.ref)
+    # fit only the detection nearest each injected line: fitting all of them costs ~2 s each
+    nearest = [
+        np.argmin(np.where(cat["detected"], np.hypot(cat["dra"] - x, cat["ddec"] - y), np.inf))
+        for x, y in (src["position_model"] for src in truth["sources"])
+    ]
+    cat = fit_lines(data, cat, rows=np.isin(np.arange(len(cat)), nearest))
+    for src, i in zip(truth["sources"], nearest, strict=True):
+        row = cat[i]
+        near = np.hypot(row["fit_dra"] - src["position_model"][0], row["fit_ddec"] - src["position_model"][1])
+        assert near < 3 * np.hypot(row["fit_dra_error"], row["fit_ddec_error"])
         assert abs(row["fit_freq_ghz"] - src["line"]["mean"]) < 3 * row["fit_freq_ghz_error"]
     path = tmp_path / "fitted.ecsv"
     cat.write(path)

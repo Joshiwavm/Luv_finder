@@ -5,10 +5,17 @@ import shutil
 import tempfile
 from pathlib import Path
 
+import jax
 import numpy as np
 import pytest
 
 from luv_finder._casa import configure_logging
+
+# Reuse compiled kernels across test runs (most of the suite's time is small
+# compiles); the cache is keyed on the jax version and the traced code.
+jax.config.update("jax_compilation_cache_dir", str(Path(__file__).parents[1] / ".pytest_cache" / "jax"))
+jax.config.update("jax_persistent_cache_min_compile_time_secs", 0)
+jax.config.update("jax_persistent_cache_min_entry_size_bytes", 0)
 
 # Keep CASA session logs out of the repo, including for tests that import
 # casatasks directly. conftest is imported before test modules are collected,
