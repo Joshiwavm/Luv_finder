@@ -14,8 +14,9 @@ import yaml
 
 pytest.importorskip("casatasks")
 
-from luv_finder import DataHandler, Gaussian, MatchedFilter, MockObservation, Model  # noqa: E402
-from luv_finder.cli.find_lines import build_grid  # noqa: E402
+from luv_finder import Gaussian, MatchedFilter, MockObservation, Model  # noqa: E402
+from luv_finder.data import fields_in, load  # noqa: E402
+from luv_finder.matchedfilter import build_grid  # noqa: E402
 
 REPO = Path(__file__).parents[1]
 MOCK_CFG = REPO / "configs" / "mocks" / "smoke.yaml"
@@ -48,10 +49,12 @@ def smoke(tmp_path_factory):
 @pytest.mark.casa
 def test_simulated_shape_matches_preset(smoke):
     mock, cfg, _ = smoke
-    data = DataHandler(mock.ms_noisy)
+    data = load(mock.ms_noisy)
     nchan = cfg["cube_shape"][0]
-    assert data.n_freqs(data.uvdata) == nchan
-    assert data.uvdata.UVreals.size == nchan * data.n_visbs(data.uvdata)
+    (chunk,) = data.chunks
+    assert fields_in(mock.ms_noisy) == data.fields
+    assert len(chunk.freq) == nchan
+    assert chunk.X.shape == (nchan, len(chunk.u))
 
 
 @pytest.mark.casa
@@ -65,13 +68,13 @@ def test_declared_snr_is_achieved(smoke):
 @pytest.mark.casa
 def test_grid_preset_recovers_the_line(smoke):
     mock, cfg, _ = smoke
-    data = DataHandler(mock.ms_noisy)
+    data = load(mock.ms_noisy)
     comp = Gaussian()
     comp.grid = build_grid(data, yaml.safe_load(GRID_CFG.read_text()))
     mod = Model()
     mod.addcomponent(comp)
     mf = MatchedFilter(data, mod)
-    mf.run(pool=1)
+    mf.run()
 
     src = cfg["sources"][0]
     peak_ghz = mf.frequencies()[np.argmax(mf.response[mf.best_index])]

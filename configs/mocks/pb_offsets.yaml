@@ -1,0 +1,23 @@
+# Observation for tests/test_primary_beam.py: four point sources at 0, 15, 25 and 35 arcsec from the phase
+# centre, each with its own 300 km/s line (cube channels 8, 22, 36 and 50 of 60), so one noiseless MS
+# measures how simobserve attenuates the sky at several offsets. snr only sets the flux; the test is noiseless.
+cube_shape: [60, 256, 256]   # 0.5" cells: the field is +-64"
+cell: 0.5arcsec
+dv: 100km/s
+freq_center: 92GHz
+integration_time: 8min
+alma_config: alma.cycle13.3.cfg
+output_folder: output/ms_files
+support_folder: support
+fits_filename: support/pb_offsets_input.fits   # pins the project name to "pb_offsets"
+calibrate_snr: false
+
+sources:
+  - position: [0.0, 0.0]      # image convention (dra, ddec); the offset is 0"
+    line: {mean: 91.324866271, width: 300, snr: 30}
+  - position: [9.0, 12.0]     # 15"
+    line: {mean: 91.754496826, width: 300, snr: 30}
+  - position: [-15.0, 20.0]   # 25"
+    line: {mean: 92.184127381, width: 300, snr: 30}
+  - position: [21.0, -28.0]   # 35"
+    line: {mean: 92.613757935, width: 300, snr: 30}

@@ -1,9 +1,11 @@
+import dataclasses
 import json
 import os
 import shutil
 import tempfile
 from pathlib import Path
 
+import numpy as np
 import pytest
 
 from luv_finder._casa import configure_logging
@@ -15,6 +17,7 @@ os.environ.setdefault("LUV_CASA_LOG_DIR", tempfile.mkdtemp(prefix="luv-casa-log-
 configure_logging()
 
 from luv_finder import DataHandler  # noqa: E402
+from luv_finder.data import write_npz  # noqa: E402
 
 FIXTURES = Path(__file__).parent / "fixtures"
 PLOTS_DIR = Path(__file__).parents[1] / "plots"
@@ -56,5 +59,23 @@ def truth() -> dict:
 
 
 @pytest.fixture(scope="session")
-def data() -> DataHandler:
-    return DataHandler.from_npz(FIXTURES / "line13_line9_small.npz")
+def fixture_npz() -> Path:
+    return FIXTURES / "line13_line9_small.npz"
+
+
+@pytest.fixture(scope="session")
+def data(fixture_npz) -> DataHandler:
+    return DataHandler.from_npz(fixture_npz)
+
+
+@pytest.fixture(scope="session")
+def two_field_npz(data, tmp_path_factory) -> Path:
+    """The fixture's chunks as field 0 and, with its phase centre moved by (+10, 0) arcsec, as field 1."""
+    chunks = [
+        dataclasses.replace(c, field=field, offset=c.offset + np.array([10.0 * field, 0.0]))
+        for field in (0, 1)
+        for c in data.chunks
+    ]
+    path = tmp_path_factory.mktemp("mosaic") / "two_fields.npz"
+    write_npz(str(path), data.metadata, chunks)
+    return path

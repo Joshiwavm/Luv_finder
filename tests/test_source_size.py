@@ -1,15 +1,18 @@
 """Source size: does the filter recover the S/N a resolved mock was built with?
 
-Three mocks (``configs/mocks/size_*.yaml``: a point source and sources of 1x and 3x
-the beam FWHM), each calibrated so its declared ``snr`` is the optimal S/N, are
-searched at the true position with both weightings. Weighting by the source
-envelope ("template") should recover the declared S/N at every size; the plain
-average ("natural") keeps only sum(w A) / sqrt(sum(w) sum(w A^2)) of it.
+Every ``configs/grids/size_*.yaml`` is a targeted search as a user would write it: one
+position, width and size. The mock of the same name only sets the observation and the
+declared ``snr``; its source geometry is taken from the grid, so the template and the injected
+source cannot drift apart. Each mock is calibrated so its ``snr`` is the optimal S/N and is
+searched with both weightings. Weighting by the source envelope ("template") should recover
+the declared S/N at every size; the plain average ("natural") keeps only
+sum(w A) / sqrt(sum(w) sum(w A^2)) of it.
 
-The mocks are exported to ``output/npz/size_<name>{,_noiseless}.npz`` and reused if
-present, so they can be generated in advance with ``luv-mock`` and ``luv-export``.
+The mocks are exported to ``output/npz/size_<name>{,_noiseless}.npz`` and rebuilt whenever
+either YAML is newer than them.
 """
 
+import dataclasses
 from pathlib import Path
 
 import numpy as np
@@ -17,22 +20,28 @@ import pytest
 import yaml
 
 from luv_finder import DataHandler, Gaussian, MatchedFilter, Model
-from luv_finder.cli.find_lines import build_grid
+from luv_finder.matchedfilter import build_grid
 from luv_finder.plotting import source_size_check
 
 REPO = Path(__file__).parents[1]
 NPZ_DIR = REPO / "output" / "npz"
-SIZES = ("point", "beam", "3beam")
+NAMES = [p.stem.removeprefix("size_") for p in sorted((REPO / "configs" / "grids").glob("size_*.yaml"))]
+
+
+def _configs(name: str) -> tuple[Path, Path]:
+    return REPO / "configs" / "mocks" / f"size_{name}.yaml", REPO / "configs" / "grids" / f"size_{name}.yaml"
 
 
 def _mock_npz(name: str) -> tuple[Path, Path]:
-    """Noisy and noiseless NPZ of one preset, simulated with CASA if not already there."""
+    """Noisy and noiseless NPZ of one preset, simulated with CASA if missing or older than its YAMLs."""
+    mock_cfg, grid_cfg = _configs(name)
     noisy, clean = NPZ_DIR / f"size_{name}.npz", NPZ_DIR / f"size_{name}_noiseless.npz"
-    if not (noisy.exists() and clean.exists()):
+    newest = max(mock_cfg.stat().st_mtime, grid_cfg.stat().st_mtime)
+    if not all(p.exists() and p.stat().st_mtime > newest for p in (noisy, clean)):
         pytest.importorskip("casatasks", exc_type=ImportError)
         from luv_finder import MockObservation
 
-        mock = MockObservation.from_yaml(REPO / "configs" / "mocks" / f"size_{name}.yaml")
+        mock = MockObservation.from_yaml(mock_cfg, grid=grid_cfg)
         mock.run_all()
         NPZ_DIR.mkdir(parents=True, exist_ok=True)
         DataHandler(mock.ms_noisy).to_npz(str(noisy))
@@ -45,34 +54,33 @@ def _response(data, grid_cfg, weighting):
     comp.grid = build_grid(data, grid_cfg)
     mod = Model()
     mod.addcomponent(comp)
-    mf = MatchedFilter(data, mod, weighting=weighting)
-    mf.run(pool=1)
+    mf = MatchedFilter(data, mod, weighting=weighting, continuum_order=None)
+    mf.run()
     return mf
 
 
 @pytest.mark.casa
 @pytest.mark.parametrize("weighting", ["natural", "template"])
-@pytest.mark.parametrize("name", SIZES)
+@pytest.mark.parametrize("name", NAMES)
 def test_recovers_declared_snr(name, weighting, request):
-    mock_cfg = yaml.safe_load((REPO / "configs" / "mocks" / f"size_{name}.yaml").read_text())
-    grid_cfg = yaml.safe_load((REPO / "configs" / "grids" / f"size_{name}.yaml").read_text())
-    declared = mock_cfg["sources"][0]["line"]["snr"]
+    mock_path, grid_path = _configs(name)
+    declared = yaml.safe_load(mock_path.read_text())["sources"][0]["line"]["snr"]
+    grid_cfg = yaml.safe_load(grid_path.read_text())
     noisy_path, clean_path = _mock_npz(name)
 
     noisy = DataHandler.from_npz(str(noisy_path))
     # expectation: the noiseless signal with the noise model of the noisy data
-    clean = DataHandler.from_npz(str(clean_path))
-    assert np.array_equal(clean.uvdata.uvtimes, noisy.uvdata.uvtimes)
-    clean.uvdata.uvwghts = noisy.uvdata.uvwghts
+    (signal,) = DataHandler.from_npz(str(clean_path)).chunks
+    (chunk,) = noisy.chunks
+    assert np.array_equal(signal.time, chunk.time)
+    clean = DataHandler(chunks=[dataclasses.replace(chunk, X=chunk.w * signal.vis)], metadata=noisy.metadata)
 
     expected = _response(clean, grid_cfg, weighting)
     drawn = _response(noisy, grid_cfg, weighting)
     peak = expected.response[0].max()
 
-    size = grid_cfg["bmaj"]
-    a = Gaussian(bmin=size, bmaj=size).envelope(noisy.uvdata)
-    w = noisy.uvdata.uvwghts
-    kept = np.sum(w * a) / np.sqrt(np.sum(w) * np.sum(w * a**2))
+    a = Gaussian(bmin=grid_cfg["bmin"], bmaj=grid_cfg["bmaj"], pa=grid_cfg.get("pa", 0.0)).envelope(chunk)
+    kept = np.sum(chunk.w * a) / np.sqrt(np.sum(chunk.w) * np.sum(chunk.w * a**2))
     predicted = declared if weighting == "template" else declared * kept
 
     if request.config.getoption("--plots"):
@@ -87,5 +95,3 @@ def test_recovers_declared_snr(name, weighting, request):
         )
 
     assert peak == pytest.approx(predicted, rel=0.05)
-    if weighting == "natural" and name == "3beam":
-        assert peak < 0.6 * declared

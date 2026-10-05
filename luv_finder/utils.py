@@ -1,82 +1,105 @@
-"""Unit conversions and measurement-set weight helpers."""
+"""Shared constants, the analytic ALMA primary beam and the mock-weight helper.
+
+The primary beam follows the ALMA Technical Handbook: the measured FWHM of the 12 m and 7 m antennas is
+about 1.13 lambda / D, and CASA models the beam as an Airy pattern scaled so that its FWHM matches.
+"""
 
 from __future__ import annotations
 
+import astropy.constants as const
 import numpy as np
-from astropy.constants import c
+from scipy.optimize import brentq
+from scipy.special import j1, jn_zeros
 
 from ._casa import tools
 
-C = c.value
+C = const.c.value
+ARCSEC = np.deg2rad(1 / 3600)
+
+#: Measured primary-beam FWHM in units of lambda / D (ALMA Technical Handbook).
+FWHM_FACTOR = 1.13
+
+#: First zero of J1, the edge of the Airy main lobe.
+_X_NULL = jn_zeros(1, 1)[0]
 
 
-def arcsec_to_uvdist(arcsec: float) -> float:
-    """Angular scale [arcsec] -> uv-distance [klambda]."""
-    return 1 / np.deg2rad(arcsec / 3600) / 1e3
+def _airy(x):
+    """Airy power pattern ``(2 J1(x) / x)**2``, equal to 1 at ``x = 0``."""
+    x = np.asarray(x, dtype=float)
+    safe = np.where(x == 0, 1.0, x)
+    return np.where(x == 0, 1.0, (2 * j1(safe) / safe) ** 2)
 
 
-def uvdist_to_arcsec(uvdist: float) -> float:
-    """uv-distance [klambda] -> angular scale [arcsec]."""
-    return np.rad2deg(1 / (uvdist * 1e3)) * 3600
+#: Argument at which the Airy pattern drops to one half.
+X_HALF = brentq(lambda x: _airy(x) - 0.5, 1.0, _X_NULL)
 
 
-def l_to_arcsec(ell: float) -> float:
-    return 180 / ell * 3600
+def primary_beam_fwhm(freq_hz, dish_diameter, fwhm_factor=FWHM_FACTOR):
+    """Primary-beam FWHM in arcsec.
+
+    Parameters
+    ----------
+    freq_hz : float or array_like
+        Observing frequency in Hz.
+    dish_diameter : float
+        Antenna diameter in metres.
+    fwhm_factor : float
+        FWHM in units of lambda / D.
+    """
+    return fwhm_factor * (C / np.asarray(freq_hz, dtype=float)) / dish_diameter / ARCSEC
 
 
-def arcsec_to_l(arcsec: float) -> float:
-    return 180 / (arcsec / 3600)
+def primary_beam(offset_arcsec, freq_hz, dish_diameter, fwhm_factor=FWHM_FACTOR):
+    """Primary-beam attenuation in [0, 1] at an angular offset from the pointing centre.
+
+    An Airy pattern ``(2 J1(x) / x)**2`` whose half-power point lies at half the FWHM.
+
+    Parameters
+    ----------
+    offset_arcsec : float or array_like
+        Distance from the pointing centre in arcsec; broadcasts against ``freq_hz``.
+    freq_hz : float or array_like
+        Observing frequency in Hz.
+    dish_diameter : float
+        Antenna diameter in metres.
+    fwhm_factor : float
+        FWHM in units of lambda / D.
+    """
+    fwhm = primary_beam_fwhm(freq_hz, dish_diameter, fwhm_factor)
+    return _airy(2 * X_HALF * np.asarray(offset_arcsec, dtype=float) / fwhm)
 
 
-def l_to_uvdist(ell: float) -> float:
-    return arcsec_to_uvdist(l_to_arcsec(ell))
+def primary_beam_radius(level, freq_hz, dish_diameter, fwhm_factor=FWHM_FACTOR):
+    """Offset in arcsec at which the main lobe falls to ``level`` (``0 < level <= 1``).
 
-
-def uvdist_to_l(uvdist: float) -> float:
-    return arcsec_to_l(uvdist_to_arcsec(uvdist))
-
-
-def _target_selection(vis: str):
-    msmd = tools().msmetadata()
-    msmd.open(vis)
-    fields = msmd.fieldsforintent("*OBSERVE_TARGET*", False)
-    spws = msmd.spwsforintent("*OBSERVE_TARGET#ON_SOURCE*")
-    msmd.close()
-    return fields, spws
-
-
-def uvload(vis: str):
-    """Return (weights, uvdists [lambda]) of all target visibilities in an MS."""
-    uvwghts = np.empty(0)
-    uvdists = np.empty(0)
-    fields, spws = _target_selection(vis)
-    for field in fields:
-        for spw in spws:
-            ms = tools().ms()
-            ms.open(vis)
-            ms.selectinit(reset=True)
-            ms.selectinit(datadescid=int(spw))
-            ms.select({"field_id": int(field)})
-            rec = ms.getdata(["u", "v", "weight"])
-            freqs = ms.range("chan_freq")["chan_freq"][:, 0]
-            ms.close()
-
-            uvwght = 4.0 / (1.0 / rec["weight"][0] + 1.0 / rec["weight"][1])
-            uwave = (rec["u"].reshape(-1, 1) * freqs / C).T
-            vwave = (rec["v"].reshape(-1, 1) * freqs / C).T
-            uvwghts = np.append(uvwghts, (np.ones_like(uwave) * uvwght.reshape(1, -1)).flatten())
-            uvdists = np.append(uvdists, np.hypot(uwave, vwave).flatten())
-    return uvwghts, uvdists
+    Parameters
+    ----------
+    level : float
+        Attenuation to solve for.
+    freq_hz : float or array_like
+        Observing frequency in Hz.
+    dish_diameter : float
+        Antenna diameter in metres.
+    fwhm_factor : float
+        FWHM in units of lambda / D.
+    """
+    if not 0 < level <= 1:
+        raise ValueError(f"level must be in (0, 1], got {level}")
+    x = 0.0 if level == 1 else brentq(lambda x: _airy(x) - level, 0.0, _X_NULL)
+    return x / (2 * X_HALF) * primary_beam_fwhm(freq_hz, dish_diameter, fwhm_factor)
 
 
 def getstatwtweights(vis: str, seed: int = 0) -> None:
     """Reset WEIGHT in-place from the scan-jackknifed real-part scatter.
 
-    Used after ``simobserve`` so that simulated weights reflect the injected
-    noise level instead of CASA's nominal values.
+    ``simobserve`` leaves ``WEIGHT = 1`` and writes no ``WEIGHT_SPECTRUM``, so
+    this sets one weight per row from the injected noise level. Real data carry
+    per-channel weights; mocks built this way do not.
     """
+    from .data import pair_weight, target_selection
+
     rng = np.random.default_rng(seed)
-    fields, spws = _target_selection(vis)
+    fields, spws = target_selection(vis)
     for field in fields:
         for spw in spws:
             ms = tools().ms()
@@ -85,7 +108,7 @@ def getstatwtweights(vis: str, seed: int = 0) -> None:
             ms.selectinit(datadescid=int(spw))
             ms.select({"field_id": int(field)})
             rec = ms.getdata(["data", "weight", "time"])
-            uvwght = 4.0 / (1.0 / rec["weight"][0] + 1.0 / rec["weight"][1])
+            uvwght = pair_weight(rec["weight"][0], rec["weight"][1])
 
             uvreal = (rec["data"][0].real + rec["data"][1].real) / 2.0
             uvtime = np.ones_like(uvreal) * rec["time"].reshape(1, -1)

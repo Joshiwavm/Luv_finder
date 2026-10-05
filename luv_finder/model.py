@@ -7,9 +7,6 @@ matched filter parses this key to route values back onto the component.
 
 from __future__ import annotations
 
-import copy
-from types import SimpleNamespace
-
 import astropy.units as u
 import numpy as np
 from astropy.constants import c
@@ -18,17 +15,32 @@ C_KMS = c.to(u.km / u.s).value
 FWHM_TO_SIGMA = 1 / 2.355
 
 
+def envelope(uw, vw, bmaj, bmin, pa, xp=np):
+    """Visibility amplitude of a unit-flux elliptical Gaussian at (uw, vw) wavelengths.
+
+    ``bmaj``/``bmin`` are the axes' sigma in rad and ``pa`` the major axis' position angle in
+    degrees east of north. ``xp`` is the array module, so the matched filter can pass
+    ``jax.numpy``.
+    """
+    # u, v pair with east, north; the major axis points along (sin pa, cos pa)
+    sin, cos = xp.sin(xp.deg2rad(pa)), xp.cos(xp.deg2rad(pa))
+    u_maj, u_min = uw * sin + vw * cos, uw * cos - vw * sin
+    return xp.exp(-2 * np.pi**2 * ((bmaj * u_maj) ** 2 + (bmin * u_min) ** 2))
+
+
 class Gaussian:
     """2D spatial x 1D spectral Gaussian evaluated directly in the UV plane.
 
     Parameters
     ----------
     dra, ddec : float
-        Offsets from the phase centre, arcsec.
+        Position in arcsec east and north of the dataset's reference direction.
     total_flux : float
         Integrated line flux, Jy km/s.
     bmin, bmaj : float
         Source axes (sigma), arcsec.
+    pa : float
+        Position angle of the ``bmaj`` axis, degrees east of north.
     nu_center : float
         Line centre, Hz.
     width : float
@@ -37,11 +49,12 @@ class Gaussian:
 
     positive = True
 
-    def __init__(self, dra=0.0, ddec=0.0, total_flux=1.0, bmin=0.0, bmaj=0.0, nu_center=0.0, width=100.0):
-        self._dra = dra
-        self._ddec = ddec
+    def __init__(self, dra=0.0, ddec=0.0, total_flux=1.0, bmin=0.0, bmaj=0.0, pa=0.0, nu_center=0.0, width=100.0):
+        self.dra = dra
+        self.ddec = ddec
         self._bmin = bmin
         self._bmaj = bmaj
+        self.pa = pa
         self.total_flux = total_flux
         self.nu_center = nu_center
         self._width = width
@@ -49,22 +62,6 @@ class Gaussian:
         self.grid: dict | None = None
 
     # arcsec <-> rad accessors -------------------------------------------------
-    @property
-    def dra(self):
-        return np.deg2rad(self._dra / 3600)
-
-    @dra.setter
-    def dra(self, v):
-        self._dra = v
-
-    @property
-    def ddec(self):
-        return np.deg2rad(self._ddec / 3600)
-
-    @ddec.setter
-    def ddec(self, v):
-        self._ddec = v
-
     @property
     def bmin(self):
         return np.deg2rad(self._bmin / 3600)
@@ -90,19 +87,19 @@ class Gaussian:
     def width(self, v):
         self._width = v
 
-    def envelope(self, uvdata: SimpleNamespace) -> np.ndarray:
-        """Spatial envelope A(u, v): the source's visibility amplitude, 1 at zero spacing."""
-        return np.exp(-2 * np.pi**2 * ((self.bmaj * uvdata.uwaves) ** 2 + (self.bmin * uvdata.vwaves) ** 2))
+    def envelope(self, chunk) -> np.ndarray:
+        """Spatial envelope A(u, v): the source's visibility amplitude, 1 at zero spacing, (n_chan, n_row)."""
+        return envelope(*chunk.uv_waves(), self.bmaj, self.bmin, self.pa)
 
-    def _uvgauss_1D2D(self, uvdata: SimpleNamespace) -> SimpleNamespace:
-        uvdata = copy.deepcopy(uvdata)
+    def spectrum(self, freq: np.ndarray) -> np.ndarray:
+        """Line profile in Jy at ``freq`` (Hz)."""
         flux_hz = self.total_flux * self.nu_center / C_KMS
         amp = flux_hz / (self.width * np.sqrt(2 * np.pi))
-        spectral = amp * np.exp(-0.5 * ((uvdata.uvfreqs - self.nu_center) / self.width) ** 2)
-        spatial = self.envelope(uvdata) * np.exp(2j * np.pi * (uvdata.uwaves * self.dra + uvdata.vwaves * self.ddec))
-        uvdata.UVreals = spatial.real * spectral
-        uvdata.UVimags = spatial.imag * spectral
-        return uvdata
+        return amp * np.exp(-0.5 * ((freq - self.nu_center) / self.width) ** 2)
+
+    def _uvgauss_1D2D(self, chunk) -> np.ndarray:
+        """Model visibilities on the uv coverage of ``chunk``, (n_chan, n_row) complex."""
+        return self.spectrum(chunk.freq)[:, None] * self.envelope(chunk) * np.conj(chunk.phase(self.dra, self.ddec))
 
 
 class Model:

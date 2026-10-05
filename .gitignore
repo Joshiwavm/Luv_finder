@@ -38,3 +38,4 @@ configs/alma/ptgfile.txt
 
 # CASA session logs (see luv_finder/_casa.py)
 logs/
+.history/
