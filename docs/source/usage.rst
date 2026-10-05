@@ -110,11 +110,12 @@ Catalogue
 combined mosaic, on a uniform position lattice) into an astropy table of line candidates; the
 jackknife, which has the data's noise and no sky, is the reference throughout:
 
-1. the S/N is the filter's, which assumes independent channels. ALMA's Hanning spectral response
-   correlates neighbouring channels; this is not corrected, so the noise is underestimated and the
-   S/N too high (:func:`~luv_finder.catalogue.jackknife_spread` reports by how much). The jackknife
-   carries the same correlated noise, so the tests below, which compare data and jackknife, are
-   not biased by it;
+1. the S/N is the filter's. ALMA's Hanning spectral response correlates neighbouring channels
+   (2/3 and 1/6); the search measures that correlation on the jackknife per spectral window
+   (:func:`~luv_finder.data.channel_correlation`) and normalises every template by its exact
+   variance, so the S/N has unit variance under the null
+   (:func:`~luv_finder.catalogue.jackknife_spread` checks it). Data averaged in frequency, with
+   less correlation, are measured the same way;
 2. the correlation function of the jackknife response is measured; it is also the expected shape
    of a matched line's response (Vio & Andreani 2021), so its half-power ellipsoid in position and
    frequency is what one source occupies;
@@ -168,9 +169,9 @@ A faint line may not constrain its size: if the Gaussian fit fails, an axis runs
 (``fit_point``); ``point=True`` asks for that directly and ``fixed_position=True`` keeps the
 catalogue position.
 
-The errors are formal, from the Hessian of chi^2 with the visibility weights as the noise and the
-channels independent. ALMA's Hanning response correlates neighbouring channels (+0.67, +0.17),
-which the fit does not model, so these errors are underestimated, most for broad lines.
+The errors are formal, from the Hessian of chi^2 with the visibility weights as the noise,
+corrected for the channel correlation measured on the jackknife by a sandwich estimator over the
+channels (see :mod:`luv_finder.fit`).
 
 Diagnostic figures
 ------------------

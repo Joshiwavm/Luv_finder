@@ -26,7 +26,7 @@ from luv_finder.utils import primary_beam, primary_beam_radius
 C_KMS = 299792.458
 
 
-def _finder(data, weighting="natural", continuum_order=2, **grid):
+def _finder(data, weighting="natural", continuum_order=2, channel_correlation=None, **grid):
     g = Gaussian()
     g.grid = {
         "bmin": data.metadata.minresolution() / 10,
@@ -36,7 +36,11 @@ def _finder(data, weighting="natural", continuum_order=2, **grid):
     }
     m = Model()
     m.addcomponent(g)
-    return MatchedFilter(data, m, weighting=weighting, continuum_order=continuum_order)
+    # synthetic rows share one baseline at random uv, so their jackknife keeps the sky: give the
+    # (independent) channel correlation instead of measuring it
+    return MatchedFilter(
+        data, m, weighting=weighting, continuum_order=continuum_order, channel_correlation=channel_correlation
+    )
 
 
 def _chunk(nchan, nvis, seed=0, field=0, spw=0, offset=(0.0, 0.0), freq0=40e9):
@@ -662,3 +666,43 @@ def test_default_cores_leave_the_machine_mostly_free(monkeypatch, total, used):
 def test_unknown_weighting_is_rejected(data):
     with pytest.raises(ValueError, match="weighting"):
         _finder(data, weighting="uniform")
+
+
+def _hanning_noise(nchan=64, nvis=4000, seed=1):
+    """Noise only, Hanning-smoothed along the channels, at unit weight."""
+    chunk = _chunk(nchan, nvis)
+    rng = np.random.default_rng(seed)
+    noise = rng.standard_normal((nchan + 2, nvis)) + 1j * rng.standard_normal((nchan + 2, nvis))
+    noise = (0.25 * noise[:-2] + 0.5 * noise[1:-1] + 0.25 * noise[2:]) / np.sqrt(0.375)
+    return DataHandler(chunks=[dataclasses.replace(chunk, X=noise)], metadata=_metadata(chunk))
+
+
+@pytest.mark.parametrize("continuum_order", [None, 2])
+def test_correlated_channels_keep_unit_variance(continuum_order):
+    """Hanning noise inflates the S/N of broad templates unless the measured correlation is used."""
+    data, axis = _hanning_noise(), np.linspace(-20.0, 20.0, 9)
+    spread = {}
+    for corr in (None, "measure"):
+        mf = _finder(data, continuum_order=continuum_order, channel_correlation=corr, dra=axis, ddec=axis,
+                     width=[200.0, 400.0])  # fmt: skip
+        mf.run()
+        spread[corr] = np.nanstd(mf.result.snr, axis=(0, 1, 3))
+    assert np.all(spread[None] > 1.3)
+    assert spread["measure"] == pytest.approx(1.0, abs=0.04)
+    assert mf.correlation[0] == pytest.approx((1.0, 2 / 3, 1 / 6), abs=0.02)
+
+
+def test_flux_does_not_depend_on_the_channel_correlation():
+    """The correlation changes the S/N and the error, not the best-fit flux density."""
+    data = _synthetic(50, snr=10.0)
+    hanning = {0: np.array([1.0, 2 / 3, 1 / 6])}
+    plain, smooth = (_finder(data, channel_correlation=c, dra=0.0, ddec=0.0) for c in (None, hanning))
+    plain.run()
+    smooth.run()
+    np.testing.assert_allclose(smooth.result.flux, plain.result.flux, rtol=1e-9)
+    assert np.all(smooth.result.error > plain.result.error)
+
+
+def test_unknown_channel_correlation_is_rejected(data):
+    with pytest.raises(ValueError, match="channel_correlation"):
+        MatchedFilter(data, Model(), channel_correlation="hanning")

@@ -7,7 +7,7 @@ from astropy.table import Table
 from luv_finder import DataHandler, Gaussian, MatchedFilter
 from luv_finder.catalogue import catalogue
 from luv_finder.data import Chunk, Metadata, sky_offset
-from luv_finder.fit import COLUMNS, LINE_FLUX, LineWindow, fit_line, fit_lines
+from luv_finder.fit import COLUMNS, LINE_FLUX, LineWindow, _correlation_scale, fit_line, fit_lines
 from luv_finder.matchedfilter import build_grid, grid_model, pb_corrected
 from luv_finder.model import C_KMS, FWHM_TO_SIGMA
 from luv_finder.utils import C, primary_beam
@@ -169,3 +169,24 @@ def test_fit_lines_of_the_fixture(data, truth, tmp_path):
     back = Table.read(path)
     for name in COLUMNS:
         np.testing.assert_array_equal(back[name], cat[name])
+
+
+HANNING = np.array([1.0, 2 / 3, 1 / 6])
+
+
+def test_correlation_scale_of_the_errors():
+    """Without correlation every factor is 1; Hanning inflates them, at most to sqrt(8/3)."""
+    spectral = np.array([LINE["peak"], *CONTINUUM, LINE["nu0"], LINE["width"]])
+    spatial = np.array([SOURCE[k] for k in ("dra", "ddec", "bmaj", "bmin", "pa")])
+    chunks = _data().chunks
+    assert np.all(_correlation_scale(LineWindow(chunks, 12.0), spectral, spatial, 5) == 1)
+    scale = _correlation_scale(LineWindow(chunks, 12.0, rho=HANNING), spectral, spatial, 5)
+    assert np.all(scale > 1.05) and np.all(scale < np.sqrt(8 / 3) + 1e-6)
+
+
+def test_channel_correlation_scales_the_errors_not_the_fit():
+    data = _data(noise=True)
+    plain, smooth = (fit_line(data, *START, point=True, channel_correlation=c) for c in (None, {0: HANNING}))
+    for key in ("fit_dra", "fit_freq_ghz", "fit_width", "fit_line_flux"):
+        assert smooth[key] == plain[key]
+        assert smooth[f"{key}_error"] > 1.05 * plain[f"{key}_error"]

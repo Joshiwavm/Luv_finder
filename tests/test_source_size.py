@@ -49,12 +49,12 @@ def _mock_npz(name: str) -> tuple[Path, Path]:
     return noisy, clean
 
 
-def _response(data, grid_cfg, weighting):
+def _response(data, grid_cfg, weighting, correlation):
     comp = Gaussian()
     comp.grid = build_grid(data, grid_cfg)
     mod = Model()
     mod.addcomponent(comp)
-    mf = MatchedFilter(data, mod, weighting=weighting, continuum_order=None)
+    mf = MatchedFilter(data, mod, weighting=weighting, continuum_order=None, channel_correlation=correlation)
     mf.run()
     return mf
 
@@ -75,8 +75,11 @@ def test_recovers_declared_snr(name, weighting, request):
     assert np.array_equal(signal.time, chunk.time)
     clean = DataHandler(chunks=[dataclasses.replace(chunk, X=chunk.w * signal.vis)], metadata=noisy.metadata)
 
-    expected = _response(clean, grid_cfg, weighting)
-    drawn = _response(noisy, grid_cfg, weighting)
+    # the noise model, channel correlation included, is the noisy data's: a noiseless jackknife
+    # holds only the signal's residual between integrations, smooth in frequency
+    correlation = noisy.channel_correlation()
+    expected = _response(clean, grid_cfg, weighting, correlation)
+    drawn = _response(noisy, grid_cfg, weighting, correlation)
     peak = expected.response[0].max()
 
     a = Gaussian(bmin=grid_cfg["bmin"], bmaj=grid_cfg["bmaj"], pa=grid_cfg.get("pa", 0.0)).envelope(chunk)

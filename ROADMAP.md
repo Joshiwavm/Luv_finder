@@ -58,8 +58,9 @@ pointing in one call; the whole Band 3 mosaic, 195 x 183 positions x 3 widths x
 From a search to a catalogue (`catalogue.py`, section 2.2): local maxima are
 grouped by the response shape measured on the jackknife, and every group is
 tested with a likelihood ratio and a fidelity against the jackknife's groups.
-Correlated channel noise is not accounted for anywhere yet (section 2.2,
-open). The Band 3 mosaic gives 16 lines (section 2.2).
+The S/N accounts for the correlation between channels that ALMA's Hanning
+response leaves, measured on the jackknife. The Band 3 mosaic gives 14 lines
+(section 2.2).
 
 The rest of section 1 is about scaling to larger grids.
 
@@ -185,8 +186,13 @@ correlation includes.
 `catalogue(result)` turns a `SearchResult` (one pointing or the PB-combined
 mosaic, with its jackknife) into an astropy table, written as ECSV
 (`luv-find --jackknife --catalogue`). The jackknife has the data's noise and no
-sky, and is used twice. The S/N is the filter's, uncorrected for correlated
-channel noise (see Open).
+sky, and is used three times: for the channel correlation, the response shape
+and the tests. The S/N is the filter's, normalised by the exact variance under
+the channel correlation measured on the jackknife per spectral window
+(`data.channel_correlation`): Hanning on Band 3, (1, 0.666, 0.166) in every
+window, and the jackknife's S/N spread is then 1.015 for every template (1.38-1.62
+before). The measurement keeps lags up to the first one consistent with zero, so
+data averaged in frequency, with less correlation, need no special case.
 
 1. **Response shape.** The null correlation rho of the filter output is also the
    expected response to a matched line (Vio & Andreani 2021). Measured on Band 3:
@@ -205,14 +211,16 @@ channel noise (see Open).
    `1 - N_jk / N_data` per S/N bin fitted with an error function (Walter et al.
    2016, the jackknife instead of negatives), required >= 0.6.
 
-Band 3 mosaic, templates of 100/200/300/400 km/s: 9450 data groups against 9619
-jackknife groups above 4 (jackknife maximum 8.31); the likelihood ratio reaches
-3 at S/N 7.85 and the fidelity 0.6 at 7.96. Divided by the jackknife spread
-(1.38-1.62 per template) that is ~5 sigma, as the paper found for broad scans.
-16 lines pass; the four brightest are at S/N 19-27 (12-17 after that division),
-three of them in the CASA cube. Three of the weaker ones sit near window edges
-(84.15, 85.83, 85.84 GHz) and lost most to the continuum fit in an earlier run
-with three templates; worth inspecting.
+Band 3 mosaic, templates of 100/200/300/400 km/s: 355 data groups against 352
+jackknife groups above 4 (jackknife maximum 6.13); the likelihood ratio reaches
+3 at S/N 4.92 and the fidelity 0.6 at 5.29, so ~5 sigma, as the paper found for
+broad scans. The fidelity fit (centre 5.17, width 0.66) sets the stricter cut:
+fidelity 0.8, 0.9 and 0.99 are reached at S/N 5.57, 5.78 and 6.27. 14 lines
+pass; the four brightest are at S/N 12-18, three of them in the CASA cube. Before
+the correlation was accounted for, 16 passed at the same fidelity: the two lost,
+at 85.857 and 87.815 GHz, now have fidelity 0.43 and 0.47. Three of the weaker
+lines sit near window edges (84.15, 85.83, 85.84 GHz) and lost most to the
+continuum fit in an earlier run with three templates; worth inspecting.
 
 **Source fit** (`fit.py`, `luv-find --catalogue --fit`). Detection stays a grid
 search; each catalogued line is then refined by a deterministic least-squares fit
@@ -223,17 +231,17 @@ window. chi^2 over the visibilities reduces exactly (to machine precision in the
 test) to each pointing's template-weighted spectrum at the trial position and
 shape, the filter's own collapse at one point, so the spectrum is a linear fit
 plus (nu0, width) and the position and shape a 5-parameter Nelder-Mead. On the
-Band 3 mosaic the 16 lines take 25 minutes on 12 cores (up to 7 pointings; the
-whole notebook peaks at 19.5 GB with the NPZ loaded whole). Fifteen fit well,
-chi^2_red 0.72-1.18: positions move by 0.1-0.7", frequencies by up to 12 MHz.
-Seven are resolved along one axis at >= 2.4 sigma (FWHM 1.6-3.0") and
-unresolved along the other, five keep a Gaussian consistent with a point and
-three collapse to a point. Their line fluxes are 0.95-1.67 times the
-catalogue's (median 1.21), most where the fit resolves the source or widens the
-line beyond its template (lines at 572 and 621 km/s against 400), so they move
-away from the image-plane fits below, not towards them. The sixteenth fails
-while reporting convergence (see Open). Errors are formal (see correlated
-channel noise below).
+Band 3 mosaic the 14 lines take 21 minutes on 12 cores (up to 7 pointings; the
+whole run peaks at 17.5 GB with the NPZ loaded whole). All fit well, chi^2_red
+0.74-1.18: positions move by 0.1-0.7", frequencies by up to 12 MHz from the
+search's peak channel. Five are resolved along one axis at >= 2.4 sigma (FWHM
+1.7-3.0") and unresolved along the other, six keep a Gaussian consistent with
+a point and three collapse to a point. Their line fluxes are 0.60-1.77 times
+the catalogue's (median 1.33), most where the fit resolves the source or widens
+the line beyond its template (lines at 572 and 621 km/s against 400), so they
+move away from the image-plane fits below, not towards them. Errors are formal,
+corrected for the channel correlation by a sandwich estimator over the channels:
+1.2-1.6 times the uncorrected ones, the fitted values unchanged.
 
 Open:
 
@@ -251,27 +259,15 @@ Open:
   redshifts should be LSRK, which needs the observation times and the site in
   `Metadata`.
 - **Fluxes against image-plane fits.** For the lines matched to that by-eye list,
-  the line fluxes here (point-source template of fixed width, fitted in the uv
-  plane, PB-corrected per pointing) are 1.3-4.8 times those of Gaussian fits to
-  extracted spectra, and the source fit's 1.4-6.0 times (median 2.8); the ratio
-  does not follow the PB coverage. Not understood yet.
-- **Correlated channel noise: not accounted for.** ALMA's Hanning spectral
-  response correlates neighbouring channels (+0.67 adjacent, +0.17 next on Band
-  3). Nothing in the analysis models it yet: the filter's S/N and the errors of
-  the catalogue and of the source fit all assume independent channels, so the
-  noise is underestimated and S/N values are too high (the jackknife's S/N spread
-  is 1.38-1.62 per template on Band 3 instead of 1;
-  `catalogue.jackknife_spread` reports it).
-  Detection is not biased by it: the likelihood ratio and the fidelity only
-  compare the data with the jackknife, which carries the same correlated noise,
-  so its effect drops out there; but every S/N and threshold quoted is in these
-  inflated units. To understand before modelling it (the covariance `C^-1` in
-  the template, Vio & Andreani 2021, and in the fit errors).
-- **A fit that absorbs its neighbours.** Line 15 (85.857 GHz) lies 16-31 MHz
-  from lines 8 and 9; its fit runs to a 1818 km/s line 101 MHz off the peak
-  (chi^2_red 3.5, 10.8 times the catalogue flux) and still reports
-  `fit_converged`. Fit neighbouring lines jointly, or bound the width and centre
-  to the window between them, and let a chi^2 or bound check fail the fit.
+  the source fit's line fluxes (fitted in the uv plane, PB-corrected per
+  pointing) are 1.4-6.0 times (median 2.8) those of Gaussian fits to extracted
+  spectra; the ratio does not follow the PB coverage. Not understood yet.
+- **A fit that absorbs its neighbours.** The candidate at 85.857 GHz, 16-31 MHz
+  from two detected lines, is no longer detected (fidelity 0.43), but when it was
+  its fit ran to a 1818 km/s line 101 MHz off the peak (chi^2_red 3.5, 10.8
+  times the catalogue flux) and still reported `fit_converged`. Fit neighbouring
+  lines jointly, or bound the width and centre to the window between them, and
+  let a chi^2 or bound check fail the fit.
 - **Bright lines.** Only needed once a field has lines bright enough for their
   sidelobes (> ~50 sigma) or their window-wide continuum-fit response to cross
   the floor; see bright-line subtraction under Longer term.
