@@ -38,6 +38,40 @@ def pair_weight(a, b) -> np.ndarray:
     return np.divide(4 * a * b, s, out=np.zeros(np.broadcast(a, b).shape), where=s > 0)
 
 
+def channel_correlation(chunks: Iterable[Chunk], max_lag: int = 8, significance: float = 5.0) -> np.ndarray:
+    """Noise correlation between channels ``(1, rho_1, ..., rho_L)``, measured on the jackknife.
+
+    The jackknife of each chunk (one spectral window, any number of pointings) is pure noise; its
+    whitened visibilities ``X / sqrt(w)`` are correlated at lags 1, 2, ... over every pair of
+    unflagged channels, real and imaginary parts pooled. Lags are kept up to the first one
+    consistent with zero within ``significance`` sigma, so independent channels give ``(1,)``.
+    ALMA's default Hanning response gives (1, 2/3, 1/6); online channel averaging or regridding
+    give whatever they leave, which is the point of measuring instead of assuming. Signal that
+    does not cancel between paired integrations is smooth in frequency and would read as
+    correlation; on noiseless mocks, pass the noisy data's measurement instead.
+    """
+    num, norm_a, norm_b, n = (np.zeros(max_lag + 1) for _ in range(4))
+    for chunk in chunks:
+        jk = chunk.jackknife()
+        z = np.where(jk.flag, 0.0, jk.X / np.sqrt(jk.w_row))
+        for lag in range(1, min(max_lag, z.shape[0] - 1) + 1):
+            a, b = z[:-lag], z[lag:]
+            ok = ~(jk.flag[:-lag] | jk.flag[lag:])
+            num[lag] += np.sum((a * b.conj()).real, where=ok)
+            norm_a[lag] += np.sum(np.abs(a) ** 2, where=ok)
+            norm_b[lag] += np.sum(np.abs(b) ** 2, where=ok)
+            n[lag] += 2 * ok.sum()
+    rho = [1.0]
+    for lag in range(1, max_lag + 1):
+        if norm_a[lag] * norm_b[lag] == 0:  # no noise to measure, as in noiseless mocks
+            break
+        r = num[lag] / np.sqrt(norm_a[lag] * norm_b[lag])
+        if abs(r) * np.sqrt(n[lag]) < significance:
+            break
+        rho.append(float(r))
+    return np.array(rho)
+
+
 def stokes_i(data: np.ndarray, weight: np.ndarray, flag: np.ndarray):
     """Average the parallel hands ``[0, -1]`` of MS columns into (vis, w_row, flag).
 
@@ -350,6 +384,11 @@ class DataHandler:
     def jackknife(self) -> DataHandler:
         """Signal-free noise realisation of every chunk (see :meth:`Chunk.jackknife`)."""
         return DataHandler(chunks=[c.jackknife() for c in self.chunks], metadata=self.metadata)
+
+    def channel_correlation(self, **kwargs) -> dict[int, np.ndarray]:
+        """:func:`channel_correlation` per spectral window, pooled over its fields: ``{spw: rho}``."""
+        spws = sorted({c.spw for c in self.chunks})
+        return {s: channel_correlation((c for c in self.chunks if c.spw == s), **kwargs) for s in spws}
 
     def spectrum(self, dra: float = 0.0, ddec: float = 0.0, model=None) -> np.ndarray:
         """Weighted mean visibility per channel, phase-shifted to (dra, ddec) arcsec.

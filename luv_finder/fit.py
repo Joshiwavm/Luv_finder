@@ -25,9 +25,13 @@ position and shape are optimised on that profiled chi^2 by Nelder-Mead, one coll
 pointing per step.
 
 Errors are the inverse Fisher matrix, half the numerical Hessian of chi^2 in every free parameter at
-the optimum. They are formal: the visibility weights are taken as the noise and channels as
-independent. ALMA's Hanning response correlates neighbouring channels (+0.67, +0.17), which is not
-modelled, so these errors are underestimated, most for broad lines.
+the optimum, with the visibility weights as the noise. Neighbouring channels share noise (ALMA's
+Hanning response correlates them by 2/3 and 1/6), which the chi^2 treats as independent: the fit is
+still unbiased, but its errors would be too small. They are corrected by the sandwich estimator
+``F^-1 (J^T R J) F^-1`` over the channels, ``J`` the whitened derivatives of the spectrum model and
+``R`` the channel correlation measured on the jackknife
+(:func:`~luv_finder.data.channel_correlation`): a factor per spectral parameter, and one for the
+spatial parameters, whose information follows the model spectrum.
 """
 
 from __future__ import annotations
@@ -38,9 +42,10 @@ from dataclasses import dataclass
 
 import numpy as np
 from astropy.table import Table
-from scipy import optimize
+from scipy import linalg, optimize
 
 from .data import Chunk, DataHandler, load, sky_direction
+from .data import channel_correlation as measure_correlation
 from .matchedfilter import limit_cores, on_device, template_spectrum
 from .model import C_KMS, FWHM_TO_SIGMA
 from .utils import primary_beam
@@ -97,9 +102,15 @@ class LineWindow:
         m, for the primary beam.
     continuum_order : int or None
         Degree of the continuum polynomial; None fits none.
+    rho : array, optional
+        Channel correlation from lag 0 (see :func:`~luv_finder.data.channel_correlation`); None
+        for independent channels.
     """
 
-    def __init__(self, chunks: list[Chunk], dish_diameter: float, continuum_order: int | None = 2):
+    def __init__(
+        self, chunks: list[Chunk], dish_diameter: float, continuum_order: int | None = 2, rho: np.ndarray | None = None
+    ):
+        self.rho = None if rho is None or len(rho) == 1 else np.asarray(rho, dtype=float)
         self.freq = np.asarray(chunks[0].freq, dtype=float)
         if not all(np.allclose(c.freq, self.freq, rtol=1e-9, atol=0) for c in chunks[1:]):
             raise ValueError("the pointings' channel frequencies differ; only one spectral setup can be fitted")
@@ -175,6 +186,35 @@ def _window_chunks(data: DataHandler, dra: float, ddec: float, nu: float, pb_lim
             f"no pointing covers {nu / 1e9:.4f} GHz at ({dra:.2f}, {ddec:.2f}) arcsec with PB >= {pb_limit}"
         )
     return chunks
+
+
+def _correlation_scale(window: LineWindow, spectral: np.ndarray, spatial, n_free: int) -> np.ndarray:
+    """Factors on the errors of (A, c_0, ..., nu0, width, free spatial...) for the channel correlation.
+
+    Sandwich estimator over the channels: ``sqrt(diag(F^-1 J^T R J F^-1) / diag(F^-1))`` for the
+    spectral parameters, ``J`` the derivatives of the spectrum model whitened by ``sqrt(Q)``, and
+    ``sqrt(a^T R a / a^T a)`` with ``a = sqrt(Q) F`` for the spatial ones. All ones without ``rho``.
+    """
+    n_spec = spectral.size
+    if window.rho is None:
+        return np.ones(n_spec + n_free)
+    _, Q = window.statistics(spatial)
+    ok = Q > 0
+    peak, nu0, width = spectral[0], spectral[-2], spectral[-1]
+    dnu, dw = 1e-3 * (window.freq[1] - window.freq[0]), 1e-3 * width
+    G = window.design(nu0, width)
+    line_nu0 = (window.design(nu0 + dnu, width)[:, 0] - window.design(nu0 - dnu, width)[:, 0]) / (2 * dnu)
+    line_w = (window.design(nu0, width + dw)[:, 0] - window.design(nu0, width - dw)[:, 0]) / (2 * dw)
+    root = np.sqrt(Q[ok])[:, None]
+    J = root * np.column_stack([G, peak * line_nu0, peak * line_w])[ok]
+    a = root[:, 0] * (G @ spectral[:-2])[ok]
+    full = np.zeros(window.freq.size)
+    full[: window.rho.size] = window.rho
+    R = linalg.toeplitz(full)[np.ix_(ok, ok)]
+    inverse = np.linalg.pinv(J.T @ J)
+    corrected = inverse @ (J.T @ R @ J) @ inverse
+    spectral_scale = np.sqrt(np.diag(corrected) / np.diag(inverse))
+    return np.concatenate([spectral_scale, np.full(n_free, np.sqrt(a @ R @ a / (a @ a)))])
 
 
 def _hessian(f, x: np.ndarray, h: np.ndarray) -> np.ndarray:
@@ -289,6 +329,8 @@ def _fit(window: LineWindow, spatial, free, step, start, res: float, limits: dic
     pa = np.zeros(theta.size, dtype=bool)
     pa[n_spec:] = np.asarray(SPATIAL)[free] == "pa"
     cov, positive = _covariance(_hessian(chi2, theta, h), pa)
+    scale = _correlation_scale(window, best, spatial, int(free.sum()))
+    cov = cov * np.outer(scale, scale)
 
     ok = Q > 0
     chi2_spectrum = float(Q[ok] @ (S[ok] / Q[ok] - (G @ best[:-2])[ok]) ** 2)
@@ -370,6 +412,7 @@ def fit_line(
     pb_limit: float = 0.2,
     max_offset: float | None = None,
     size_max: float | None = None,
+    channel_correlation: str | dict | None = "measure",
 ) -> dict:
     """Fit one line in the visibilities, starting from a catalogue position, frequency and width.
 
@@ -402,6 +445,9 @@ def fit_line(
         the resolution.
     size_max : float, optional
         Largest axis (sigma), arcsec; default twice the resolution.
+    channel_correlation : "measure", None or dict
+        Noise correlation between channels for the errors: "measure" (default) on the jackknife
+        of the line's window, None for independent channels, or ``{spw: (1, rho_1, ...)}``.
 
     Returns
     -------
@@ -411,7 +457,11 @@ def fit_line(
     res = data.metadata.minresolution()
     limits = {"offset": res if max_offset is None else max_offset, "size": 2 * res if size_max is None else size_max}
     chunks = _window_chunks(data, dra, ddec, freq_ghz * 1e9, pb_limit)
-    window = LineWindow(chunks, data.metadata.dish_diameter, continuum_order)
+    if channel_correlation == "measure":
+        rho = measure_correlation(chunks)
+    else:
+        rho = (channel_correlation or {}).get(chunks[0].spw)
+    window = LineWindow(chunks, data.metadata.dish_diameter, continuum_order, rho)
     start = np.array([freq_ghz * 1e9, width])
     size = min(res / 4, limits["size"] / 2)
     step = np.array([res / 4, res / 4, size, size, 30.0])
@@ -457,12 +507,15 @@ def fit_lines(data: DataHandler | str, cat: Table, rows=None, cores: int | None 
         ``fit_chi2_reduced`` of the combined spectrum ``S / Q`` against the fitted line and
         continuum; ``fit_n_pointings`` fitted together; ``fit_point`` if the source was fitted as a
         point; ``fit_converged`` if the optimisers converged and the Hessian is positive definite.
-        Errors are formal (see the module docstring: channel correlation is not modelled). Unfitted
+        Errors are formal, corrected for the channel correlation (see the module docstring), which
+        is measured once per spectral window unless ``channel_correlation`` is passed. Unfitted
         lines hold NaN, 0 and False.
     """
     limit_cores(cores)
     if not isinstance(data, DataHandler):
         data = load(data)
+    if kwargs.get("channel_correlation", "measure") == "measure":
+        kwargs["channel_correlation"] = data.channel_correlation()
     if rows is None:
         rows = cat["detected"] if "detected" in cat.colnames else np.ones(len(cat), dtype=bool)
     out = cat.copy()

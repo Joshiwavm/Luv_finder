@@ -5,11 +5,11 @@ yet a catalogue: one source lights up many neighbouring grid points, and how oft
 reaches a given S/N is not known. Both are measured on the search's jackknife, one realisation of
 the data's noise without the sky. :func:`catalogue` takes these steps:
 
-1. The S/N is the filter's, which assumes independent channels. ALMA's Hanning spectral response
-   correlates neighbouring channels, so the noise is underestimated and the S/N too high; this is
-   not corrected. The jackknife carries the same correlated noise, so the tests below, which only
-   compare the data with the jackknife, are not biased by it. :func:`jackknife_spread` reports
-   how far the jackknife's S/N spread is from 1, as a flag.
+1. The S/N is the filter's, which accounts for the noise correlation between channels (ALMA's
+   Hanning response) measured on the jackknife, so the jackknife's S/N has unit variance.
+   :func:`jackknife_spread` reports how far its spread is from 1, as a check; a search run with
+   ``channel_correlation=None`` on Hanning data gives about 1.4-1.6. The tests below compare the
+   data with the jackknife, so they would be unbiased either way.
 2. :func:`noise_correlation` measures the correlation function rho of the response under the null
    over positions, channels and templates. A matched source's expected response has the same
    shape, ``E[r(p)] = (S/N)_0 rho(p - s)`` (Vio & Andreani 2021): spatially the dirty beam,
@@ -63,8 +63,9 @@ def jackknife_spread(result: SearchResult) -> np.ndarray:
     """Spread of the jackknife S/N per template, ``(n_template,)``: 1 if the channel noise is independent.
 
     The spread is 1.4826 times the median absolute deviation about the median, over every finite
-    position and channel, so a few outliers do not set it. Above 1 the channel noise is correlated
-    (ALMA's Hanning response) and the S/N overestimated; it is reported, not corrected.
+    position and channel, so a few outliers do not set it. Above 1 the search assumed less channel
+    correlation than the noise has (for instance ``channel_correlation=None`` on ALMA's Hanning
+    response), and its S/N is overestimated by that factor.
 
     Raises
     ------
@@ -441,13 +442,13 @@ def catalogue(result: SearchResult, ref=None, floor: float = 4.0, k: float = 3.0
     """Catalogue the line candidates of a search: one row per group of the data, by S/N descending.
 
     The noise correlation of ``result`` is measured, and the data, the jackknife and the negated
-    data are grouped (:func:`groups`) on the filter's S/N, uncorrected for correlated channel noise
-    (see the module docstring). Each data group gets the likelihood ratio and the
-    fidelity against the jackknife's groups (:func:`likelihood`, :func:`fidelity`). A group passes
-    the likelihood ratio if ``Lambda >= k`` or no jackknife group is as bright: there ``Lambda``
-    is only a lower limit, bounded by the number of brighter data groups. It is ``detected`` if it
-    passes and its fidelity is at least ``fidelity_min``, or the likelihood alone if the fidelity
-    could not be fitted. Nothing is clipped: the candidates are ``cat[cat["detected"]]``.
+    data are grouped (:func:`groups`) on the filter's S/N (see the module docstring). Each data
+    group gets the likelihood ratio and the fidelity against the jackknife's groups
+    (:func:`likelihood`, :func:`fidelity`). A group passes the likelihood ratio if
+    ``Lambda >= k`` or no jackknife group is as bright: there ``Lambda`` is only a lower limit,
+    bounded by the number of brighter data groups. It is ``detected`` if it passes and its
+    fidelity is at least ``fidelity_min``, or the likelihood alone if the fidelity could not be
+    fitted. Nothing is clipped: the candidates are ``cat[cat["detected"]]``.
 
     Parameters
     ----------

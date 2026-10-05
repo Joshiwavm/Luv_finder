@@ -23,6 +23,10 @@ For one spectral window the response at every grid point comes from three steps:
    Normalised per lag over the channels it covers, the response ``num / sqrt(var)`` has unit
    variance under the null at every channel, window edges and flagged channels included, and
    peaks on the line's own channel at its S/N, less the little the continuum fit takes.
+   Neighbouring channels share noise (ALMA's Hanning response correlates them by 2/3 and 1/6),
+   so the variance is ``h^T C h`` instead, ``h`` the template less its continuum projection and
+   ``C`` the channel correlation measured on the jackknife (``channel_correlation``): exact,
+   and one number per template and lag, since ``h`` does not depend on the position.
 
 The S/N times ``1 / sqrt(var)`` is the best-fit peak flux density of the template line, the
 continuum being a nuisance; :class:`SearchResult` holds both. :func:`pb_corrected` divides them by
@@ -117,14 +121,16 @@ def _collapse(u, v, X, w_row, flag, freq, dfreq, dra, ddec, bmaj, bmin, pa, temp
 
 
 @partial(jax.jit, static_argnames="order")
-def _spectral(sig, weight, amplitude, freq, widths, order=None):
+def _spectral(sig, weight, amplitude, freq, widths, order=None, rho=None):
     """Line templates centred on every channel: S/N ``(n_shape, n_width, n_dra, n_ddec, n_chan)``.
 
     Also returns the error of the template's peak flux density ``(n_shape, n_width, n_chan)``,
     NaN where no channel weighs in; the S/N times it is the best-fit peak flux density. With
     ``order``, every template is fitted jointly with a polynomial continuum of that degree in the
     channel index scaled to [-1, 1] (see the module docstring), and a lag whose template the
-    polynomial reproduces is uncovered.
+    polynomial reproduces is uncovered. With ``rho`` (the channel correlation from lag 0, see
+    :func:`~luv_finder.data.channel_correlation`) the S/N and the error use the exact variance
+    ``h^T C h`` of the estimator under correlated channels; the flux estimate does not change.
     """
     ok = weight > 0
     q = jnp.where(ok, amplitude / jnp.where(ok, weight, 1.0), 0.0)
@@ -146,8 +152,23 @@ def _spectral(sig, weight, amplitude, freq, widths, order=None):
         fitted = var - jnp.einsum("swij,swij->swi", c, mc)
         covered = fitted > 1e-9 * var  # beyond round-off
         var = fitted
-    error = jnp.where(covered, 1 / jnp.sqrt(jnp.where(covered, var, 1.0)), jnp.nan)
-    return num * jnp.where(covered, error, 0.0)[:, :, None, None, :], error
+    safe = jnp.where(covered, var, 1.0)
+    if rho is None or rho.size == 1:
+        snr_scale, error = 1 / jnp.sqrt(safe), 1 / jnp.sqrt(safe)
+    else:
+        # num = h^T sig with h the template less its continuum projection; under channel
+        # correlation Cov(sig_m, sig_n) = rho_|m-n| sqrt(W_m W_n), so Var(num) = h^T C h
+        h = profile[None] * q.T[:, None, None, :]
+        if order is not None:
+            h = h - jnp.einsum("swij,mj->swim", mc, basis)
+        h = h * jnp.sqrt(weight.T)[:, None, None, :]
+        var_c = jnp.sum(h * h, axis=-1)
+        for lag in range(1, rho.size):
+            var_c = var_c + 2 * rho[lag] * jnp.sum(h[..., :-lag] * h[..., lag:], axis=-1)
+        var_c = jnp.where(covered, var_c, 1.0)
+        snr_scale, error = 1 / jnp.sqrt(var_c), jnp.sqrt(var_c) / safe
+    error = jnp.where(covered, error, jnp.nan)
+    return num * jnp.where(covered, snr_scale, 0.0)[:, :, None, None, :], error
 
 
 def _one_field(data: DataHandler) -> None:
@@ -559,15 +580,33 @@ class MatchedFilter(_Grid):
         Degree of the polynomial in frequency fitted, per window and trial position, jointly with
         every line template (see the module docstring); None fits no continuum. The dirty
         ``cube`` of :meth:`run` keeps the continuum.
+    channel_correlation : "measure", None or dict
+        Noise correlation between channels, per spectral window. "measure" (default) measures it
+        on the data's jackknife when :meth:`run` starts (see
+        :func:`~luv_finder.data.channel_correlation`); None assumes independent channels; a dict
+        ``{spw: (1, rho_1, ...)}`` gives it. The S/N and errors account for it exactly, so the
+        response has unit variance under the null either way. :meth:`run` leaves the values used
+        in ``self.correlation``.
     """
 
-    def __init__(self, data: DataHandler, mod: Model, weighting: str = "natural", continuum_order: int | None = 2):
+    def __init__(
+        self,
+        data: DataHandler,
+        mod: Model,
+        weighting: str = "natural",
+        continuum_order: int | None = 2,
+        channel_correlation: str | dict | None = "measure",
+    ):
         if weighting not in WEIGHTINGS:
             raise ValueError(f"weighting must be one of {WEIGHTINGS}, got {weighting!r}")
+        if isinstance(channel_correlation, str) and channel_correlation != "measure":
+            raise ValueError(f'channel_correlation must be "measure", None or a dict, got {channel_correlation!r}')
         _one_field(data)
         self.data = data
         self.weighting = weighting
         self.continuum_order = continuum_order
+        self.channel_correlation = channel_correlation
+        self.correlation: dict[int, np.ndarray] = {}
         self.axes = self._grid_axes(mod)
         self.result: SearchResult | None = None
         self.cube: DirtyCube | None = None
@@ -608,6 +647,10 @@ class MatchedFilter(_Grid):
         if cube and self.weighting != "natural":
             raise ValueError("cube=True needs natural weighting: template weighting does not collapse to a dirty cube")
         limit_cores(cores)
+        if self.channel_correlation == "measure":
+            self.correlation = self.data.channel_correlation()
+        else:
+            self.correlation = {k: np.asarray(v, dtype=float) for k, v in (self.channel_correlation or {}).items()}
         self.result, self.cube = self._search(self.data, cube)
         if jackknife:
             self.result.jackknife = self._search(self.data.jackknife())[0]
@@ -631,8 +674,10 @@ class MatchedFilter(_Grid):
         """S/N and error of one window and, with ``cube``, its collapsed blocks for :func:`_dirty_cube`."""
         snr, blocks = [], []
         widths, freq = jnp.asarray(axes["width"]), jnp.asarray(chunk.freq)
+        rho = self.correlation.get(chunk.spw)
+        rho = None if rho is None or rho.size == 1 else jnp.asarray(rho)
         for n, collapsed in _blocks(chunk, axes["dra"], axes["ddec"], shapes, self.weighting == "template"):
-            block, error = _spectral(*collapsed, freq, widths, order=self.continuum_order)
+            block, error = _spectral(*collapsed, freq, widths, order=self.continuum_order, rho=rho)
             snr.append(np.asarray(block)[:, :, :n])
             if cube:
                 blocks.append((n, *collapsed[:2]))
@@ -741,7 +786,7 @@ def search_pointings(
         Positions and channels where a pointing's primary beam is below this are left out
         (see :func:`pb_corrected`).
     **filter_kwargs
-        Passed to :class:`MatchedFilter` (``weighting``, ``continuum_order``).
+        Passed to :class:`MatchedFilter` (``weighting``, ``continuum_order``, ``channel_correlation``).
 
     Returns
     -------

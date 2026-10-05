@@ -10,6 +10,7 @@ from luv_finder.data import (
     CHUNK_ARRAYS,
     Chunk,
     Metadata,
+    channel_correlation,
     fields_in,
     load,
     pair_weight,
@@ -197,3 +198,34 @@ def test_jackknife_pairs_rows_by_baseline():
 def test_pair_weight_is_the_inverse_variance_of_the_mean():
     assert pair_weight(1.0, 3.0) == pytest.approx(3.0)
     assert pair_weight(0.0, 0.0) == 0.0
+
+
+HANNING = (1.0, 2 / 3, 1 / 6)
+
+
+def _noise_chunk(n_chan=32, n_row=20000, smooth=True, spw=0, seed=0):
+    """Pure noise, consecutive integrations of one baseline; Hanning-smoothed along the channels."""
+    rng = np.random.default_rng(seed)
+    noise = rng.standard_normal((n_chan + 2, n_row)) + 1j * rng.standard_normal((n_chan + 2, n_row))
+    noise = 0.25 * noise[:-2] + 0.5 * noise[1:-1] + 0.25 * noise[2:] if smooth else noise[1:-1]
+    chunk = _chunk(np.arange(n_row), np.zeros(n_row, dtype=int), n_chan=n_chan, spw=spw)
+    return dataclasses.replace(chunk, X=noise)
+
+
+def test_channel_correlation_of_hanning_noise():
+    rho = channel_correlation([_noise_chunk()])
+    assert rho.size == 3 and rho == pytest.approx(HANNING, abs=0.01)
+
+
+@pytest.mark.parametrize(
+    "chunk", [_noise_chunk(smooth=False), _chunk(np.arange(100), np.zeros(100, dtype=int), values=np.ones(100))]
+)
+def test_channel_correlation_of_independent_or_no_noise(chunk):
+    """White noise has no significant lag, and a noiseless (constant) signal leaves nothing to measure."""
+    assert channel_correlation([chunk]).tolist() == [1.0]
+
+
+def test_channel_correlation_per_spectral_window():
+    data = DataHandler(chunks=[_noise_chunk(spw=0), _noise_chunk(smooth=False, spw=1, seed=1)], metadata=None)
+    rho = data.channel_correlation()
+    assert sorted(rho) == [0, 1] and rho[0].size == 3 and rho[1].tolist() == [1.0]
