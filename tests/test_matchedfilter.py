@@ -3,18 +3,22 @@ import os
 
 import numpy as np
 import pytest
+from astropy.table import Table
 
 from luv_finder import DataHandler, Gaussian, MatchedFilter, Model
-from luv_finder.cli.find_lines import build_grid
+from luv_finder.cli.find_lines import main as find_lines
 from luv_finder.data import C, Chunk, Metadata
+from luv_finder.fit import COLUMNS as FIT_COLUMNS
 from luv_finder.matchedfilter import (
     SearchResult,
+    build_grid,
     combine_pointings,
     default_cores,
     dirty_cube,
     dirty_maps,
     mosaic_dirty_maps,
     pb_corrected,
+    search_pointings,
 )
 from luv_finder.model import FWHM_TO_SIGMA
 from luv_finder.utils import primary_beam, primary_beam_radius
@@ -22,7 +26,7 @@ from luv_finder.utils import primary_beam, primary_beam_radius
 C_KMS = 299792.458
 
 
-def _finder(data, weighting="natural", **grid):
+def _finder(data, weighting="natural", continuum_order=2, **grid):
     g = Gaussian()
     g.grid = {
         "bmin": data.metadata.minresolution() / 10,
@@ -32,7 +36,7 @@ def _finder(data, weighting="natural", **grid):
     }
     m = Model()
     m.addcomponent(g)
-    return MatchedFilter(data, m, weighting=weighting)
+    return MatchedFilter(data, m, weighting=weighting, continuum_order=continuum_order)
 
 
 def _chunk(nchan, nvis, seed=0, field=0, spw=0, offset=(0.0, 0.0), freq0=40e9):
@@ -70,7 +74,7 @@ def _synthetic(
 
 
 def _peak(data, weighting="natural", **grid):
-    mf = _finder(data, weighting, dra=0.0, ddec=0.0, **grid)
+    mf = _finder(data, weighting, continuum_order=None, dra=0.0, ddec=0.0, **grid)
     mf.run()
     return mf.response[0].max()
 
@@ -91,7 +95,7 @@ def _direct(chunk, dra, ddec, bmin, bmaj, pa, width, template):
 @pytest.mark.parametrize("nchan", [16, 50, 120])
 def test_response_equals_injected_snr_on_the_line_channel(nchan):
     """The response peaks on the line's channel at its S/N, independent of the number of channels."""
-    mf = _finder(_synthetic(nchan, snr=10.0), dra=0.0, ddec=0.0)
+    mf = _finder(_synthetic(nchan, snr=10.0), continuum_order=None, dra=0.0, ddec=0.0)
     mf.run()
     response = mf.response[0]
     assert np.argmax(response) == nchan // 2
@@ -120,7 +124,7 @@ def test_matches_the_direct_sum(template):
         "pa": 40.0,
         "width": [150.0, 500.0],
     }
-    mf = _finder(data, "template" if template else "natural", **grid)
+    mf = _finder(data, "template" if template else "natural", continuum_order=None, **grid)
     mf.run()
     for row, p in enumerate(mf.grid_params):
         args = {k.split("_", 2)[-1]: v for k, v in p.items()}
@@ -130,7 +134,7 @@ def test_matches_the_direct_sum(template):
 
 def test_line_at_the_window_edge_has_no_mirror():
     """A line two channels from the edge is found there at its S/N; the far edge stays empty."""
-    response = _finder(_synthetic(50, snr=10.0, line=2), dra=0.0, ddec=0.0)
+    response = _finder(_synthetic(50, snr=10.0, line=2), continuum_order=None, dra=0.0, ddec=0.0)
     response.run()
     r = response.response[0]
     assert np.argmax(r) == 2
@@ -151,7 +155,7 @@ def test_noise_has_unit_variance_at_every_channel():
         metadata=_metadata(chunk),
     )
     axis = np.linspace(-60, 60, 16)
-    mf = _finder(data, dra=axis, ddec=axis)
+    mf = _finder(data, continuum_order=None, dra=axis, ddec=axis)
     mf.run()
     per_channel = mf.response.std(axis=0)
     assert per_channel[1:].mean() == pytest.approx(1.0, abs=0.05)
@@ -180,22 +184,104 @@ def test_grid_expansion(data):
     assert all(p["src_00_width"] == 300.0 for p in mf.grid_params)
 
 
-def test_recovers_injected_lines(data, truth):
+def _fixture_search(data, truth, jackknife=False, **options):
+    """Search the fixture's two source positions; returns the filter and the rows of the sources.
+
+    The grid is the dra x ddec product of the positions, so it holds them on its diagonal.
+    """
     positions = np.array([s["position_model"] for s in truth["sources"]])
-    mf = _finder(data, dra=positions[:, 0], ddec=positions[:, 1])
-    mf.run(jackknife=True)
+    mf = _finder(data, dra=positions[:, 0], ddec=positions[:, 1], **options)
+    mf.run(jackknife=jackknife)
+    at = [(p["src_00_dra"], p["src_00_ddec"]) for p in mf.grid_params]
+    return mf, [next(k for k, p in enumerate(at) if np.allclose(pos, p)) for pos in positions]
+
+
+def test_recovers_injected_lines(data, truth):
+    mf, rows = _fixture_search(data, truth, jackknife=True)
     freqs = mf.frequencies()
-
-    # the grid is the dra x ddec product; the two on-source points must peak on their line
-    for src in truth["sources"]:
-        i = next(
-            k
-            for k, p in enumerate(mf.grid_params)
-            if np.allclose(src["position_model"], (p["src_00_dra"], p["src_00_ddec"]))
-        )
+    for src, i in zip(truth["sources"], rows, strict=True):
         assert abs(freqs[np.argmax(mf.response[i])] - src["line"]["mean"]) < 0.01  # GHz, under a channel
-
     assert np.abs(mf.response_jackknife).max() < 0.5 * mf.response.max()
+
+
+def test_continuum_fit_keeps_the_fixture_lines(data, truth):
+    """Both lines (S/N 13 and 9) peak at their position and channel with the continuum fitted.
+
+    Their S/N drops by a few per cent: the polynomial takes up the part of each line it can mimic.
+    """
+    fitted, rows = _fixture_search(data, truth)
+    bare = _fixture_search(data, truth, continuum_order=None)[0]
+    freqs = fitted.frequencies()
+    for src, i in zip(truth["sources"], rows, strict=True):
+        chan = np.argmax(fitted.response[i])
+        assert abs(freqs[chan] - src["line"]["mean"]) < 0.01  # GHz, under a channel
+        assert np.argmax(fitted.response[:, chan]) == i
+        assert fitted.response[i, chan] == pytest.approx(bare.response[i].max(), rel=0.1)
+
+
+def test_continuum_fit_keeps_noise_at_unit_variance_at_every_lag():
+    """Fitted jointly, the continuum leaves noise at zero mean and unit variance at every lag, edges included.
+
+    Four windows of unequal weights and flagged channels, an edge one among them; 48 x 48
+    positions a beam or more apart give 9216 nearly independent draws per lag, so the standard
+    deviation of each is known to about 0.01.
+    """
+    r = np.random.default_rng(11)
+    chunks = []
+    for spw in range(4):
+        chunk = _chunk(40, 2000, seed=spw, spw=spw, freq0=40e9 + spw * 2e9)
+        flag = np.zeros(chunk.flag.shape, dtype=bool)
+        flag[[0, 17, 18]] = True
+        w_row = r.uniform(0.2, 5.0, chunk.u.size)
+        noise = (r.normal(size=flag.shape) + 1j * r.normal(size=flag.shape)) / np.sqrt(w_row)
+        chunks.append(dataclasses.replace(chunk, X=np.where(flag, 0, w_row * noise), w_row=w_row, flag=flag))
+    data = DataHandler(chunks=chunks, metadata=_metadata(chunks[0]))
+    axis = np.arange(-235.0, 236.0, 10.0)
+    mf = _finder(data, dra=axis, ddec=axis)
+    mf.run()
+    snr = mf.response.reshape(-1, 40)  # one row per position and window, one column per lag
+    assert np.all(np.isfinite(snr))
+    assert np.abs(snr.std(axis=0) - 1.0).max() < 0.03
+    assert np.abs(snr.mean(axis=0)).max() < 0.05
+
+
+@pytest.mark.parametrize("weighting", ["natural", "template"])
+def test_continuum_far_off_centre_is_fitted_at_its_position(weighting):
+    """A steep-spectrum continuum source whose phase winds across the window changes neither S/N nor flux.
+
+    Unit weights, so the response is in S/N for 1 Jy noise per visibility; the 1 Jy continuum
+    is then a S/N 30 signal at every lag. Two trial shapes, each fitted on its own. The fit is
+    linear, so the continuum adds its own response, that of the part of a cubic no quadratic takes.
+    """
+    nchan, pos = 100, (60.0, -40.0)
+    line = _synthetic(nchan, snr=10.0, pos=pos)
+    (chunk,) = line.chunks
+    phase = chunk.phase(*pos)
+    assert np.ptp(np.unwrap(np.angle(phase), axis=0), axis=0).max() > 2.0  # rad, across the window
+    continuum = (chunk.freq / chunk.freq.mean())[:, None] ** 3 * np.conj(phase)  # spectral index 3
+    both = DataHandler(chunks=[dataclasses.replace(chunk, X=chunk.X + continuum)], metadata=line.metadata)
+
+    def search(data, order):
+        mf = _finder(data, weighting, continuum_order=order, dra=pos[0], ddec=pos[1], bmin=[0.0, 1.0], bmaj=1.0)
+        mf.run()
+        return mf.result
+
+    alone, fitted, kept, bare = search(line, 2), search(both, 2), search(both, None), search(line, None)
+    assert np.abs(fitted.response - alone.response).max() < 1e-3
+    assert np.all(np.argmax(fitted.response, axis=1) == nchan // 2)
+    assert fitted.flux[..., nchan // 2] == pytest.approx(bare.flux[..., nchan // 2], rel=1e-5)
+    free = np.abs(np.arange(nchan) - nchan // 2) >= 10  # lags clear of the line
+    assert kept.response[:, free].min() > 10.0
+
+
+def test_lags_the_continuum_reproduces_are_uncovered():
+    """In a window of three channels a quadratic mimics any line: no lag is covered, and none blows up."""
+    data = _synthetic(3, snr=10.0)
+    quadratic, linear = (_finder(data, continuum_order=order, dra=0.0, ddec=0.0) for order in (2, 1))
+    quadratic.run()
+    linear.run()
+    assert np.all(quadratic.result.snr == 0.0) and np.all(np.isnan(quadratic.result.error))
+    assert np.all(np.isfinite(linear.result.error)) and np.argmax(linear.response[0]) == 1
 
 
 def test_flagged_channel_gives_a_finite_response():
@@ -204,7 +290,7 @@ def test_flagged_channel_gives_a_finite_response():
     flag = chunk.flag.copy()
     flag[10] = True  # away from the line, so the peak is unchanged
     data.chunks = [dataclasses.replace(chunk, X=np.where(flag, 0, chunk.X), flag=flag)]
-    mf = _finder(data, dra=0.0, ddec=0.0)
+    mf = _finder(data, continuum_order=None, dra=0.0, ddec=0.0)
     mf.run()
     assert np.all(np.isfinite(mf.response))
     assert mf.response.max() == pytest.approx(10.0, abs=1e-3)
@@ -215,7 +301,7 @@ def test_windows_are_searched_separately_in_frequency_order():
     high = _synthetic(40, snr=10.0, freq0=41e9).chunks[0]
     low = dataclasses.replace(_synthetic(30, snr=0.0, freq0=39e9).chunks[0], spw=1)
     data = DataHandler(chunks=[high, low], metadata=_metadata(high))
-    mf = _finder(data, dra=0.0, ddec=0.0)
+    mf = _finder(data, continuum_order=None, dra=0.0, ddec=0.0)
     mf.run()
     assert np.all(np.diff(mf.frequencies()) > 0)
     assert mf.response.shape == (1, 70)
@@ -228,7 +314,7 @@ def test_pointings_share_one_sky_grid():
     pos = (5.0, -3.0)
     for field, offset in ((0, (0.0, 0.0)), (1, (20.0, 10.0))):
         data = _synthetic(50, snr=10.0, field=field, offset=offset, pos=pos)
-        mf = _finder(data, dra=[0.0, 5.0, 10.0], ddec=[-3.0, 0.0])
+        mf = _finder(data, continuum_order=None, dra=[0.0, 5.0, 10.0], ddec=[-3.0, 0.0])
         mf.run()
         best = mf.best_params
         assert (best["src_00_dra"], best["src_00_ddec"]) == pos
@@ -330,7 +416,7 @@ def _seen_by(offset, src, field=0):
 
 
 def _point_search(data, dra, ddec):
-    mf = _finder(data, dra=dra, ddec=ddec, bmin=0.0, bmaj=0.0)
+    mf = _finder(data, continuum_order=None, dra=dra, ddec=ddec, bmin=0.0, bmaj=0.0)
     mf.run(jackknife=True)
     return mf.result
 
@@ -460,6 +546,111 @@ def test_build_grid_with_pb_limit_reaches_the_beam_radius_on_the_same_lattice():
         assert offsets.max() <= half < offsets.max() + step
         assert np.allclose(wide[axis] / step, np.round(wide[axis] / step))
         assert np.all(np.isin(default[axis], wide[axis]))
+
+
+#: A lattice of 0.25 arcsec steps through the fixture's two sources, (4.25, 23.5) and (12.0, -4.25).
+SOURCES_GRID = {"dra": [4.25, 4.5, 12.0, 12.25], "ddec": [-4.25, -4.0, 23.5, 23.75], "width": 300.0}
+
+
+def _assert_same(a, b):
+    """Equal searches, NaN included, down to the jackknife."""
+    assert a.axes == b.axes
+    for key in ("freqs", "snr", "flux", "error", "coverage"):
+        assert np.allclose(getattr(a, key), getattr(b, key), rtol=1e-12, atol=0, equal_nan=True), key
+    assert (a.jackknife is None) == (b.jackknife is None)
+    if a.jackknife is not None:
+        _assert_same(a.jackknife, b.jackknife)
+
+
+def _search_by_hand(path, field, continuum_order=2, cube=False):
+    """One field searched step by step as ``search_pointings`` does: ``(data, filter)`` after ``run``."""
+    data = DataHandler.from_npz(path, [field])
+    mf = _finder(data, continuum_order=continuum_order, **build_grid(data, {**SOURCES_GRID, "pb_limit": 0.2}))
+    mf.run(jackknife=True, cube=cube)
+    return data, mf
+
+
+def test_search_pointings_combines_the_pb_corrected_fields(two_field_npz):
+    by_hand = [_search_by_hand(two_field_npz, field, cube=True) for field in (0, 1)]
+    result, cubes = search_pointings(two_field_npz, SOURCES_GRID, jackknife=True, cube=True)
+    expected = combine_pointings([pb_corrected(mf.result, data, 0.2) for data, mf in by_hand])
+    _assert_same(result, expected)
+    assert result.jackknife is not None
+    assert np.isnan(result.snr).any() and np.isfinite(result.snr).any()
+    assert len(cubes) == 2
+    for cube, (_, mf) in zip(cubes, by_hand, strict=True):
+        assert np.array_equal(cube.cube, mf.cube.cube)
+        assert np.array_equal(cube.offset, mf.cube.offset)
+    assert cubes[1].offset[0] - cubes[0].offset[0] == 10.0
+
+
+@pytest.mark.parametrize("continuum_order", [2, None])
+def test_search_pointings_of_one_field_is_its_pb_corrected_search(fixture_npz, continuum_order):
+    result, cubes = search_pointings(fixture_npz, SOURCES_GRID, continuum_order=continuum_order)
+    data, mf = _search_by_hand(fixture_npz, 0, continuum_order)
+    _assert_same(result, pb_corrected(mf.result, data, 0.2))
+    assert cubes == []
+
+
+def test_search_pointings_without_jackknife_has_none(fixture_npz):
+    assert search_pointings(fixture_npz, SOURCES_GRID, jackknife=False)[0].jackknife is None
+
+
+#: A blind lattice around both sources, as the catalogue needs (its noise correlation is measured on a lattice).
+LATTICE = {"dra": {"start": 0.0, "stop": 16.0, "step": 0.5}, "ddec": {"start": -8.0, "stop": 28.0, "step": 0.5}}
+
+
+def _find_lines(tmp_path, npz, *options, grid_cfg=SOURCES_GRID):
+    """Run ``luv-find`` on ``npz`` with ``grid_cfg``, writing its figure into ``tmp_path``."""
+    grid = tmp_path / "grid.yaml"
+    grid.write_text("\n".join(f"{k}: {v}" for k, v in grid_cfg.items()))
+    find_lines(["--ms", str(npz), "--grid", str(grid), "--plots-dir", str(tmp_path), *options])
+
+
+@pytest.mark.parametrize("order", [[], ["--continuum-order", "none"], ["--continuum-order", "-1"]])
+def test_find_lines_combines_a_mosaic_without_field(tmp_path, capsys, two_field_npz, order):
+    out = tmp_path / "response.npz"
+    _find_lines(tmp_path, two_field_npz, "--jackknife", "--out", str(out), *order)
+    text = capsys.readouterr().out
+    assert "best grid point" in text and "PB-corrected peak flux density" in text
+    assert "jackknife max" in text
+    assert (tmp_path / "filter_response.png").exists()
+    with np.load(out, allow_pickle=True) as saved:
+        assert saved["response"].shape[1] == len(saved["freqs"]) == 50
+        assert saved["response"].shape[0] == len(saved["grid_params"])
+
+
+@pytest.mark.parametrize("npz", ["fixture_npz", "two_field_npz"])
+def test_find_lines_writes_a_catalogue(tmp_path, capsys, request, npz):
+    out = tmp_path / "lines.ecsv"
+    _find_lines(tmp_path, request.getfixturevalue(npz), "--jackknife", "--catalogue", str(out), grid_cfg=LATTICE)
+    cat = Table.read(out, format="ascii.ecsv")
+    assert len(cat) and {"ra", "dec", "likelihood", "fidelity", "detected"} <= set(cat.colnames)
+    assert "candidates detected" in capsys.readouterr().out
+    assert (tmp_path / "reliability.png").exists()
+
+
+def test_find_lines_catalogue_needs_the_jackknife(tmp_path, fixture_npz):
+    with pytest.raises(SystemExit):
+        _find_lines(tmp_path, fixture_npz, "--catalogue", str(tmp_path / "lines.ecsv"))
+
+
+def test_find_lines_fits_the_detected_lines(tmp_path, capsys, fixture_npz):
+    out = tmp_path / "lines.ecsv"
+    _find_lines(tmp_path, fixture_npz, "--jackknife", "--catalogue", str(out), "--fit", grid_cfg=LATTICE)
+    cat = Table.read(out, format="ascii.ecsv")
+    assert set(FIT_COLUMNS) <= set(cat.colnames)
+    assert np.all(np.isfinite(cat["fit_line_flux"][cat["detected"]]))
+    assert np.all(np.isnan(cat["fit_line_flux"][~cat["detected"]]))
+    assert "fit_line_flux" in capsys.readouterr().out
+    with pytest.raises(SystemExit):
+        _find_lines(tmp_path, fixture_npz, "--jackknife", "--fit")
+
+
+def test_find_lines_searches_one_field_without_pb_correction(tmp_path, capsys, two_field_npz):
+    _find_lines(tmp_path, two_field_npz, "--field", "1")
+    text = capsys.readouterr().out
+    assert "peak flux density" in text and "PB-corrected" not in text
 
 
 @pytest.mark.parametrize(("total", "used"), [(48, 12), (8, 2), (4, 1), (2, 1), (1, 1)])

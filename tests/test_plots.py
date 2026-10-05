@@ -4,6 +4,8 @@ Assertions here are deliberately weak: the point is to produce something to look
 at. The numerical checks live in the other test modules.
 """
 
+import warnings
+from pathlib import Path
 from types import SimpleNamespace
 
 import numpy as np
@@ -185,3 +187,86 @@ def test_search_figures_with_nan(plots):
     mf = SimpleNamespace(axes={"dra": axis, "ddec": axis}, response=responses[0], response_jackknife=responses[1])
     assert snr_map(mf, plots_dir=str(plots), name="snr_map_nan", marks={"x": (5.0, 5.0)}).endswith(".png")
     assert noise_check(mf, plots_dir=str(plots), name="noise_nan").endswith(".png")
+
+
+def test_response_shape_figure(plots):
+    """Null correlation of smoothed white noise, and cuts through a blob that has the same shape."""
+    from scipy.ndimage import gaussian_filter
+
+    from luv_finder.catalogue import noise_correlation
+    from luv_finder.matchedfilter import SearchResult
+    from luv_finder.model import C_KMS, FWHM_TO_SIGMA
+    from luv_finder.plotting import response_shape_check
+
+    step, dv, widths, shape = 0.5, 50.0, (100.0, 200.0), (60, 60, 64)
+    sigmas = [(4.0, 2.0, w / dv * FWHM_TO_SIGMA) for w in widths]
+    axes = {"dra": (step * np.arange(shape[0])).tolist(), "ddec": (step * np.arange(shape[1])).tolist()}
+    axes |= {"bmin": [0.0], "bmaj": [0.0], "pa": [0.0], "width": list(widths)}
+    freqs = 40e9 * (1 + dv / C_KMS * (np.arange(shape[2]) - shape[2] // 2))
+
+    def noise(seed):
+        white = np.random.default_rng(seed).standard_normal(shape)
+        return np.stack([gaussian_filter(white, s, mode="wrap") for s in sigmas], 2)
+
+    def blob(sigma, peak=10.0):
+        offsets = np.ogrid[tuple(slice(-n // 2, n - n // 2) for n in shape)]
+        return peak * np.exp(-sum((o / s) ** 2 / 4 for o, s in zip(offsets, sigma, strict=True)))
+
+    def search(snr, jackknife=None):
+        error = np.full(snr.shape, 1e-3)
+        return SearchResult(axes, freqs, snr, snr * error, error, np.ones(shape), jackknife)
+
+    noisy, jackknife = (n / n.std(axis=(0, 1, 3), keepdims=True) for n in map(noise, (1, 2)))
+    data = noisy + np.stack([blob(s) for s in sigmas], 2)
+    result = search(data, search(jackknife))
+    nc = noise_correlation(result, max_lag=10.0)
+    peaks = []
+    for t in range(len(widths)):
+        i, j, k = np.unravel_index(result.snr[:, :, t].argmax(), shape)
+        peaks.append((i, j, t, k))
+    path = response_shape_check(nc, result, peaks, plots_dir=str(plots))
+    assert Path(path).is_file()
+
+
+def _reliability_catalogue(data, jackknife, negative, floor=4.0, k=3.0, fidelity_min=0.6):
+    """A catalogue table with the columns and meta that ``reliability_check`` reads, from group S/N lists."""
+    from astropy.table import Table
+    from scipy import special
+
+    from luv_finder.catalogue import fidelity, likelihood
+
+    ratio, lower = likelihood(data, jackknife)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        values, (centre, sigma), bins = fidelity(data, jackknife, floor)
+    detected = ((ratio >= k) | lower) & ((values >= fidelity_min) | np.isnan(values))
+    meta = {"floor": floor, "k": k, "fidelity_min": fidelity_min, "fidelity_centre": centre, "fidelity_sigma": sigma}
+    meta["snr_likelihood"] = float(np.min(data[ratio >= k], initial=np.inf)) if np.any(ratio >= k) else np.nan
+    meta["snr_fidelity"] = float(centre + sigma * special.erfinv(2 * fidelity_min - 1))
+    meta |= {"snr_data": data.tolist(), "snr_jackknife": jackknife.tolist(), "snr_negative": negative.tolist()}
+    meta["fidelity_bins"] = {key: value.tolist() for key, value in bins.items()}
+    columns = {"snr": data, "likelihood": ratio, "likelihood_lower_limit": lower, "fidelity": values}
+    return Table(columns | {"detected": detected}, meta=meta)
+
+
+def test_reliability_figure(plots):
+    """Counts, likelihood ratio and fidelity: a normal catalogue, a NaN fit without jackknife, and no detections."""
+    from luv_finder.plotting import reliability_check
+
+    rng = np.random.default_rng(3)
+
+    def noise(n):
+        return 4.0 + np.abs(rng.normal(0, 0.6, n))
+
+    bright = np.array([5.1, 5.5, 5.9, 6.4, 7.2, 8.0])
+    data, jackknife, negative = np.r_[noise(160), bright], noise(150), noise(140)
+    normal = _reliability_catalogue(data, jackknife, negative)
+    assert normal["detected"].any()
+    nan_fit = _reliability_catalogue(bright, np.array([]), np.array([]))
+    nan_fit.meta |= {"fidelity_centre": np.nan, "fidelity_sigma": np.nan, "snr_fidelity": np.nan}
+    nothing = _reliability_catalogue(noise(160), jackknife, negative)
+    nothing["detected"] = False
+    empty = _reliability_catalogue(np.array([]), np.array([]), np.array([]))
+    for name, cat in (("normal", normal), ("nan_fit", nan_fit), ("nothing", nothing), ("empty", empty)):
+        path = reliability_check(cat, plots_dir=str(plots), name=f"reliability_{name}")
+        assert Path(path).is_file()

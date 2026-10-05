@@ -1,22 +1,35 @@
 """Grid-search matched filter for spectral lines in the UV plane, evaluated with JAX.
 
-For one spectral window the response at every grid point comes from two collapses:
+For one spectral window the response at every grid point comes from three steps:
 
-1. Spatial, per channel: the weighted visibilities phase-shifted onto each trial position and
-   summed, ``sig = sum_j t Re[X e^{-i phi}]``, with the per-channel weight ``W = sum_j w t^2``
-   and template amplitude ``a = sum_j w t A``. ``t`` is 1 ("natural") or the source envelope
-   A ("template"). On a ``dra x ddec`` grid the phase factorises, so all positions of a channel
-   are one complex matrix product; across uniformly spaced channels the phase factors follow
-   by recurrence instead of new exponentials.
-2. Spectral, per lag: the Gaussian line profile ``S_i`` centred on channel ``i``,
-   ``sum S_i q sig / sqrt(sum S_i^2 q^2 W)`` with ``q = a / W``. Each lag is normalised over the
-   channels it covers, so the response has unit variance under the null at every channel,
-   window edges and flagged channels included, and peaks at the line's S/N on the line's own
-   channel.
+1. Spatial collapse, per channel: the weighted visibilities phase-shifted onto each trial
+   position and summed, ``sig = sum_j t Re[X e^{-i phi}]``, with the per-channel weight
+   ``W = sum_j w t^2`` and template amplitude ``a = sum_j w t A``. ``t`` is 1 ("natural") or the
+   source envelope A ("template"). On a ``dra x ddec`` grid the phase factorises, so all positions
+   of a channel are one complex matrix product; across uniformly spaced channels the phase
+   factors follow by recurrence instead of new exponentials.
+2. Continuum, per position: ``d = sig / W`` is the dirty spectrum at the trial position, with
+   variance ``1 / W``. A continuum source there is smooth in frequency however far it lies from
+   the phase centre, whereas a fit per visibility, as CASA's uvcontsub, fails off-centre: the
+   source's phase winds across the window. A polynomial ``P`` in the channel index, of degree
+   ``continuum_order``, is therefore fitted per window and position jointly with every line
+   template of step 3, by weighted least squares. Unlike subtracting a continuum fitted first,
+   the joint fit is linear in the data and exactly normalised, and it needs no line-free
+   channels: the trial line's own channels are in its model.
+3. Spectral collapse, per lag: the Gaussian line profile ``S_i`` centred on channel ``i`` makes
+   the template ``g_i = q S_i`` with ``q = a / W``, giving ``num = sum g_i sig`` and
+   ``var = sum g_i^2 W``. The continuum is profiled out with ``M = P^T W P`` and
+   ``c_i = P^T W g_i``: ``num - c_i^T M^-1 P^T sig`` and ``var - c_i^T M^-1 c_i`` replace them.
+   Normalised per lag over the channels it covers, the response ``num / sqrt(var)`` has unit
+   variance under the null at every channel, window edges and flagged channels included, and
+   peaks on the line's own channel at its S/N, less the little the continuum fit takes.
 
-The S/N times ``1 / sqrt(sum S_i^2 q^2 W)`` is the best-fit peak flux density of the template
-line; :class:`SearchResult` holds both. :func:`pb_corrected` divides them by a pointing's primary
-beam and :func:`combine_pointings` merges the pointings of a mosaic by inverse variance.
+The S/N times ``1 / sqrt(var)`` is the best-fit peak flux density of the template line, the
+continuum being a nuisance; :class:`SearchResult` holds both. :func:`pb_corrected` divides them by
+a pointing's primary beam and :func:`combine_pointings` merges the pointings of a mosaic by
+inverse variance; :func:`search_pointings` does both for every field of a dataset.
+:func:`template_spectrum` is step 1 at a single position and source shape, which
+:mod:`luv_finder.fit` uses to fit the catalogued lines.
 
 All of it runs in float64 (``jax.enable_x64``), scoped to the search.
 """
@@ -35,9 +48,9 @@ import jax.numpy as jnp
 import numpy as np
 from tqdm import tqdm
 
-from .data import Chunk, DataHandler
-from .model import C_KMS, FWHM_TO_SIGMA, Model, envelope
-from .utils import ARCSEC, C, primary_beam
+from .data import Chunk, DataHandler, fields_in, load
+from .model import C_KMS, FWHM_TO_SIGMA, Gaussian, Model, envelope
+from .utils import ARCSEC, C, primary_beam, primary_beam_radius
 
 #: Axes of a line template; the templates of a search are their product in this order.
 TEMPLATE_KEYS = ("bmin", "bmaj", "pa", "width")
@@ -50,6 +63,9 @@ GRID_KEYS = ("dra", "ddec", *TEMPLATE_KEYS)
 #: ("natural", optimal for a point source) or also by the source envelope A(u, v)
 #: ("template", optimal for a resolved source of the trial size).
 WEIGHTINGS = ("natural", "template")
+
+#: The :class:`~luv_finder.data.Chunk` arrays :func:`_collapse` reads, in its argument order.
+COLLAPSE_ARRAYS = ("u", "v", "X", "w_row", "flag", "freq")
 
 #: Position phases are evaluated in blocks of ``dra`` rows whose complex arrays stay near this size.
 BLOCK_BYTES = 2**31
@@ -100,12 +116,15 @@ def _collapse(u, v, X, w_row, flag, freq, dfreq, dra, ddec, bmaj, bmin, pa, temp
     return jax.lax.scan(channel, (pu, pv), (freq, X, flag))[1]
 
 
-@jax.jit
-def _spectral(sig, weight, amplitude, freq, widths):
+@partial(jax.jit, static_argnames="order")
+def _spectral(sig, weight, amplitude, freq, widths, order=None):
     """Line templates centred on every channel: S/N ``(n_shape, n_width, n_dra, n_ddec, n_chan)``.
 
     Also returns the error of the template's peak flux density ``(n_shape, n_width, n_chan)``,
-    NaN where no channel weighs in; the S/N times it is the best-fit peak flux density.
+    NaN where no channel weighs in; the S/N times it is the best-fit peak flux density. With
+    ``order``, every template is fitted jointly with a polynomial continuum of that degree in the
+    channel index scaled to [-1, 1] (see the module docstring), and a lag whose template the
+    polynomial reproduces is uncovered.
     """
     ok = weight > 0
     q = jnp.where(ok, amplitude / jnp.where(ok, weight, 1.0), 0.0)
@@ -114,6 +133,19 @@ def _spectral(sig, weight, amplitude, freq, widths):
     num = jnp.einsum("wim,msab->swabi", profile, q[:, :, None, None] * sig)
     var = jnp.einsum("wim,ms->swi", profile**2, q**2 * weight)
     covered = var > 0
+    if order is not None:
+        basis = jnp.linspace(-1.0, 1.0, freq.size)[:, None] ** jnp.arange(order + 1)
+        eye = jnp.eye(order + 1)
+        gram = jnp.einsum("mj,mk,ms->sjk", basis, basis, weight)
+        trace = jnp.trace(gram, axis1=1, axis2=2)[:, None, None]
+        gram = jnp.where(trace > 0, gram + 1e-12 * trace * eye, eye)  # the identity for a flagged window
+        c = jnp.einsum("wim,ms,mj->swij", profile, q * weight, basis)
+        mc = jnp.linalg.solve(gram[:, None, None], c[..., None])[..., 0]
+        b = jnp.einsum("mj,msab->sabj", basis, sig)
+        num = num - jnp.einsum("swij,sabj->swabi", mc, jnp.broadcast_to(b, (weight.shape[1], *b.shape[1:])))
+        fitted = var - jnp.einsum("swij,swij->swi", c, mc)
+        covered = fitted > 1e-9 * var  # beyond round-off
+        var = fitted
     error = jnp.where(covered, 1 / jnp.sqrt(jnp.where(covered, var, 1.0)), jnp.nan)
     return num * jnp.where(covered, error, 0.0)[:, :, None, None, :], error
 
@@ -134,7 +166,7 @@ def _blocks(chunk: Chunk, dra, ddec, shapes: tuple, template: bool):
     dfreq = np.diff(chunk.freq)
     if dfreq.size and not np.allclose(dfreq, dfreq[0], rtol=1e-9):
         raise ValueError(f"channels of field {chunk.field} spw {chunk.spw} are not uniformly spaced")
-    arrays = [jnp.asarray(a) for a in (chunk.u, chunk.v, chunk.X, chunk.w_row, chunk.flag, chunk.freq)]
+    arrays = [jnp.asarray(getattr(chunk, k)) for k in COLLAPSE_ARRAYS]
     dra = np.asarray(dra) - chunk.offset[0]
     ddec = jnp.asarray(np.asarray(ddec) - chunk.offset[1])
     n_complex = 2 + (len(shapes[0]) if template else 1)
@@ -146,6 +178,35 @@ def _blocks(chunk: Chunk, dra, ddec, shapes: tuple, template: bool):
         step = dfreq[0] if dfreq.size else 0.0
         shape = (jnp.asarray(s) for s in shapes)
         yield len(rows), _collapse(*arrays, step, padded, ddec, *shape, template=template)
+
+
+def on_device(chunk: Chunk) -> Chunk:
+    """``chunk`` with the arrays :func:`_collapse` reads held by JAX in float64.
+
+    Repeated :func:`template_spectrum` calls on it then skip copying them, which otherwise costs as
+    much as collapsing one position.
+    """
+    with jax.enable_x64(True):
+        return dataclasses.replace(chunk, **{k: jnp.asarray(getattr(chunk, k)) for k in COLLAPSE_ARRAYS})
+
+
+def template_spectrum(chunk: Chunk, dra: float, ddec: float, bmaj: float, bmin: float, pa: float):
+    """Template-weighted spectrum of one window at one position and source shape.
+
+    The spatial collapse of a ``"template"``-weighted search at the single grid point (``dra``,
+    ``ddec``), arcsec in the sky frame, for the envelope E of a Gaussian of axes (sigma) ``bmaj``,
+    ``bmin`` arcsec with its major axis at ``pa`` deg. For a source ``V = F(nu) E e^{+i phi}`` (as
+    :class:`~luv_finder.model.Gaussian`), ``chi^2 = const - 2 sum F sig + sum F^2 W``.
+
+    Returns
+    -------
+    sig : (n_chan,) ``sum_j w E Re[V e^{-i phi}]``
+    W : (n_chan,) ``sum_j w E^2``
+    """
+    shapes = (np.array([bmaj * ARCSEC]), np.array([bmin * ARCSEC]), np.array([float(pa)]))
+    with jax.enable_x64(True):
+        [(_, (sig, weight, _))] = _blocks(chunk, [dra], [ddec], shapes, template=True)
+        return np.asarray(sig)[:, 0, 0, 0], np.asarray(weight)[:, 0]
 
 
 def _beam(dra, ddec, offset, freqs, dish_diameter) -> np.ndarray:
@@ -166,9 +227,9 @@ def _check_freqs(freqs: list) -> None:
 def _union_lattice(axes: list, name: str) -> tuple[np.ndarray, list[np.ndarray]]:
     """Union of the pointings' position axes, from the lowest to the highest value, and each axis' indices in it.
 
-    The axes must share one lattice anchored at the reference, as
-    :func:`luv_finder.cli.find_lines.build_grid` places them: the same step, and every value a
-    whole number of steps from 0. Where an axis has a point, the union holds that exact value.
+    The axes must share one lattice anchored at the reference, as :func:`build_grid` places them:
+    the same step, and every value a whole number of steps from 0. Where an axis has a point, the
+    union holds that exact value.
     """
     axes = [np.asarray(a, dtype=float) for a in axes]
     gaps = [np.diff(np.sort(a)) for a in axes if a.size > 1] or [np.diff(np.unique(np.concatenate(axes)))]
@@ -300,8 +361,7 @@ def combine_pointings(results: Sequence[SearchResult]) -> SearchResult:
     same way when every result has one.
 
     The results must share their templates and channels, and their positions one lattice
-    anchored at the reference (see :func:`luv_finder.cli.find_lines.build_grid`); otherwise this
-    raises ``ValueError``.
+    anchored at the reference (see :func:`build_grid`); otherwise this raises ``ValueError``.
     """
     first = results[0]
     for r in results[1:]:
@@ -482,7 +542,8 @@ class MatchedFilter(_Grid):
     ``MatchedFilter.response``) is in signal-to-noise units: one row per grid point
     (``grid_params``, the product of the :data:`GRID_KEYS` axes in that order), one column per
     channel, unit variance under the null hypothesis. A line matching the template at that grid
-    point peaks on its own channel with a value equal to its S/N.
+    point peaks on its own channel with a value equal to its S/N, which a continuum fitted
+    alongside lowers a little.
 
     Parameters
     ----------
@@ -494,14 +555,19 @@ class MatchedFilter(_Grid):
         not name takes the component's own value.
     weighting : {"natural", "template"}
         See :data:`WEIGHTINGS`. With "natural" the trial source size cancels.
+    continuum_order : int or None
+        Degree of the polynomial in frequency fitted, per window and trial position, jointly with
+        every line template (see the module docstring); None fits no continuum. The dirty
+        ``cube`` of :meth:`run` keeps the continuum.
     """
 
-    def __init__(self, data: DataHandler, mod: Model, weighting: str = "natural"):
+    def __init__(self, data: DataHandler, mod: Model, weighting: str = "natural", continuum_order: int | None = 2):
         if weighting not in WEIGHTINGS:
             raise ValueError(f"weighting must be one of {WEIGHTINGS}, got {weighting!r}")
         _one_field(data)
         self.data = data
         self.weighting = weighting
+        self.continuum_order = continuum_order
         self.axes = self._grid_axes(mod)
         self.result: SearchResult | None = None
         self.cube: DirtyCube | None = None
@@ -566,7 +632,7 @@ class MatchedFilter(_Grid):
         snr, blocks = [], []
         widths, freq = jnp.asarray(axes["width"]), jnp.asarray(chunk.freq)
         for n, collapsed in _blocks(chunk, axes["dra"], axes["ddec"], shapes, self.weighting == "template"):
-            block, error = _spectral(*collapsed, freq, widths)
+            block, error = _spectral(*collapsed, freq, widths, order=self.continuum_order)
             snr.append(np.asarray(block)[:, :, :n])
             if cube:
                 blocks.append((n, *collapsed[:2]))
@@ -585,3 +651,113 @@ class MatchedFilter(_Grid):
 
             plt.show()
         return path
+
+
+def build_grid(data: DataHandler, cfg: dict | None) -> dict:
+    """Grid ranges from YAML, positions in the dataset's sky frame (arcsec from the reference).
+
+    Positions default to multiples of half the resolution, counted from the reference
+    direction and covering ``fov_fraction`` (default 0.4) of the primary-beam FWHM on either
+    side of the loaded field. With ``pb_limit`` they instead reach the radius where the primary
+    beam of the lowest channel, the widest, falls to ``pb_limit``, so every channel's
+    ``PB >= pb_limit`` region is covered (see :func:`pb_corrected`).
+    The lattice comes from dataset-level metadata, so every pointing of a mosaic gets the same
+    points. Sizes default to a tenth of the resolution, the position angle to 0, the line widths
+    to 100, 200, 300 and 400 km/s.
+    """
+    fov = data.metadata.primarybeamsize()
+    res = data.metadata.minresolution()
+    cfg = dict(cfg or {})
+    if "total_flux" in cfg:
+        raise ValueError(
+            "total_flux is not a search axis: it cancels in the matched-filter kernel "
+            "normalisation, so every value gives an identical response. Remove it from the grid file."
+        )
+
+    def rng(key, default):
+        v = cfg.get(key, default)
+        if isinstance(v, dict):
+            return np.arange(v["start"], v["stop"], v["step"])
+        return np.atleast_1d(v)
+
+    if "pb_limit" in cfg:
+        half = primary_beam_radius(cfg["pb_limit"], data.freqs.min(), data.metadata.dish_diameter)
+    else:
+        half = cfg.get("fov_fraction", 0.4) * fov
+    step = res / 2
+
+    def lattice(centre):
+        return step * np.arange(np.ceil((centre - half) / step), np.floor((centre + half) / step) + 1)
+
+    dra, ddec = data.chunks[0].offset
+    return {
+        "dra": rng("dra", lattice(dra)),
+        "ddec": rng("ddec", lattice(ddec)),
+        "bmin": rng("bmin", res / 10),
+        "bmaj": rng("bmaj", res / 10),
+        "pa": rng("pa", 0.0),
+        "width": rng("width", [100.0, 200.0, 300.0, 400.0]),
+    }
+
+
+def grid_model(grid: dict) -> Model:
+    """A model of one Gaussian component whose ``grid`` is the search axes ``grid`` (see :func:`build_grid`)."""
+    comp = Gaussian()
+    comp.grid = grid
+    mod = Model()
+    mod.addcomponent(comp)
+    return mod
+
+
+def search_pointings(
+    path: str,
+    grid_cfg: dict | None = None,
+    jackknife: bool = True,
+    cube: bool = False,
+    cores: int | None = None,
+    pb_limit: float = 0.2,
+    **filter_kwargs,
+) -> tuple[SearchResult, list[DirtyCube]]:
+    """Search every field of a measurement set or NPZ and combine the pointings on one sky grid.
+
+    Pointings that overlap on the sky are always PB-corrected and combined before anything
+    downstream (cataloguing) sees them; a single pointing is PB-corrected too. The fields are
+    loaded and searched one at a time, so only one field's visibilities are in memory.
+
+    Parameters
+    ----------
+    path : str
+        Measurement set or NPZ from ``luv-export``.
+    grid_cfg : dict, optional
+        Grid ranges as for :func:`build_grid`, shared by every pointing. Each pointing's positions
+        are those within ``pb_limit`` of its own phase centre unless ``dra``/``ddec`` are given.
+    jackknife : bool
+        Also search a jackknifed noise realisation of every pointing, combined alike.
+    cube : bool
+        Also return every pointing's :class:`DirtyCube` (natural weighting only).
+    cores : int, optional
+        See :func:`limit_cores`.
+    pb_limit : float
+        Positions and channels where a pointing's primary beam is below this are left out
+        (see :func:`pb_corrected`).
+    **filter_kwargs
+        Passed to :class:`MatchedFilter` (``weighting``, ``continuum_order``).
+
+    Returns
+    -------
+    result : SearchResult
+        The PB-corrected search, combined by :func:`combine_pointings` if there are several fields.
+    cubes : list of DirtyCube
+        One per field in field order; empty unless ``cube``.
+    """
+    results, cubes = [], []
+    for field in fields_in(path):
+        data = load(path, [field])
+        grid = build_grid(data, {**(grid_cfg or {}), "pb_limit": pb_limit})
+        mf = MatchedFilter(data, grid_model(grid), **filter_kwargs)
+        mf.run(jackknife=jackknife, cores=cores, cube=cube)
+        results.append(pb_corrected(mf.result, data, pb_limit))
+        if cube:
+            cubes.append(mf.cube)
+        del data, mf  # free this field's visibilities before loading the next
+    return combine_pointings(results) if len(results) > 1 else results[0], cubes

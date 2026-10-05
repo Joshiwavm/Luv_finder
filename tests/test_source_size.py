@@ -20,7 +20,7 @@ import pytest
 import yaml
 
 from luv_finder import DataHandler, Gaussian, MatchedFilter, Model
-from luv_finder.cli.find_lines import build_grid
+from luv_finder.matchedfilter import build_grid
 from luv_finder.plotting import source_size_check
 
 REPO = Path(__file__).parents[1]
@@ -54,7 +54,7 @@ def _response(data, grid_cfg, weighting):
     comp.grid = build_grid(data, grid_cfg)
     mod = Model()
     mod.addcomponent(comp)
-    mf = MatchedFilter(data, mod, weighting=weighting)
+    mf = MatchedFilter(data, mod, weighting=weighting, continuum_order=None)
     mf.run()
     return mf
 

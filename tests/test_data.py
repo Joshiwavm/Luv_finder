@@ -4,7 +4,19 @@ import numpy as np
 import pytest
 
 from luv_finder import DataHandler, Gaussian
-from luv_finder.data import ARCSEC, CHUNK_ARRAYS, Chunk, Metadata, pair_weight, sky_offset, stokes_i
+from luv_finder import data as data_module
+from luv_finder.data import (
+    ARCSEC,
+    CHUNK_ARRAYS,
+    Chunk,
+    Metadata,
+    fields_in,
+    load,
+    pair_weight,
+    sky_direction,
+    sky_offset,
+    stokes_i,
+)
 from luv_finder.utils import X_HALF, C, primary_beam, primary_beam_fwhm, primary_beam_radius
 
 
@@ -43,6 +55,25 @@ def test_npz_loads_only_the_selected_fields(tmp_path):
     back = DataHandler.from_npz(out, fields=[1])
     assert back.fields == [1]
     assert [c.spw for c in back.chunks] == [0, 1]
+
+
+def test_fields_in_an_npz_are_unique_and_sorted(tmp_path, fixture_npz, two_field_npz):
+    assert fields_in(fixture_npz) == [0]
+    assert fields_in(str(two_field_npz)) == [0, 1]
+    chunks = [_chunk([0, 1], [0, 0], field=f, spw=s) for f in (5, 2) for s in (1, 0)]
+    out = tmp_path / "fields.npz"
+    DataHandler(chunks=chunks, metadata=Metadata(12.0, (0.0, 0.0), 40e9, 1e4)).to_npz(out)
+    assert fields_in(out) == [2, 5]
+
+
+def test_fields_in_a_measurement_set_are_its_target_fields(monkeypatch):
+    monkeypatch.setattr(data_module, "target_selection", lambda path: (np.array([3, 1], dtype=np.int32), [0]))
+    assert fields_in("obs.ms") == [1, 3]
+
+
+def test_load_reads_all_or_the_selected_fields_of_an_npz(two_field_npz):
+    assert load(two_field_npz).fields == [0, 1]
+    assert load(str(two_field_npz), [1]).fields == [1]
 
 
 def test_metadata_scales(data):
@@ -103,6 +134,17 @@ def test_sky_offset_is_east_and_north():
     # an offset purely in RA curves north by ~theta^2 tan(dec) / 2 on the tangent plane
     assert sky_offset((ref[0] + d / np.cos(ref[1]), ref[1]), ref) == pytest.approx([30, 0], abs=1e-2)
     assert sky_offset((ref[0], ref[1] + d), ref) == pytest.approx([0, 30], abs=1e-6)
+
+
+@pytest.mark.parametrize("ref", [(1.0, -0.8), (1e-5, 0.3), (2.0, np.radians(89.99)), (4.0, -np.radians(89.99))])
+def test_sky_direction_inverts_sky_offset(ref):
+    """Round trips either way, also across RA = 0 and over the pole, 36 arcsec from the last two references."""
+    east, north = np.meshgrid([-60.0, -0.5, 0.0, 3.0, 45.0], [-60.0, 0.0, 30.0, 60.0])
+    offset = np.array([east.ravel(), north.ravel()])
+    direction = sky_direction(offset, ref)
+    assert np.all((direction[0] >= 0) & (direction[0] < 2 * np.pi))
+    np.testing.assert_allclose(sky_offset(direction, ref), offset, rtol=0, atol=1e-6)
+    np.testing.assert_allclose(sky_direction(sky_offset(direction, ref), ref), direction, rtol=0, atol=1e-12)
 
 
 def test_stokes_i_combines_hands_and_flags():

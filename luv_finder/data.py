@@ -55,6 +55,19 @@ def sky_offset(direction, ref) -> np.ndarray:
     return np.array([east, north]) / ARCSEC
 
 
+def sky_direction(offset, ref) -> np.ndarray:
+    """(RA, Dec) in rad of the (east, north) ``offset`` in arcsec from ``ref``, the inverse of :func:`sky_offset`.
+
+    The offset is the direction cosines (l, m) of the orthographic (SIN) projection at ``ref``, in
+    arcsec; RA comes back in [0, 2 pi).
+    """
+    (l, m), (ra0, dec0) = np.asarray(offset, dtype=float) * ARCSEC, ref
+    n = np.sqrt(1 - l**2 - m**2)
+    dec = np.arcsin(m * np.cos(dec0) + n * np.sin(dec0))
+    ra = ra0 + np.arctan2(l, n * np.cos(dec0) - m * np.sin(dec0))
+    return np.array([ra % (2 * np.pi), dec])
+
+
 @dataclass(frozen=True, eq=False)
 class Chunk:
     """Visibilities of one (field, spectral window), channel-major.
@@ -373,3 +386,20 @@ class DataHandler:
                 if fields is None or field in fields
             ]
         return cls(chunks=chunks, metadata=metadata)
+
+
+def _is_npz(path) -> bool:
+    return str(path).endswith(".npz")
+
+
+def fields_in(path) -> list[int]:
+    """Target fields of a measurement set or an NPZ, sorted; an NPZ is not read beyond its index."""
+    if _is_npz(path):
+        with np.load(path) as f:
+            return np.unique(f["chunks"][:, 0]).tolist()
+    return sorted(int(f) for f in target_selection(path)[0])
+
+
+def load(path, fields=None) -> DataHandler:
+    """The visibilities of ``fields`` (default: all) from a measurement set or an NPZ."""
+    return DataHandler.from_npz(path, fields) if _is_npz(path) else DataHandler(str(path), fields=fields)
