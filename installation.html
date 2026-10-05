@@ -198,13 +198,14 @@
 <li class="toctree-l2"><a class="reference internal" href="tutorials/simulate-mock-observation.html">Simulate a mock line observation</a></li>
 <li class="toctree-l2"><a class="reference internal" href="tutorials/simulate-mock-observation.html#make-mock-observations-using-mockgenerator.py">make mock observations using mockgenerator.py</a></li>
 <li class="toctree-l2"><a class="reference internal" href="tutorials/find-lines-matched-filter.html">Find lines with the matched filter</a></li>
-<li class="toctree-l2"><a class="reference internal" href="tutorials/find-lines-matched-filter.html#Data-and-model">Data and model</a></li>
 </ul>
 </li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="api.html">API</a><input aria-label="Toggle navigation of API" class="toctree-checkbox" id="toctree-checkbox-2" name="toctree-checkbox-2" role="switch" type="checkbox"/><label for="toctree-checkbox-2"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
 <li class="toctree-l2"><a class="reference internal" href="generated/luv_finder.data.html">luv_finder.data</a></li>
 <li class="toctree-l2"><a class="reference internal" href="generated/luv_finder.model.html">luv_finder.model</a></li>
 <li class="toctree-l2"><a class="reference internal" href="generated/luv_finder.matchedfilter.html">luv_finder.matchedfilter</a></li>
+<li class="toctree-l2"><a class="reference internal" href="generated/luv_finder.catalogue.html">luv_finder.catalogue</a></li>
+<li class="toctree-l2"><a class="reference internal" href="generated/luv_finder.fit.html">luv_finder.fit</a></li>
 <li class="toctree-l2"><a class="reference internal" href="generated/luv_finder.mock.html">luv_finder.mock</a></li>
 <li class="toctree-l2"><a class="reference internal" href="generated/luv_finder.utils.html">luv_finder.utils</a></li>
 </ul>
@@ -264,13 +265,15 @@ environment’s OpenSSL: <code class="docutils literal notranslate"><span class=
 (casatools bundles OpenSSL 3.6 and dyld reuses whichever
 <code class="docutils literal notranslate"><span class="pre">libcrypto.3.dylib</span></code> loads first).</p>
 </dd>
-<dt><code class="docutils literal notranslate"><span class="pre">jax</span></code></dt><dd><p><code class="docutils literal notranslate"><span class="pre">jax</span></code>, <code class="docutils literal notranslate"><span class="pre">jax-finufft</span></code>. Not used yet; see the roadmap.</p>
+<dt><code class="docutils literal notranslate"><span class="pre">jax</span></code></dt><dd><p><code class="docutils literal notranslate"><span class="pre">jax-finufft</span></code>. Not used yet; see the roadmap. JAX itself is a core
+dependency: the matched filter runs on it.</p>
 </dd>
 <dt><code class="docutils literal notranslate"><span class="pre">dev</span></code></dt><dd><p>pytest, ruff, pre-commit, Sphinx.</p>
 </dd>
 </dl>
-<p>The science code downstream of <a class="reference internal" href="generated/luv_finder.data.html#module-luv_finder.data" title="luv_finder.data"><code class="xref py py-mod docutils literal notranslate"><span class="pre">luv_finder.data</span></code></a> is numpy-only. Exporting a
-measurement set to NPZ with <code class="docutils literal notranslate"><span class="pre">luv-export</span></code> lets everything else run without CASA.</p>
+<p>Reading data and simulating mocks are numpy (and CASA); the matched filter is JAX,
+in float64. Exporting a measurement set to NPZ with <code class="docutils literal notranslate"><span class="pre">luv-export</span></code> lets everything
+else run without CASA.</p>
 </section>
 <section id="casa-runtime-data">
 <h2>CASA runtime data<a class="headerlink" href="#casa-runtime-data" title="Link to this heading">¶</a></h2>

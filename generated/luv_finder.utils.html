@@ -198,13 +198,14 @@
 <li class="toctree-l2"><a class="reference internal" href="../tutorials/simulate-mock-observation.html">Simulate a mock line observation</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../tutorials/simulate-mock-observation.html#make-mock-observations-using-mockgenerator.py">make mock observations using mockgenerator.py</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../tutorials/find-lines-matched-filter.html">Find lines with the matched filter</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../tutorials/find-lines-matched-filter.html#Data-and-model">Data and model</a></li>
 </ul>
 </li>
 <li class="toctree-l1 current has-children"><a class="reference internal" href="../api.html">API</a><input aria-label="Toggle navigation of API" checked="" class="toctree-checkbox" id="toctree-checkbox-2" name="toctree-checkbox-2" role="switch" type="checkbox"/><label for="toctree-checkbox-2"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul class="current">
 <li class="toctree-l2"><a class="reference internal" href="luv_finder.data.html">luv_finder.data</a></li>
 <li class="toctree-l2"><a class="reference internal" href="luv_finder.model.html">luv_finder.model</a></li>
 <li class="toctree-l2"><a class="reference internal" href="luv_finder.matchedfilter.html">luv_finder.matchedfilter</a></li>
+<li class="toctree-l2"><a class="reference internal" href="luv_finder.catalogue.html">luv_finder.catalogue</a></li>
+<li class="toctree-l2"><a class="reference internal" href="luv_finder.fit.html">luv_finder.fit</a></li>
 <li class="toctree-l2"><a class="reference internal" href="luv_finder.mock.html">luv_finder.mock</a></li>
 <li class="toctree-l2 current current-page"><a class="current reference internal" href="#">luv_finder.utils</a></li>
 </ul>
@@ -249,34 +250,37 @@
         <article role="main" id="furo-main-content">
           <section id="module-luv_finder.utils">
 <span id="luv-finder-utils"></span><h1>luv_finder.utils<a class="headerlink" href="#module-luv_finder.utils" title="Link to this heading">¶</a></h1>
-<p>Unit conversions and measurement-set weight helpers.</p>
+<p>Shared constants, the analytic ALMA primary beam and the mock-weight helper.</p>
+<p>The primary beam follows the ALMA Technical Handbook: the measured FWHM of the 12 m and 7 m antennas is
+about 1.13 lambda / D, and CASA models the beam as an Airy pattern scaled so that its FWHM matches.</p>
+<p class="rubric">Module Attributes</p>
+<div class="table-wrapper autosummary longtable docutils container">
+<table class="autosummary longtable docutils align-default">
+<tbody>
+<tr class="row-odd"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">FWHM_FACTOR</span></code></p></td>
+<td><p>Measured primary-beam FWHM in units of lambda / D (ALMA Technical Handbook).</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">X_HALF</span></code></p></td>
+<td><p>Argument at which the Airy pattern drops to one half.</p></td>
+</tr>
+</tbody>
+</table>
+</div>
 <p class="rubric">Functions</p>
 <div class="table-wrapper autosummary longtable docutils container">
 <table class="autosummary longtable docutils align-default">
 <tbody>
-<tr class="row-odd"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">arcsec_to_l</span></code>(arcsec)</p></td>
-<td><p></p></td>
-</tr>
-<tr class="row-even"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">arcsec_to_uvdist</span></code>(arcsec)</p></td>
-<td><p>Angular scale [arcsec] -&gt; uv-distance [klambda].</p></td>
-</tr>
 <tr class="row-odd"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">getstatwtweights</span></code>(vis[, seed])</p></td>
 <td><p>Reset WEIGHT in-place from the scan-jackknifed real-part scatter.</p></td>
 </tr>
-<tr class="row-even"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">l_to_arcsec</span></code>(ell)</p></td>
-<td><p></p></td>
+<tr class="row-even"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">primary_beam</span></code>(offset_arcsec, freq_hz, ...[, ...])</p></td>
+<td><p>Primary-beam attenuation in [0, 1] at an angular offset from the pointing centre.</p></td>
 </tr>
-<tr class="row-odd"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">l_to_uvdist</span></code>(ell)</p></td>
-<td><p></p></td>
+<tr class="row-odd"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">primary_beam_fwhm</span></code>(freq_hz, dish_diameter[, ...])</p></td>
+<td><p>Primary-beam FWHM in arcsec.</p></td>
 </tr>
-<tr class="row-even"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">uvdist_to_arcsec</span></code>(uvdist)</p></td>
-<td><p>uv-distance [klambda] -&gt; angular scale [arcsec].</p></td>
-</tr>
-<tr class="row-odd"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">uvdist_to_l</span></code>(uvdist)</p></td>
-<td><p></p></td>
-</tr>
-<tr class="row-even"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">uvload</span></code>(vis)</p></td>
-<td><p>Return (weights, uvdists [lambda]) of all target visibilities in an MS.</p></td>
+<tr class="row-even"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">primary_beam_radius</span></code>(level, freq_hz, ...[, ...])</p></td>
+<td><p>Offset in arcsec at which the main lobe falls to <code class="docutils literal notranslate"><span class="pre">level</span></code> (<code class="docutils literal notranslate"><span class="pre">0</span> <span class="pre">&lt;</span> <span class="pre">level</span> <span class="pre">&lt;=</span> <span class="pre">1</span></code>).</p></td>
 </tr>
 </tbody>
 </table>

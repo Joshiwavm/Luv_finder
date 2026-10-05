@@ -1,0 +1,29 @@
+﻿luv\_finder.fit
+===============
+
+.. automodule:: luv_finder.fit
+
+   
+   .. rubric:: Module Attributes
+
+   .. autosummary::
+   
+      SPATIAL
+      LINE_FLUX
+      COLUMNS
+      XATOL
+      FATOL
+   
+   .. rubric:: Functions
+
+   .. autosummary::
+   
+      fit_line
+      fit_lines
+   
+   .. rubric:: Classes
+
+   .. autosummary::
+   
+      LineWindow
+   

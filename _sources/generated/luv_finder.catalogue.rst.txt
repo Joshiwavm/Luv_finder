@@ -1,0 +1,33 @@
+﻿luv\_finder.catalogue
+=====================
+
+.. automodule:: luv_finder.catalogue
+
+   
+   .. rubric:: Module Attributes
+
+   .. autosummary::
+   
+      CHUNK_BYTES
+      MAD_TO_SIGMA
+      UNITS
+   
+   .. rubric:: Functions
+
+   .. autosummary::
+   
+      catalogue
+      fidelity
+      fidelity_curve
+      groups
+      jackknife_spread
+      likelihood
+      noise_correlation
+   
+   .. rubric:: Classes
+
+   .. autosummary::
+   
+      Group
+      NoiseCorrelation
+   

@@ -4,10 +4,32 @@
 .. automodule:: luv_finder.data
 
    
+   .. rubric:: Module Attributes
+
+   .. autosummary::
+   
+      CHUNK_ARRAYS
+      READ_BLOCK
+   
+   .. rubric:: Functions
+
+   .. autosummary::
+   
+      fields_in
+      iter_chunks
+      load
+      pair_weight
+      sky_direction
+      sky_offset
+      stokes_i
+      target_selection
+      write_npz
+   
    .. rubric:: Classes
 
    .. autosummary::
    
+      Chunk
       DataHandler
       Metadata
    

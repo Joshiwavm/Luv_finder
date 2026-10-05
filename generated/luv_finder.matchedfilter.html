@@ -3,7 +3,7 @@
   <head><meta charset="utf-8">
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
-<link rel="index" title="Index" href="../genindex.html"><link rel="search" title="Search" href="../search.html"><link rel="next" title="luv_finder.mock" href="luv_finder.mock.html"><link rel="prev" title="luv_finder.model" href="luv_finder.model.html">
+<link rel="index" title="Index" href="../genindex.html"><link rel="search" title="Search" href="../search.html"><link rel="next" title="luv_finder.catalogue" href="luv_finder.catalogue.html"><link rel="prev" title="luv_finder.model" href="luv_finder.model.html">
 
     <!-- Generated with Sphinx 9.1.0 and Furo 2025.12.19 -->
         <title>luv_finder.matchedfilter - Luv_finder</title>
@@ -198,13 +198,14 @@
 <li class="toctree-l2"><a class="reference internal" href="../tutorials/simulate-mock-observation.html">Simulate a mock line observation</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../tutorials/simulate-mock-observation.html#make-mock-observations-using-mockgenerator.py">make mock observations using mockgenerator.py</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../tutorials/find-lines-matched-filter.html">Find lines with the matched filter</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../tutorials/find-lines-matched-filter.html#Data-and-model">Data and model</a></li>
 </ul>
 </li>
 <li class="toctree-l1 current has-children"><a class="reference internal" href="../api.html">API</a><input aria-label="Toggle navigation of API" checked="" class="toctree-checkbox" id="toctree-checkbox-2" name="toctree-checkbox-2" role="switch" type="checkbox"/><label for="toctree-checkbox-2"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul class="current">
 <li class="toctree-l2"><a class="reference internal" href="luv_finder.data.html">luv_finder.data</a></li>
 <li class="toctree-l2"><a class="reference internal" href="luv_finder.model.html">luv_finder.model</a></li>
 <li class="toctree-l2 current current-page"><a class="current reference internal" href="#">luv_finder.matchedfilter</a></li>
+<li class="toctree-l2"><a class="reference internal" href="luv_finder.catalogue.html">luv_finder.catalogue</a></li>
+<li class="toctree-l2"><a class="reference internal" href="luv_finder.fit.html">luv_finder.fit</a></li>
 <li class="toctree-l2"><a class="reference internal" href="luv_finder.mock.html">luv_finder.mock</a></li>
 <li class="toctree-l2"><a class="reference internal" href="luv_finder.utils.html">luv_finder.utils</a></li>
 </ul>
@@ -249,16 +250,56 @@
         <article role="main" id="furo-main-content">
           <section id="module-luv_finder.matchedfilter">
 <span id="luv-finder-matchedfilter"></span><h1>luv_finder.matchedfilter<a class="headerlink" href="#module-luv_finder.matchedfilter" title="Link to this heading">¶</a></h1>
-<p>Grid-search matched filter for spectral lines in the UV plane.</p>
+<p>Grid-search matched filter for spectral lines in the UV plane, evaluated with JAX.</p>
+<p>For one spectral window the response at every grid point comes from three steps:</p>
+<ol class="arabic simple">
+<li><p>Spatial collapse, per channel: the weighted visibilities phase-shifted onto each trial
+position and summed, <code class="docutils literal notranslate"><span class="pre">sig</span> <span class="pre">=</span> <span class="pre">sum_j</span> <span class="pre">t</span> <span class="pre">Re[X</span> <span class="pre">e^{-i</span> <span class="pre">phi}]</span></code>, with the per-channel weight
+<code class="docutils literal notranslate"><span class="pre">W</span> <span class="pre">=</span> <span class="pre">sum_j</span> <span class="pre">w</span> <span class="pre">t^2</span></code> and template amplitude <code class="docutils literal notranslate"><span class="pre">a</span> <span class="pre">=</span> <span class="pre">sum_j</span> <span class="pre">w</span> <span class="pre">t</span> <span class="pre">A</span></code>. <code class="docutils literal notranslate"><span class="pre">t</span></code> is 1 (“natural”) or the
+source envelope A (“template”). On a <code class="docutils literal notranslate"><span class="pre">dra</span> <span class="pre">x</span> <span class="pre">ddec</span></code> grid the phase factorises, so all positions
+of a channel are one complex matrix product; across uniformly spaced channels the phase
+factors follow by recurrence instead of new exponentials.</p></li>
+<li><p>Continuum, per position: <code class="docutils literal notranslate"><span class="pre">d</span> <span class="pre">=</span> <span class="pre">sig</span> <span class="pre">/</span> <span class="pre">W</span></code> is the dirty spectrum at the trial position, with
+variance <code class="docutils literal notranslate"><span class="pre">1</span> <span class="pre">/</span> <span class="pre">W</span></code>. A continuum source there is smooth in frequency however far it lies from
+the phase centre, whereas a fit per visibility, as CASA’s uvcontsub, fails off-centre: the
+source’s phase winds across the window. A polynomial <code class="docutils literal notranslate"><span class="pre">P</span></code> in the channel index, of degree
+<code class="docutils literal notranslate"><span class="pre">continuum_order</span></code>, is therefore fitted per window and position jointly with every line
+template of step 3, by weighted least squares. Unlike subtracting a continuum fitted first,
+the joint fit is linear in the data and exactly normalised, and it needs no line-free
+channels: the trial line’s own channels are in its model.</p></li>
+<li><p>Spectral collapse, per lag: the Gaussian line profile <code class="docutils literal notranslate"><span class="pre">S_i</span></code> centred on channel <code class="docutils literal notranslate"><span class="pre">i</span></code> makes
+the template <code class="docutils literal notranslate"><span class="pre">g_i</span> <span class="pre">=</span> <span class="pre">q</span> <span class="pre">S_i</span></code> with <code class="docutils literal notranslate"><span class="pre">q</span> <span class="pre">=</span> <span class="pre">a</span> <span class="pre">/</span> <span class="pre">W</span></code>, giving <code class="docutils literal notranslate"><span class="pre">num</span> <span class="pre">=</span> <span class="pre">sum</span> <span class="pre">g_i</span> <span class="pre">sig</span></code> and
+<code class="docutils literal notranslate"><span class="pre">var</span> <span class="pre">=</span> <span class="pre">sum</span> <span class="pre">g_i^2</span> <span class="pre">W</span></code>. The continuum is profiled out with <code class="docutils literal notranslate"><span class="pre">M</span> <span class="pre">=</span> <span class="pre">P^T</span> <span class="pre">W</span> <span class="pre">P</span></code> and
+<code class="docutils literal notranslate"><span class="pre">c_i</span> <span class="pre">=</span> <span class="pre">P^T</span> <span class="pre">W</span> <span class="pre">g_i</span></code>: <code class="docutils literal notranslate"><span class="pre">num</span> <span class="pre">-</span> <span class="pre">c_i^T</span> <span class="pre">M^-1</span> <span class="pre">P^T</span> <span class="pre">sig</span></code> and <code class="docutils literal notranslate"><span class="pre">var</span> <span class="pre">-</span> <span class="pre">c_i^T</span> <span class="pre">M^-1</span> <span class="pre">c_i</span></code> replace them.
+Normalised per lag over the channels it covers, the response <code class="docutils literal notranslate"><span class="pre">num</span> <span class="pre">/</span> <span class="pre">sqrt(var)</span></code> has unit
+variance under the null at every channel, window edges and flagged channels included, and
+peaks on the line’s own channel at its S/N, less the little the continuum fit takes.</p></li>
+</ol>
+<p>The S/N times <code class="docutils literal notranslate"><span class="pre">1</span> <span class="pre">/</span> <span class="pre">sqrt(var)</span></code> is the best-fit peak flux density of the template line, the
+continuum being a nuisance; <code class="xref py py-class docutils literal notranslate"><span class="pre">SearchResult</span></code> holds both. <code class="xref py py-func docutils literal notranslate"><span class="pre">pb_corrected()</span></code> divides them by
+a pointing’s primary beam and <code class="xref py py-func docutils literal notranslate"><span class="pre">combine_pointings()</span></code> merges the pointings of a mosaic by
+inverse variance; <code class="xref py py-func docutils literal notranslate"><span class="pre">search_pointings()</span></code> does both for every field of a dataset.
+<code class="xref py py-func docutils literal notranslate"><span class="pre">template_spectrum()</span></code> is step 1 at a single position and source shape, which
+<a class="reference internal" href="luv_finder.fit.html#module-luv_finder.fit" title="luv_finder.fit"><code class="xref py py-mod docutils literal notranslate"><span class="pre">luv_finder.fit</span></code></a> uses to fit the catalogued lines.</p>
+<p>All of it runs in float64 (<code class="docutils literal notranslate"><span class="pre">jax.enable_x64</span></code>), scoped to the search.</p>
 <p class="rubric">Module Attributes</p>
 <div class="table-wrapper autosummary longtable docutils container">
 <table class="autosummary longtable docutils align-default">
 <tbody>
-<tr class="row-odd"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">GRID_KEYS</span></code></p></td>
-<td><p>Search axes that a grid may vary.</p></td>
+<tr class="row-odd"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">TEMPLATE_KEYS</span></code></p></td>
+<td><p>Axes of a line template; the templates of a search are their product in this order.</p></td>
 </tr>
-<tr class="row-even"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">WEIGHTINGS</span></code></p></td>
+<tr class="row-even"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">GRID_KEYS</span></code></p></td>
+<td><p>Search axes, in the order of the response rows.</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">WEIGHTINGS</span></code></p></td>
 <td><p>How visibilities are weighted when a channel is collapsed: by noise only (&quot;natural&quot;, optimal for a point source) or also by the source envelope A(u, v) (&quot;template&quot;, optimal for a resolved source of the trial size).</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">COLLAPSE_ARRAYS</span></code></p></td>
+<td><p>The <code class="xref py py-class docutils literal notranslate"><span class="pre">Chunk</span></code> arrays <code class="xref py py-func docutils literal notranslate"><span class="pre">_collapse()</span></code> reads, in its argument order.</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">BLOCK_BYTES</span></code></p></td>
+<td><p>Position phases are evaluated in blocks of <code class="docutils literal notranslate"><span class="pre">dra</span></code> rows whose complex arrays stay near this size.</p></td>
 </tr>
 </tbody>
 </table>
@@ -267,8 +308,41 @@
 <div class="table-wrapper autosummary longtable docutils container">
 <table class="autosummary longtable docutils align-default">
 <tbody>
-<tr class="row-odd"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">nu_center_func</span></code>(width, uvfreq_min)</p></td>
-<td><p>Line centre placed 4 sigma above the lowest channel, for a given width (km/s).</p></td>
+<tr class="row-odd"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">build_grid</span></code>(data, cfg)</p></td>
+<td><p>Grid ranges from YAML, positions in the dataset's sky frame (arcsec from the reference).</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">combine_pointings</span></code>(results)</p></td>
+<td><p>Combine the PB-corrected searches of a mosaic's pointings on the union of their grids.</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">default_cores</span></code>()</p></td>
+<td><p>Cores for a search on a shared machine: a quarter of them, never more than all but two.</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">dirty_cube</span></code>(data, dra, ddec[, cores])</p></td>
+<td><p>Natural-weighted dirty cube of one field on the <code class="docutils literal notranslate"><span class="pre">dra</span> <span class="pre">x</span> <span class="pre">ddec</span></code> grid (arcsec, sky frame).</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">dirty_maps</span></code>(data, dra, ddec[, cores])</p></td>
+<td><p>Moment-8 and continuum dirty maps of one field on the <code class="docutils literal notranslate"><span class="pre">dra</span> <span class="pre">x</span> <span class="pre">ddec</span></code> grid.</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">grid_model</span></code>(grid)</p></td>
+<td><p>A model of one Gaussian component whose <code class="docutils literal notranslate"><span class="pre">grid</span></code> is the search axes <code class="docutils literal notranslate"><span class="pre">grid</span></code> (see <code class="xref py py-func docutils literal notranslate"><span class="pre">build_grid()</span></code>).</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">limit_cores</span></code>([cores])</p></td>
+<td><p>Pin this process, and so JAX's and BLAS's threads, to <code class="docutils literal notranslate"><span class="pre">cores</span></code> cores (default <code class="xref py py-func docutils literal notranslate"><span class="pre">default_cores()</span></code>).</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">mosaic_dirty_maps</span></code>(cubes[, pb_limit])</p></td>
+<td><p>Moment-8 and continuum dirty maps of a mosaic, on the union of the pointings' grids.</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">on_device</span></code>(chunk)</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">chunk</span></code> with the arrays <code class="xref py py-func docutils literal notranslate"><span class="pre">_collapse()</span></code> reads held by JAX in float64.</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">pb_corrected</span></code>(result, data[, pb_limit])</p></td>
+<td><p>Correct the search of one pointing for its primary beam.</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">search_pointings</span></code>(path[, grid_cfg, ...])</p></td>
+<td><p>Search every field of a measurement set or NPZ and combine the pointings on one sky grid.</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">template_spectrum</span></code>(chunk, dra, ddec, bmaj, ...)</p></td>
+<td><p>Template-weighted spectrum of one window at one position and source shape.</p></td>
 </tr>
 </tbody>
 </table>
@@ -277,8 +351,14 @@
 <div class="table-wrapper autosummary longtable docutils container">
 <table class="autosummary longtable docutils align-default">
 <tbody>
-<tr class="row-odd"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">MatchedFilter</span></code>(data, mod[, weighting])</p></td>
+<tr class="row-odd"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">DirtyCube</span></code>(cube, weight, dra, ddec, offset, ...)</p></td>
+<td><p>Natural-weighted dirty cube of one pointing on a <code class="docutils literal notranslate"><span class="pre">dra</span> <span class="pre">x</span> <span class="pre">ddec</span></code> grid (see <code class="xref py py-func docutils literal notranslate"><span class="pre">dirty_cube()</span></code>).</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">MatchedFilter</span></code>(data, mod[, weighting, ...])</p></td>
 <td><p>Evaluate a model kernel against the data over a parameter grid.</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">SearchResult</span></code>(axes, freqs, snr, flux, error, ...)</p></td>
+<td><p>Matched-filter search of one pointing or of a mosaic.</p></td>
 </tr>
 </tbody>
 </table>
@@ -290,12 +370,12 @@
       <footer>
         
         <div class="related-pages">
-          <a class="next-page" href="luv_finder.mock.html">
+          <a class="next-page" href="luv_finder.catalogue.html">
               <div class="page-info">
                 <div class="context">
                   <span>Next</span>
                 </div>
-                <div class="title">luv_finder.mock</div>
+                <div class="title">luv_finder.catalogue</div>
               </div>
               <svg class="furo-related-icon"><use href="#svg-arrow-right"></use></svg>
             </a>

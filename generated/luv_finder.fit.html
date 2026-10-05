@@ -3,10 +3,10 @@
   <head><meta charset="utf-8">
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
-<link rel="index" title="Index" href="../genindex.html"><link rel="search" title="Search" href="../search.html"><link rel="next" title="luv_finder.matchedfilter" href="luv_finder.matchedfilter.html"><link rel="prev" title="luv_finder.data" href="luv_finder.data.html">
+<link rel="index" title="Index" href="../genindex.html"><link rel="search" title="Search" href="../search.html"><link rel="next" title="luv_finder.mock" href="luv_finder.mock.html"><link rel="prev" title="luv_finder.catalogue" href="luv_finder.catalogue.html">
 
     <!-- Generated with Sphinx 9.1.0 and Furo 2025.12.19 -->
-        <title>luv_finder.model - Luv_finder</title>
+        <title>luv_finder.fit - Luv_finder</title>
       <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=03e43079" />
     <link rel="stylesheet" type="text/css" href="../_static/styles/furo.css?v=7bdb33bb" />
     <link rel="stylesheet" type="text/css" href="../_static/copybutton.css?v=76b2166b" />
@@ -202,10 +202,10 @@
 </li>
 <li class="toctree-l1 current has-children"><a class="reference internal" href="../api.html">API</a><input aria-label="Toggle navigation of API" checked="" class="toctree-checkbox" id="toctree-checkbox-2" name="toctree-checkbox-2" role="switch" type="checkbox"/><label for="toctree-checkbox-2"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul class="current">
 <li class="toctree-l2"><a class="reference internal" href="luv_finder.data.html">luv_finder.data</a></li>
-<li class="toctree-l2 current current-page"><a class="current reference internal" href="#">luv_finder.model</a></li>
+<li class="toctree-l2"><a class="reference internal" href="luv_finder.model.html">luv_finder.model</a></li>
 <li class="toctree-l2"><a class="reference internal" href="luv_finder.matchedfilter.html">luv_finder.matchedfilter</a></li>
 <li class="toctree-l2"><a class="reference internal" href="luv_finder.catalogue.html">luv_finder.catalogue</a></li>
-<li class="toctree-l2"><a class="reference internal" href="luv_finder.fit.html">luv_finder.fit</a></li>
+<li class="toctree-l2 current current-page"><a class="current reference internal" href="#">luv_finder.fit</a></li>
 <li class="toctree-l2"><a class="reference internal" href="luv_finder.mock.html">luv_finder.mock</a></li>
 <li class="toctree-l2"><a class="reference internal" href="luv_finder.utils.html">luv_finder.utils</a></li>
 </ul>
@@ -230,7 +230,7 @@
         </a>
         <div class="content-icon-container">
           <div class="view-this-page">
-  <a class="muted-link" href="../_sources/generated/luv_finder.model.rst.txt" title="View this page">
+  <a class="muted-link" href="../_sources/generated/luv_finder.fit.rst.txt" title="View this page">
     <svg><use href="#svg-eye"></use></svg>
     <span class="visually-hidden">View this page</span>
   </a>
@@ -248,18 +248,66 @@
           </label>
         </div>
         <article role="main" id="furo-main-content">
-          <section id="module-luv_finder.model">
-<span id="luv-finder-model"></span><h1>luv_finder.model<a class="headerlink" href="#module-luv_finder.model" title="Link to this heading">¶</a></h1>
-<p>Parametric UV-domain source models.</p>
-<p>Parameter naming convention: every component attribute is exposed as
-<code class="docutils literal notranslate"><span class="pre">src_{component_index:02d}_{attribute}</span></code> (e.g. <code class="docutils literal notranslate"><span class="pre">src_00_nu_center</span></code>). The
-matched filter parses this key to route values back onto the component.</p>
+          <section id="module-luv_finder.fit">
+<span id="luv-finder-fit"></span><h1>luv_finder.fit<a class="headerlink" href="#module-luv_finder.fit" title="Link to this heading">¶</a></h1>
+<p>Least-squares fit of catalogued lines in the visibilities.</p>
+<p>Detection stays a grid search (<a class="reference internal" href="luv_finder.matchedfilter.html#module-luv_finder.matchedfilter" title="luv_finder.matchedfilter"><code class="xref py py-mod docutils literal notranslate"><span class="pre">matchedfilter</span></code></a>, <a class="reference internal" href="luv_finder.catalogue.html#module-luv_finder.catalogue" title="luv_finder.catalogue"><code class="xref py py-mod docutils literal notranslate"><span class="pre">catalogue</span></code></a>); each
+catalogued line is then refined by a deterministic fit of the package’s source model: an elliptical
+Gaussian on the sky (position <code class="docutils literal notranslate"><span class="pre">dra</span></code>, <code class="docutils literal notranslate"><span class="pre">ddec</span></code>, axes <code class="docutils literal notranslate"><span class="pre">bmaj</span></code>, <code class="docutils literal notranslate"><span class="pre">bmin</span></code> as sigma in arcsec, <code class="docutils literal notranslate"><span class="pre">pa</span></code>)
+whose spectrum is a Gaussian line on a polynomial continuum of the same shape,</p>
+<blockquote>
+<div><p><code class="docutils literal notranslate"><span class="pre">F(nu)</span> <span class="pre">=</span> <span class="pre">A</span> <span class="pre">exp(-(nu</span> <span class="pre">-</span> <span class="pre">nu0)^2</span> <span class="pre">/</span> <span class="pre">(2</span> <span class="pre">s^2))</span> <span class="pre">+</span> <span class="pre">P(nu)</span></code>,</p>
+</div></blockquote>
+<p><code class="docutils literal notranslate"><span class="pre">s</span></code> the sigma of a FWHM <code class="docutils literal notranslate"><span class="pre">width</span></code> in km/s at <code class="docutils literal notranslate"><span class="pre">nu0</span></code> and <code class="docutils literal notranslate"><span class="pre">P</span></code> of degree <code class="docutils literal notranslate"><span class="pre">continuum_order</span></code> in the
+channel index scaled to [-1, 1] over the line’s window, as in the search. In pointing p the model
+visibility is <code class="docutils literal notranslate"><span class="pre">PB_p(nu)</span> <span class="pre">F(nu)</span> <span class="pre">E(u,</span> <span class="pre">v)</span> <span class="pre">e^{+i</span> <span class="pre">phi}</span></code> (<code class="xref py py-class docutils literal notranslate"><span class="pre">Gaussian</span></code>), <code class="docutils literal notranslate"><span class="pre">PB_p</span></code>
+the primary beam at the source, so <code class="docutils literal notranslate"><span class="pre">A</span></code> and <code class="docutils literal notranslate"><span class="pre">P</span></code> are intrinsic flux densities.</p>
+<p>The fit is exact in the visibilities without visiting them one by one. Over every visibility of the
+line’s window in every pointing that covers it,</p>
+<blockquote>
+<div><p><code class="docutils literal notranslate"><span class="pre">chi^2</span> <span class="pre">=</span> <span class="pre">sum</span> <span class="pre">w</span> <span class="pre">|V</span> <span class="pre">-</span> <span class="pre">model|^2</span> <span class="pre">=</span> <span class="pre">const</span> <span class="pre">-</span> <span class="pre">2</span> <span class="pre">sum_nu</span> <span class="pre">F</span> <span class="pre">S</span> <span class="pre">+</span> <span class="pre">sum_nu</span> <span class="pre">F^2</span> <span class="pre">Q</span></code>,</p>
+</div></blockquote>
+<p>with <code class="docutils literal notranslate"><span class="pre">S</span> <span class="pre">=</span> <span class="pre">sum_p</span> <span class="pre">PB_p</span> <span class="pre">sig_p</span></code> and <code class="docutils literal notranslate"><span class="pre">Q</span> <span class="pre">=</span> <span class="pre">sum_p</span> <span class="pre">PB_p^2</span> <span class="pre">W_p</span></code> from the template-weighted spectra at the
+trial position and shape (<code class="xref py py-func docutils literal notranslate"><span class="pre">template_spectrum()</span></code>). So at a fixed
+position and shape the spectrum is a weighted least-squares fit to <code class="docutils literal notranslate"><span class="pre">S</span> <span class="pre">/</span> <span class="pre">Q</span></code> with weights <code class="docutils literal notranslate"><span class="pre">Q</span></code>,
+linear in <code class="docutils literal notranslate"><span class="pre">A</span></code> and <code class="docutils literal notranslate"><span class="pre">P</span></code> and non-linear in (<code class="docutils literal notranslate"><span class="pre">nu0</span></code>, <code class="docutils literal notranslate"><span class="pre">width</span></code>) only (variable projection); the
+position and shape are optimised on that profiled chi^2 by Nelder-Mead, one collapse per covering
+pointing per step.</p>
+<p>Errors are the inverse Fisher matrix, half the numerical Hessian of chi^2 in every free parameter at
+the optimum. They are formal: the visibility weights are taken as the noise and channels as
+independent. ALMA’s Hanning response correlates neighbouring channels (+0.67, +0.17), which is not
+modelled, so these errors are underestimated, most for broad lines.</p>
+<p class="rubric">Module Attributes</p>
+<div class="table-wrapper autosummary longtable docutils container">
+<table class="autosummary longtable docutils align-default">
+<tbody>
+<tr class="row-odd"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">SPATIAL</span></code></p></td>
+<td><p>Spatial parameters: arcsec, the axes as sigma, and deg east of north.</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">LINE_FLUX</span></code></p></td>
+<td><p>Line flux per peak flux density and FWHM, as <code class="xref py py-meth docutils literal notranslate"><span class="pre">integrated_flux()</span></code>.</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">COLUMNS</span></code></p></td>
+<td><p>Columns <code class="xref py py-func docutils literal notranslate"><span class="pre">fit_lines()</span></code> adds, with their units.</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">XATOL</span></code></p></td>
+<td><p>Nelder-Mead tolerances: on the parameters in units of its first steps (a quarter of the resolution, 30 deg for <code class="docutils literal notranslate"><span class="pre">pa</span></code>), and on chi^2.</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">FATOL</span></code></p></td>
+<td><p>Nelder-Mead tolerances: on the parameters in units of its first steps (a quarter of the resolution, 30 deg for <code class="docutils literal notranslate"><span class="pre">pa</span></code>), and on chi^2.</p></td>
+</tr>
+</tbody>
+</table>
+</div>
 <p class="rubric">Functions</p>
 <div class="table-wrapper autosummary longtable docutils container">
 <table class="autosummary longtable docutils align-default">
 <tbody>
-<tr class="row-odd"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">envelope</span></code>(uw, vw, bmaj, bmin, pa[, xp])</p></td>
-<td><p>Visibility amplitude of a unit-flux elliptical Gaussian at (uw, vw) wavelengths.</p></td>
+<tr class="row-odd"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">fit_line</span></code>(data, dra, ddec, freq_ghz, width[, ...])</p></td>
+<td><p>Fit one line in the visibilities, starting from a catalogue position, frequency and width.</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">fit_lines</span></code>(data, cat[, rows, cores])</p></td>
+<td><p>Fit catalogued lines in the visibilities (see the module docstring and <code class="xref py py-func docutils literal notranslate"><span class="pre">fit_line()</span></code>).</p></td>
 </tr>
 </tbody>
 </table>
@@ -268,11 +316,8 @@ matched filter parses this key to route values back onto the component.</p>
 <div class="table-wrapper autosummary longtable docutils container">
 <table class="autosummary longtable docutils align-default">
 <tbody>
-<tr class="row-odd"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">Gaussian</span></code>([dra, ddec, total_flux, bmin, ...])</p></td>
-<td><p>2D spatial x 1D spectral Gaussian evaluated directly in the UV plane.</p></td>
-</tr>
-<tr class="row-even"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">Model</span></code>()</p></td>
-<td><p>Container of source components with a flat, prefixed parameter list.</p></td>
+<tr class="row-odd"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">LineWindow</span></code>(chunks, dish_diameter[, ...])</p></td>
+<td><p>The window holding one line in every pointing that covers it, and the chi^2 of the line model.</p></td>
 </tr>
 </tbody>
 </table>
@@ -284,23 +329,23 @@ matched filter parses this key to route values back onto the component.</p>
       <footer>
         
         <div class="related-pages">
-          <a class="next-page" href="luv_finder.matchedfilter.html">
+          <a class="next-page" href="luv_finder.mock.html">
               <div class="page-info">
                 <div class="context">
                   <span>Next</span>
                 </div>
-                <div class="title">luv_finder.matchedfilter</div>
+                <div class="title">luv_finder.mock</div>
               </div>
               <svg class="furo-related-icon"><use href="#svg-arrow-right"></use></svg>
             </a>
-          <a class="prev-page" href="luv_finder.data.html">
+          <a class="prev-page" href="luv_finder.catalogue.html">
               <svg class="furo-related-icon"><use href="#svg-arrow-right"></use></svg>
               <div class="page-info">
                 <div class="context">
                   <span>Previous</span>
                 </div>
                 
-                <div class="title">luv_finder.data</div>
+                <div class="title">luv_finder.catalogue</div>
                 
               </div>
             </a>

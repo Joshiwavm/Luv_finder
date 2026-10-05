@@ -18,12 +18,14 @@ Extras
    (casatools bundles OpenSSL 3.6 and dyld reuses whichever
    ``libcrypto.3.dylib`` loads first).
 ``jax``
-   ``jax``, ``jax-finufft``. Not used yet; see the roadmap.
+   ``jax-finufft``. Not used yet; see the roadmap. JAX itself is a core
+   dependency: the matched filter runs on it.
 ``dev``
    pytest, ruff, pre-commit, Sphinx.
 
-The science code downstream of :mod:`luv_finder.data` is numpy-only. Exporting a
-measurement set to NPZ with ``luv-export`` lets everything else run without CASA.
+Reading data and simulating mocks are numpy (and CASA); the matched filter is JAX,
+in float64. Exporting a measurement set to NPZ with ``luv-export`` lets everything
+else run without CASA.
 
 CASA runtime data
 -----------------

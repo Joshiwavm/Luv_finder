@@ -4,16 +4,19 @@
 .. automodule:: luv_finder.utils
 
    
+   .. rubric:: Module Attributes
+
+   .. autosummary::
+   
+      FWHM_FACTOR
+      X_HALF
+   
    .. rubric:: Functions
 
    .. autosummary::
    
-      arcsec_to_l
-      arcsec_to_uvdist
       getstatwtweights
-      l_to_arcsec
-      l_to_uvdist
-      uvdist_to_arcsec
-      uvdist_to_l
-      uvload
+      primary_beam
+      primary_beam_fwhm
+      primary_beam_radius
    

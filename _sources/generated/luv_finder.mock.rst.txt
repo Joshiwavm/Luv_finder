@@ -15,6 +15,7 @@
    .. autosummary::
    
       resolve_antenna_config
+      source_from_grid
    
    .. rubric:: Classes
 

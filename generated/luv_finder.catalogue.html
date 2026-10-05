@@ -3,10 +3,10 @@
   <head><meta charset="utf-8">
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
-<link rel="index" title="Index" href="../genindex.html"><link rel="search" title="Search" href="../search.html"><link rel="next" title="luv_finder.matchedfilter" href="luv_finder.matchedfilter.html"><link rel="prev" title="luv_finder.data" href="luv_finder.data.html">
+<link rel="index" title="Index" href="../genindex.html"><link rel="search" title="Search" href="../search.html"><link rel="next" title="luv_finder.fit" href="luv_finder.fit.html"><link rel="prev" title="luv_finder.matchedfilter" href="luv_finder.matchedfilter.html">
 
     <!-- Generated with Sphinx 9.1.0 and Furo 2025.12.19 -->
-        <title>luv_finder.model - Luv_finder</title>
+        <title>luv_finder.catalogue - Luv_finder</title>
       <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=03e43079" />
     <link rel="stylesheet" type="text/css" href="../_static/styles/furo.css?v=7bdb33bb" />
     <link rel="stylesheet" type="text/css" href="../_static/copybutton.css?v=76b2166b" />
@@ -202,9 +202,9 @@
 </li>
 <li class="toctree-l1 current has-children"><a class="reference internal" href="../api.html">API</a><input aria-label="Toggle navigation of API" checked="" class="toctree-checkbox" id="toctree-checkbox-2" name="toctree-checkbox-2" role="switch" type="checkbox"/><label for="toctree-checkbox-2"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul class="current">
 <li class="toctree-l2"><a class="reference internal" href="luv_finder.data.html">luv_finder.data</a></li>
-<li class="toctree-l2 current current-page"><a class="current reference internal" href="#">luv_finder.model</a></li>
+<li class="toctree-l2"><a class="reference internal" href="luv_finder.model.html">luv_finder.model</a></li>
 <li class="toctree-l2"><a class="reference internal" href="luv_finder.matchedfilter.html">luv_finder.matchedfilter</a></li>
-<li class="toctree-l2"><a class="reference internal" href="luv_finder.catalogue.html">luv_finder.catalogue</a></li>
+<li class="toctree-l2 current current-page"><a class="current reference internal" href="#">luv_finder.catalogue</a></li>
 <li class="toctree-l2"><a class="reference internal" href="luv_finder.fit.html">luv_finder.fit</a></li>
 <li class="toctree-l2"><a class="reference internal" href="luv_finder.mock.html">luv_finder.mock</a></li>
 <li class="toctree-l2"><a class="reference internal" href="luv_finder.utils.html">luv_finder.utils</a></li>
@@ -230,7 +230,7 @@
         </a>
         <div class="content-icon-container">
           <div class="view-this-page">
-  <a class="muted-link" href="../_sources/generated/luv_finder.model.rst.txt" title="View this page">
+  <a class="muted-link" href="../_sources/generated/luv_finder.catalogue.rst.txt" title="View this page">
     <svg><use href="#svg-eye"></use></svg>
     <span class="visually-hidden">View this page</span>
   </a>
@@ -248,18 +248,77 @@
           </label>
         </div>
         <article role="main" id="furo-main-content">
-          <section id="module-luv_finder.model">
-<span id="luv-finder-model"></span><h1>luv_finder.model<a class="headerlink" href="#module-luv_finder.model" title="Link to this heading">¶</a></h1>
-<p>Parametric UV-domain source models.</p>
-<p>Parameter naming convention: every component attribute is exposed as
-<code class="docutils literal notranslate"><span class="pre">src_{component_index:02d}_{attribute}</span></code> (e.g. <code class="docutils literal notranslate"><span class="pre">src_00_nu_center</span></code>). The
-matched filter parses this key to route values back onto the component.</p>
+          <section id="module-luv_finder.catalogue">
+<span id="luv-finder-catalogue"></span><h1>luv_finder.catalogue<a class="headerlink" href="#module-luv_finder.catalogue" title="Link to this heading">¶</a></h1>
+<p>From a matched-filter search to a catalogue of line candidates.</p>
+<p>A <code class="xref py py-class docutils literal notranslate"><span class="pre">SearchResult</span></code>, PB-corrected and for a mosaic combined, is not
+yet a catalogue: one source lights up many neighbouring grid points, and how often noise alone
+reaches a given S/N is not known. Both are measured on the search’s jackknife, one realisation of
+the data’s noise without the sky. <code class="xref py py-func docutils literal notranslate"><span class="pre">catalogue()</span></code> takes these steps:</p>
+<ol class="arabic simple">
+<li><p>The S/N is the filter’s, which assumes independent channels. ALMA’s Hanning spectral response
+correlates neighbouring channels, so the noise is underestimated and the S/N too high; this is
+not corrected. The jackknife carries the same correlated noise, so the tests below, which only
+compare the data with the jackknife, are not biased by it. <code class="xref py py-func docutils literal notranslate"><span class="pre">jackknife_spread()</span></code> reports
+how far the jackknife’s S/N spread is from 1, as a flag.</p></li>
+<li><p><code class="xref py py-func docutils literal notranslate"><span class="pre">noise_correlation()</span></code> measures the correlation function rho of the response under the null
+over positions, channels and templates. A matched source’s expected response has the same
+shape, <code class="docutils literal notranslate"><span class="pre">E[r(p)]</span> <span class="pre">=</span> <span class="pre">(S/N)_0</span> <span class="pre">rho(p</span> <span class="pre">-</span> <span class="pre">s)</span></code> (Vio &amp; Andreani 2021): spatially the dirty beam,
+sidelobes included, spectrally about sqrt(2) times the template width, and between Gaussian
+line templates of FWHM W1 and W2 <code class="docutils literal notranslate"><span class="pre">sqrt(2</span> <span class="pre">W1</span> <span class="pre">W2</span> <span class="pre">/</span> <span class="pre">(W1^2</span> <span class="pre">+</span> <span class="pre">W2^2))</span></code>.</p></li>
+<li><p><code class="xref py py-func docutils literal notranslate"><span class="pre">groups()</span></code> merges the local maxima of the best-template S/N, brightest first, that lie
+within the half-power ellipsoid of rho around a brighter one: one group per source. The data,
+the jackknife and the negated data are grouped alike.</p></li>
+<li><p><code class="xref py py-func docutils literal notranslate"><span class="pre">likelihood()</span></code> compares the cumulative group counts of the data and the jackknife,
+<code class="docutils literal notranslate"><span class="pre">Lambda(gamma)</span> <span class="pre">=</span> <span class="pre">N_data(&gt;=</span> <span class="pre">gamma)</span> <span class="pre">/</span> <span class="pre">N_jk(&gt;=</span> <span class="pre">gamma)</span></code> (van Marrewijk et al. 2025, A&amp;A 695,
+A204), and <code class="xref py py-func docutils literal notranslate"><span class="pre">fidelity()</span></code> their counts per S/N bin, <code class="docutils literal notranslate"><span class="pre">1</span> <span class="pre">-</span> <span class="pre">N_jk</span> <span class="pre">/</span> <span class="pre">N_data</span></code> fitted with an
+error function (Walter et al. 2016, ApJ 833, 67, with the jackknife in place of the negative
+peaks). The jackknife’s positive groups are the noise reference of both; the data’s negative
+groups are kept for comparison only.</p></li>
+<li><p>One table row per data group, <code class="docutils literal notranslate"><span class="pre">detected</span></code> where both pass their thresholds. Nothing is
+clipped: the candidates are <code class="docutils literal notranslate"><span class="pre">cat[cat[&quot;detected&quot;]]</span></code>.</p></li>
+</ol>
+<p>Arrays are numpy; NaN marks positions and channels a search does not cover.</p>
+<p class="rubric">Module Attributes</p>
+<div class="table-wrapper autosummary longtable docutils container">
+<table class="autosummary longtable docutils align-default">
+<tbody>
+<tr class="row-odd"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">CHUNK_BYTES</span></code></p></td>
+<td><p>Channels of the spatial correlation are Fourier transformed in chunks whose transform stays near this size.</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">MAD_TO_SIGMA</span></code></p></td>
+<td><p>1.4826 x the median absolute deviation is the standard deviation of a Gaussian.</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">UNITS</span></code></p></td>
+<td><p>Units of the <code class="xref py py-func docutils literal notranslate"><span class="pre">catalogue()</span></code> columns.</p></td>
+</tr>
+</tbody>
+</table>
+</div>
 <p class="rubric">Functions</p>
 <div class="table-wrapper autosummary longtable docutils container">
 <table class="autosummary longtable docutils align-default">
 <tbody>
-<tr class="row-odd"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">envelope</span></code>(uw, vw, bmaj, bmin, pa[, xp])</p></td>
-<td><p>Visibility amplitude of a unit-flux elliptical Gaussian at (uw, vw) wavelengths.</p></td>
+<tr class="row-odd"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">catalogue</span></code>(result[, ref, floor, k, fidelity_min])</p></td>
+<td><p>Catalogue the line candidates of a search: one row per group of the data, by S/N descending.</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">fidelity</span></code>(snr_data, snr_noise, floor[, step])</p></td>
+<td><p>Fidelity <code class="docutils literal notranslate"><span class="pre">1</span> <span class="pre">-</span> <span class="pre">N_noise</span> <span class="pre">/</span> <span class="pre">N_data</span></code> per S/N bin, fitted, at every data S/N (Walter et al. 2016).</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">fidelity_curve</span></code>(snr, centre, sigma)</p></td>
+<td><p></p></td>
+</tr>
+<tr class="row-even"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">groups</span></code>(snr, result, nc[, floor])</p></td>
+<td><p>Group the local maxima of <code class="docutils literal notranslate"><span class="pre">snr</span></code> into candidates, one per source, brightest first.</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">jackknife_spread</span></code>(result)</p></td>
+<td><p>Spread of the jackknife S/N per template, <code class="docutils literal notranslate"><span class="pre">(n_template,)</span></code>: 1 if the channel noise is independent.</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">likelihood</span></code>(snr_data, snr_noise)</p></td>
+<td><p>Likelihood ratio <code class="docutils literal notranslate"><span class="pre">Lambda(gamma)</span> <span class="pre">=</span> <span class="pre">N_data(&gt;=</span> <span class="pre">gamma)</span> <span class="pre">/</span> <span class="pre">N_noise(&gt;=</span> <span class="pre">gamma)</span></code> at every data S/N gamma.</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">noise_correlation</span></code>(result[, max_lag, ...])</p></td>
+<td><p>Measure the correlation function of the response under the null on the search's jackknife.</p></td>
 </tr>
 </tbody>
 </table>
@@ -268,11 +327,11 @@ matched filter parses this key to route values back onto the component.</p>
 <div class="table-wrapper autosummary longtable docutils container">
 <table class="autosummary longtable docutils align-default">
 <tbody>
-<tr class="row-odd"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">Gaussian</span></code>([dra, ddec, total_flux, bmin, ...])</p></td>
-<td><p>2D spatial x 1D spectral Gaussian evaluated directly in the UV plane.</p></td>
+<tr class="row-odd"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">Group</span></code>(i, j, t, k, snr, n_peaks)</p></td>
+<td><p>Local maxima of the S/N merged into one candidate (see <code class="xref py py-func docutils literal notranslate"><span class="pre">groups()</span></code>).</p></td>
 </tr>
-<tr class="row-even"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">Model</span></code>()</p></td>
-<td><p>Container of source components with a flat, prefixed parameter list.</p></td>
+<tr class="row-even"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">NoiseCorrelation</span></code>(spatial, lags_ra, lags_dec, ...)</p></td>
+<td><p>Correlation function of the matched-filter response under the null (see <code class="xref py py-func docutils literal notranslate"><span class="pre">noise_correlation()</span></code>).</p></td>
 </tr>
 </tbody>
 </table>
@@ -284,23 +343,23 @@ matched filter parses this key to route values back onto the component.</p>
       <footer>
         
         <div class="related-pages">
-          <a class="next-page" href="luv_finder.matchedfilter.html">
+          <a class="next-page" href="luv_finder.fit.html">
               <div class="page-info">
                 <div class="context">
                   <span>Next</span>
                 </div>
-                <div class="title">luv_finder.matchedfilter</div>
+                <div class="title">luv_finder.fit</div>
               </div>
               <svg class="furo-related-icon"><use href="#svg-arrow-right"></use></svg>
             </a>
-          <a class="prev-page" href="luv_finder.data.html">
+          <a class="prev-page" href="luv_finder.matchedfilter.html">
               <svg class="furo-related-icon"><use href="#svg-arrow-right"></use></svg>
               <div class="page-info">
                 <div class="context">
                   <span>Previous</span>
                 </div>
                 
-                <div class="title">luv_finder.data</div>
+                <div class="title">luv_finder.matchedfilter</div>
                 
               </div>
             </a>

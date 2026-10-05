@@ -198,13 +198,14 @@
 <li class="toctree-l2"><a class="reference internal" href="../tutorials/simulate-mock-observation.html">Simulate a mock line observation</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../tutorials/simulate-mock-observation.html#make-mock-observations-using-mockgenerator.py">make mock observations using mockgenerator.py</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../tutorials/find-lines-matched-filter.html">Find lines with the matched filter</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../tutorials/find-lines-matched-filter.html#Data-and-model">Data and model</a></li>
 </ul>
 </li>
 <li class="toctree-l1 current has-children"><a class="reference internal" href="../api.html">API</a><input aria-label="Toggle navigation of API" checked="" class="toctree-checkbox" id="toctree-checkbox-2" name="toctree-checkbox-2" role="switch" type="checkbox"/><label for="toctree-checkbox-2"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul class="current">
 <li class="toctree-l2 current current-page"><a class="current reference internal" href="#">luv_finder.data</a></li>
 <li class="toctree-l2"><a class="reference internal" href="luv_finder.model.html">luv_finder.model</a></li>
 <li class="toctree-l2"><a class="reference internal" href="luv_finder.matchedfilter.html">luv_finder.matchedfilter</a></li>
+<li class="toctree-l2"><a class="reference internal" href="luv_finder.catalogue.html">luv_finder.catalogue</a></li>
+<li class="toctree-l2"><a class="reference internal" href="luv_finder.fit.html">luv_finder.fit</a></li>
 <li class="toctree-l2"><a class="reference internal" href="luv_finder.mock.html">luv_finder.mock</a></li>
 <li class="toctree-l2"><a class="reference internal" href="luv_finder.utils.html">luv_finder.utils</a></li>
 </ul>
@@ -250,18 +251,73 @@
           <section id="module-luv_finder.data">
 <span id="luv-finder-data"></span><h1>luv_finder.data<a class="headerlink" href="#module-luv_finder.data" title="Link to this heading">¶</a></h1>
 <p>Measurement-set I/O and visibility-domain operations.</p>
-<p>CASA (<code class="docutils literal notranslate"><span class="pre">casatools</span></code>) is imported lazily inside the methods that touch a
-measurement set, so that the NPZ path (<code class="docutils literal notranslate"><span class="pre">DataHandler.from_npz</span></code>) works in an
-environment without CASA.</p>
+<p>Visibilities are held per (field, spectral window) in a <code class="xref py py-class docutils literal notranslate"><span class="pre">Chunk</span></code>: the weighted
+visibilities <code class="docutils literal notranslate"><span class="pre">X</span> <span class="pre">=</span> <span class="pre">w</span> <span class="pre">*</span> <span class="pre">V</span></code> and their flags as <code class="docutils literal notranslate"><span class="pre">(n_chan,</span> <span class="pre">n_row)</span></code> arrays, and everything that
+is constant along an axis (<code class="docutils literal notranslate"><span class="pre">u</span></code>, <code class="docutils literal notranslate"><span class="pre">v</span></code>, time and weight per row, frequency per channel) once.</p>
+<p>Positions are offsets in one sky frame per dataset: arcsec east and north of
+<code class="xref py py-attr docutils literal notranslate"><span class="pre">Metadata.ref</span></code>, the model’s (dra, ddec) convention. Each chunk carries its field’s phase
+centre in that frame, so the same (dra, ddec) means the same sky position in every pointing.</p>
+<p>CASA (<code class="docutils literal notranslate"><span class="pre">casatools</span></code>) is imported lazily inside the functions that read a measurement set, so
+the NPZ path (<code class="xref py py-meth docutils literal notranslate"><span class="pre">DataHandler.from_npz()</span></code>) works in an environment without CASA.</p>
+<p class="rubric">Module Attributes</p>
+<div class="table-wrapper autosummary longtable docutils container">
+<table class="autosummary longtable docutils align-default">
+<tbody>
+<tr class="row-odd"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">CHUNK_ARRAYS</span></code></p></td>
+<td><p>Arrays stored per chunk in an NPZ, under <code class="docutils literal notranslate"><span class="pre">{field}_{spw}_{name}</span></code>.</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">READ_BLOCK</span></code></p></td>
+<td><p>Target size of one block of rows read from a measurement set, in visibility-channels.</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<p class="rubric">Functions</p>
+<div class="table-wrapper autosummary longtable docutils container">
+<table class="autosummary longtable docutils align-default">
+<tbody>
+<tr class="row-odd"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">fields_in</span></code>(path)</p></td>
+<td><p>Target fields of a measurement set or an NPZ, sorted; an NPZ is not read beyond its index.</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">iter_chunks</span></code>(msfile, ref[, fields, spws])</p></td>
+<td><p>Read target visibilities one (field, spw) at a time, offsets measured from <code class="docutils literal notranslate"><span class="pre">ref</span></code>.</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">load</span></code>(path[, fields])</p></td>
+<td><p>The visibilities of <code class="docutils literal notranslate"><span class="pre">fields</span></code> (default: all) from a measurement set or an NPZ.</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">pair_weight</span></code>(a, b)</p></td>
+<td><p>Inverse variance of <code class="docutils literal notranslate"><span class="pre">(x_a</span> <span class="pre">+-</span> <span class="pre">x_b)</span> <span class="pre">/</span> <span class="pre">2</span></code> from the weights of <code class="docutils literal notranslate"><span class="pre">x_a</span></code> and <code class="docutils literal notranslate"><span class="pre">x_b</span></code>; 0 if either is.</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">sky_direction</span></code>(offset, ref)</p></td>
+<td><p>(RA, Dec) in rad of the (east, north) <code class="docutils literal notranslate"><span class="pre">offset</span></code> in arcsec from <code class="docutils literal notranslate"><span class="pre">ref</span></code>, the inverse of <code class="xref py py-func docutils literal notranslate"><span class="pre">sky_offset()</span></code>.</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">sky_offset</span></code>(direction, ref)</p></td>
+<td><p>(east, north) offset in arcsec of <code class="docutils literal notranslate"><span class="pre">direction</span></code> on the tangent plane at <code class="docutils literal notranslate"><span class="pre">ref</span></code>, both (RA, Dec) in rad.</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">stokes_i</span></code>(data, weight, flag)</p></td>
+<td><p>Average the parallel hands <code class="docutils literal notranslate"><span class="pre">[0,</span> <span class="pre">-1]</span></code> of MS columns into (vis, w_row, flag).</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">target_selection</span></code>(msfile)</p></td>
+<td><p>Field and spectral-window ids observed with the target intent.</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">write_npz</span></code>(path, metadata, chunks)</p></td>
+<td><p>Write an NPZ one array at a time, so <code class="docutils literal notranslate"><span class="pre">chunks</span></code> may be a generator that never sits in memory whole.</p></td>
+</tr>
+</tbody>
+</table>
+</div>
 <p class="rubric">Classes</p>
 <div class="table-wrapper autosummary longtable docutils container">
 <table class="autosummary longtable docutils align-default">
 <tbody>
-<tr class="row-odd"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">DataHandler</span></code>([msfile, uvdata, dish_diameter])</p></td>
-<td><p>Flattened visibilities of a measurement set.</p></td>
+<tr class="row-odd"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">Chunk</span></code>(field, spw, offset, freq, u, v, time, ...)</p></td>
+<td><p>Visibilities of one (field, spectral window), channel-major.</p></td>
 </tr>
-<tr class="row-even"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">Metadata</span></code>(uvdata[, dish_diameter, msfile])</p></td>
-<td><p>Derived quantities of an observation (primary beam, resolution).</p></td>
+<tr class="row-even"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">DataHandler</span></code>([msfile, chunks, metadata, ...])</p></td>
+<td><p>Visibilities of a measurement set, one <code class="xref py py-class docutils literal notranslate"><span class="pre">Chunk</span></code> per (field, spectral window).</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">Metadata</span></code>(dish_diameter, ref, ...)</p></td>
+<td><p>Quantities of the whole dataset, the same whichever fields or windows are loaded.</p></td>
 </tr>
 </tbody>
 </table>

@@ -3,7 +3,7 @@
   <head><meta charset="utf-8">
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
-<link rel="index" title="Index" href="../genindex.html"><link rel="search" title="Search" href="../search.html"><link rel="next" title="luv_finder.utils" href="luv_finder.utils.html"><link rel="prev" title="luv_finder.matchedfilter" href="luv_finder.matchedfilter.html">
+<link rel="index" title="Index" href="../genindex.html"><link rel="search" title="Search" href="../search.html"><link rel="next" title="luv_finder.utils" href="luv_finder.utils.html"><link rel="prev" title="luv_finder.fit" href="luv_finder.fit.html">
 
     <!-- Generated with Sphinx 9.1.0 and Furo 2025.12.19 -->
         <title>luv_finder.mock - Luv_finder</title>
@@ -198,13 +198,14 @@
 <li class="toctree-l2"><a class="reference internal" href="../tutorials/simulate-mock-observation.html">Simulate a mock line observation</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../tutorials/simulate-mock-observation.html#make-mock-observations-using-mockgenerator.py">make mock observations using mockgenerator.py</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../tutorials/find-lines-matched-filter.html">Find lines with the matched filter</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../tutorials/find-lines-matched-filter.html#Data-and-model">Data and model</a></li>
 </ul>
 </li>
 <li class="toctree-l1 current has-children"><a class="reference internal" href="../api.html">API</a><input aria-label="Toggle navigation of API" checked="" class="toctree-checkbox" id="toctree-checkbox-2" name="toctree-checkbox-2" role="switch" type="checkbox"/><label for="toctree-checkbox-2"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul class="current">
 <li class="toctree-l2"><a class="reference internal" href="luv_finder.data.html">luv_finder.data</a></li>
 <li class="toctree-l2"><a class="reference internal" href="luv_finder.model.html">luv_finder.model</a></li>
 <li class="toctree-l2"><a class="reference internal" href="luv_finder.matchedfilter.html">luv_finder.matchedfilter</a></li>
+<li class="toctree-l2"><a class="reference internal" href="luv_finder.catalogue.html">luv_finder.catalogue</a></li>
+<li class="toctree-l2"><a class="reference internal" href="luv_finder.fit.html">luv_finder.fit</a></li>
 <li class="toctree-l2 current current-page"><a class="current reference internal" href="#">luv_finder.mock</a></li>
 <li class="toctree-l2"><a class="reference internal" href="luv_finder.utils.html">luv_finder.utils</a></li>
 </ul>
@@ -267,6 +268,9 @@
 <tr class="row-odd"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">resolve_antenna_config</span></code>(name)</p></td>
 <td><p>Absolute path to a CASA antenna configuration, by bare name or path.</p></td>
 </tr>
+<tr class="row-even"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">source_from_grid</span></code>(grid, source)</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">source</span></code> with position, size and line width taken from a targeted grid.</p></td>
+</tr>
 </tbody>
 </table>
 </div>
@@ -296,14 +300,14 @@
               </div>
               <svg class="furo-related-icon"><use href="#svg-arrow-right"></use></svg>
             </a>
-          <a class="prev-page" href="luv_finder.matchedfilter.html">
+          <a class="prev-page" href="luv_finder.fit.html">
               <svg class="furo-related-icon"><use href="#svg-arrow-right"></use></svg>
               <div class="page-info">
                 <div class="context">
                   <span>Previous</span>
                 </div>
                 
-                <div class="title">luv_finder.matchedfilter</div>
+                <div class="title">luv_finder.fit</div>
                 
               </div>
             </a>

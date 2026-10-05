@@ -4,6 +4,12 @@
 .. automodule:: luv_finder.model
 
    
+   .. rubric:: Functions
+
+   .. autosummary::
+   
+      envelope
+   
    .. rubric:: Classes
 
    .. autosummary::

@@ -198,13 +198,14 @@
 <li class="toctree-l2"><a class="reference internal" href="tutorials/simulate-mock-observation.html">Simulate a mock line observation</a></li>
 <li class="toctree-l2"><a class="reference internal" href="tutorials/simulate-mock-observation.html#make-mock-observations-using-mockgenerator.py">make mock observations using mockgenerator.py</a></li>
 <li class="toctree-l2"><a class="reference internal" href="tutorials/find-lines-matched-filter.html">Find lines with the matched filter</a></li>
-<li class="toctree-l2"><a class="reference internal" href="tutorials/find-lines-matched-filter.html#Data-and-model">Data and model</a></li>
 </ul>
 </li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="api.html">API</a><input aria-label="Toggle navigation of API" class="toctree-checkbox" id="toctree-checkbox-2" name="toctree-checkbox-2" role="switch" type="checkbox"/><label for="toctree-checkbox-2"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
 <li class="toctree-l2"><a class="reference internal" href="generated/luv_finder.data.html">luv_finder.data</a></li>
 <li class="toctree-l2"><a class="reference internal" href="generated/luv_finder.model.html">luv_finder.model</a></li>
 <li class="toctree-l2"><a class="reference internal" href="generated/luv_finder.matchedfilter.html">luv_finder.matchedfilter</a></li>
+<li class="toctree-l2"><a class="reference internal" href="generated/luv_finder.catalogue.html">luv_finder.catalogue</a></li>
+<li class="toctree-l2"><a class="reference internal" href="generated/luv_finder.fit.html">luv_finder.fit</a></li>
 <li class="toctree-l2"><a class="reference internal" href="generated/luv_finder.mock.html">luv_finder.mock</a></li>
 <li class="toctree-l2"><a class="reference internal" href="generated/luv_finder.utils.html">luv_finder.utils</a></li>
 </ul>
@@ -265,6 +266,47 @@ luv-find<span class="w"> </span>--ms<span class="w"> </span>line13_line9.npz<spa
 </div>
 <p>Each mock preset has a grid preset of the same name. <code class="docutils literal notranslate"><span class="pre">configs/README.md</span></code>
 documents the pairing and the <code class="docutils literal notranslate"><span class="pre">dra</span></code> sign flip.</p>
+<p>A mosaic is searched one pointing at a time, on one sky grid. In Python
+<code class="xref py py-func docutils literal notranslate"><span class="pre">search_pointings()</span></code> loads each field of an NPZ or measurement set
+in turn, searches it, corrects it for its primary beam and combines the pointings:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">luv_finder.matchedfilter</span><span class="w"> </span><span class="kn">import</span> <span class="n">search_pointings</span>
+
+<span class="n">result</span><span class="p">,</span> <span class="n">cubes</span> <span class="o">=</span> <span class="n">search_pointings</span><span class="p">(</span><span class="s2">"mosaic.npz"</span><span class="p">,</span> <span class="p">{</span><span class="s2">"width"</span><span class="p">:</span> <span class="p">[</span><span class="mf">200.0</span><span class="p">,</span> <span class="mf">300.0</span><span class="p">]},</span> <span class="n">jackknife</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>Each pointing covers the region where its primary beam is at least <code class="docutils literal notranslate"><span class="pre">pb_limit</span></code>. A dataset with
+a single field is primary-beam corrected too, so everything downstream sees PB-corrected
+results. The steps are available separately as <code class="xref py py-func docutils literal notranslate"><span class="pre">build_grid()</span></code>,
+<code class="xref py py-meth docutils literal notranslate"><span class="pre">MatchedFilter.run</span></code>,
+<code class="xref py py-func docutils literal notranslate"><span class="pre">pb_corrected()</span></code> and
+<code class="xref py py-func docutils literal notranslate"><span class="pre">combine_pointings()</span></code>.</p>
+<p>The primary beam (<code class="xref py py-func docutils literal notranslate"><span class="pre">luv_finder.utils.primary_beam()</span></code>) is an Airy pattern scaled to the
+FWHM the ALMA Technical Handbook gives for the real antennas, 1.13 lambda/D. Dividing by it
+leaves a pointing’s S/N unchanged; the combination weights every pointing by PB^2/sigma^2,
+so overlaps gain S/N, and a pointing contributes nothing where its PB is below <code class="docutils literal notranslate"><span class="pre">pb_limit</span></code>.</p>
+<p>From the command line:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>luv-export<span class="w"> </span>--ms<span class="w"> </span>mosaic.ms<span class="w"> </span>--out<span class="w"> </span>mosaic.npz
+luv-find<span class="w"> </span>--ms<span class="w"> </span>mosaic.npz<span class="w"> </span>--grid<span class="w"> </span>grid.yaml<span class="w"> </span>--jackknife<span class="w"> </span>--out<span class="w"> </span>mosaic_response.npz
+luv-find<span class="w"> </span>--ms<span class="w"> </span>mosaic.npz<span class="w"> </span>--field<span class="w"> </span><span class="m">1</span><span class="w"> </span>--grid<span class="w"> </span>grid.yaml<span class="w"> </span>--out<span class="w"> </span>field1.npz
+luv-find<span class="w"> </span>--ms<span class="w"> </span>mosaic.npz<span class="w"> </span>--jackknife<span class="w"> </span>--catalogue<span class="w"> </span>lines.ecsv
+</pre></div>
+</div>
+<p>Without <code class="docutils literal notranslate"><span class="pre">--field</span></code> a dataset with several fields goes through <code class="docutils literal notranslate"><span class="pre">search_pointings</span></code>, and the
+best grid point of the combined, PB-corrected result is reported. With <code class="docutils literal notranslate"><span class="pre">--field</span></code> (or a single
+field) one pointing is searched as it is, without primary-beam correction.</p>
+</section>
+<section id="data-layout">
+<h2>Data layout<a class="headerlink" href="#data-layout" title="Link to this heading">¶</a></h2>
+<p><code class="xref py py-class docutils literal notranslate"><span class="pre">DataHandler</span></code> holds one <code class="xref py py-class docutils literal notranslate"><span class="pre">Chunk</span></code> per
+(field, spectral window): the weighted visibilities <code class="docutils literal notranslate"><span class="pre">X</span> <span class="pre">=</span> <span class="pre">w</span> <span class="pre">*</span> <span class="pre">V</span></code> and their flags as
+<code class="docutils literal notranslate"><span class="pre">(n_chan,</span> <span class="pre">n_row)</span></code> arrays, and <code class="docutils literal notranslate"><span class="pre">u</span></code>, <code class="docutils literal notranslate"><span class="pre">v</span></code>, time and weight once per row and frequency
+once per channel. The weight is the measurement set’s <code class="docutils literal notranslate"><span class="pre">WEIGHT</span></code> column (Stokes I of the
+parallel hands); flags zero it per channel. Autocorrelations and flagged rows are dropped
+on reading.</p>
+<p>Positions (<code class="docutils literal notranslate"><span class="pre">dra</span></code>, <code class="docutils literal notranslate"><span class="pre">ddec</span></code>) are arcsec east and north of one reference direction per
+dataset, the phase centre of its first target field. Every chunk knows its own field’s
+phase centre in that frame, so a grid point is the same sky position in every pointing,
+and the default position grid is a lattice anchored at the reference.</p>
 </section>
 <section id="signal-to-noise-units">
 <h2>Signal-to-noise units<a class="headerlink" href="#signal-to-noise-units" title="Link to this heading">¶</a></h2>
@@ -272,6 +314,87 @@ documents the pairing and the <code class="docutils literal notranslate"><span c
 the null, so the peak height is the line’s signal-to-noise ratio. It does not
 depend on the template amplitude, which cancels in the kernel normalisation, so
 <code class="docutils literal notranslate"><span class="pre">total_flux</span></code> is not a search axis and passing it in a grid raises an error.</p>
+<p>Column <code class="docutils literal notranslate"><span class="pre">i</span></code> of the response is a line template centred exactly on channel <code class="docutils literal notranslate"><span class="pre">i</span></code>.
+Each column is normalised over the channels its template covers, so the variance
+stays one at the window edges and next to flagged channels, and a line near an
+edge is reported at the S/N of its observed part. Rows follow <code class="docutils literal notranslate"><span class="pre">grid_params</span></code>:
+the product of the <code class="docutils literal notranslate"><span class="pre">dra,</span> <span class="pre">ddec,</span> <span class="pre">bmin,</span> <span class="pre">bmaj,</span> <span class="pre">pa,</span> <span class="pre">width</span></code> axes, in that order.</p>
+<p>At every trial position each line template is fitted jointly with a continuum: a polynomial in
+frequency (degree 2 by default, <code class="docutils literal notranslate"><span class="pre">continuum_order=</span></code> or <code class="docutils literal notranslate"><span class="pre">luv-find</span> <span class="pre">--continuum-order</span></code>; <code class="docutils literal notranslate"><span class="pre">none</span></code>
+turns it off) per spectral window, by weighted least squares on the dirty spectrum at that
+position. A continuum source anywhere in the field is smooth in frequency at its own position,
+however far it is from the phase centre. The joint fit is linear, keeps the response exactly
+normalised and needs no line-free channels; a line loses the part of its S/N the polynomial
+can mimic, a few per cent.</p>
+<p>The search runs in JAX with float64, all positions of a window at once: on a
+<code class="docutils literal notranslate"><span class="pre">dra</span> <span class="pre">x</span> <span class="pre">ddec</span></code> grid the phase shift factorises, so each channel is one complex
+matrix product, and the phase factors advance from channel to channel by
+recurrence. Large grids are split into blocks of <code class="docutils literal notranslate"><span class="pre">dra</span></code> rows to bound memory.
+On a shared machine the search pins itself to a quarter of the cores, never more
+than all but two (<code class="docutils literal notranslate"><span class="pre">luv-find</span> <span class="pre">--cores</span></code> or <code class="docutils literal notranslate"><span class="pre">MatchedFilter.run(cores=...)</span></code> to
+change it; Linux only).</p>
+</section>
+<section id="catalogue">
+<h2>Catalogue<a class="headerlink" href="#catalogue" title="Link to this heading">¶</a></h2>
+<p><code class="xref py py-func docutils literal notranslate"><span class="pre">luv_finder.catalogue.catalogue()</span></code> turns a search with its jackknife (one pointing or the
+combined mosaic, on a uniform position lattice) into an astropy table of line candidates; the
+jackknife, which has the data’s noise and no sky, is the reference throughout:</p>
+<ol class="arabic simple">
+<li><p>the S/N is the filter’s, which assumes independent channels. ALMA’s Hanning spectral response
+correlates neighbouring channels; this is not corrected, so the noise is underestimated and the
+S/N too high (<code class="xref py py-func docutils literal notranslate"><span class="pre">jackknife_spread()</span></code> reports by how much). The jackknife
+carries the same correlated noise, so the tests below, which compare data and jackknife, are
+not biased by it;</p></li>
+<li><p>the correlation function of the jackknife response is measured; it is also the expected shape
+of a matched line’s response (Vio &amp; Andreani 2021), so its half-power ellipsoid in position and
+frequency is what one source occupies;</p></li>
+<li><p>local maxima of the best-template S/N above 4 are merged, brightest first, within that
+ellipsoid, for the data, the jackknife and (as a diagnostic) the negated data;</p></li>
+<li><p>every data group gets the likelihood ratio <code class="docutils literal notranslate"><span class="pre">N_data(&gt;=</span> <span class="pre">S/N)</span> <span class="pre">/</span> <span class="pre">N_jackknife(&gt;=</span> <span class="pre">S/N)</span></code>
+(van Marrewijk et al. 2025, required &gt;= 3) and the fidelity <code class="docutils literal notranslate"><span class="pre">1</span> <span class="pre">-</span> <span class="pre">N_jackknife</span> <span class="pre">/</span> <span class="pre">N_data</span></code> per
+S/N bin, fitted with an error function (Walter et al. 2016, required &gt;= 0.6).</p></li>
+</ol>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">luv_finder.catalogue</span><span class="w"> </span><span class="kn">import</span> <span class="n">catalogue</span>
+
+<span class="n">cat</span> <span class="o">=</span> <span class="n">catalogue</span><span class="p">(</span><span class="n">result</span><span class="p">,</span> <span class="n">ref</span><span class="o">=</span><span class="n">data</span><span class="o">.</span><span class="n">metadata</span><span class="o">.</span><span class="n">ref</span><span class="p">)</span>
+<span class="n">lines</span> <span class="o">=</span> <span class="n">cat</span><span class="p">[</span><span class="n">cat</span><span class="p">[</span><span class="s2">"detected"</span><span class="p">]]</span>
+<span class="n">cat</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="s2">"lines.ecsv"</span><span class="p">,</span> <span class="nb">format</span><span class="o">=</span><span class="s2">"ascii.ecsv"</span><span class="p">)</span>
+</pre></div>
+</div>
+<p><code class="xref py py-func docutils literal notranslate"><span class="pre">luv_finder.plotting.reliability_check()</span></code> shows the counts, the likelihood ratio and the
+fidelity; <code class="xref py py-func docutils literal notranslate"><span class="pre">luv_finder.plotting.response_shape_check()</span></code> the correlation against real lines.</p>
+</section>
+<section id="fitting-the-detected-lines">
+<h2>Fitting the detected lines<a class="headerlink" href="#fitting-the-detected-lines" title="Link to this heading">¶</a></h2>
+<p>Detection stays a grid search. <code class="xref py py-func docutils literal notranslate"><span class="pre">luv_finder.fit.fit_lines()</span></code> then refines every detected line
+by a deterministic least-squares fit in the visibilities: an elliptical Gaussian source (position,
+axes, position angle) whose spectrum is a Gaussian line (peak, centre, FWHM) on a polynomial
+continuum of the same shape, of the search’s degree, times each pointing’s primary beam at the
+source. It is fitted jointly in every pointing whose primary beam covers the line (PB &gt;= 0.2), in
+the spectral window holding it.</p>
+<p>The fit is exact without a loop over visibilities: chi^2 over all of them depends on the data only
+through each pointing’s template-weighted spectrum at the trial position and shape
+(<code class="xref py py-func docutils literal notranslate"><span class="pre">template_spectrum()</span></code>, the search’s own collapse at one point). At a
+given position and shape the spectrum is a weighted least-squares fit, linear in the peak and the
+continuum; Nelder-Mead moves the position and the shape. A Band 3 line takes 0.5-3 minutes on 12
+cores, depending on how many pointings cover it; the mosaic’s 16 lines take 25 minutes.</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">luv_finder.fit</span><span class="w"> </span><span class="kn">import</span> <span class="n">fit_lines</span>
+
+<span class="n">fitted</span> <span class="o">=</span> <span class="n">fit_lines</span><span class="p">(</span><span class="s2">"mosaic.npz"</span><span class="p">,</span> <span class="n">cat</span><span class="p">)</span>  <span class="c1"># or the search's DataHandler</span>
+<span class="n">fitted</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="s2">"lines.ecsv"</span><span class="p">,</span> <span class="nb">format</span><span class="o">=</span><span class="s2">"ascii.ecsv"</span><span class="p">,</span> <span class="n">overwrite</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>or <code class="docutils literal notranslate"><span class="pre">luv-find</span> <span class="pre">...</span> <span class="pre">--jackknife</span> <span class="pre">--catalogue</span> <span class="pre">lines.ecsv</span> <span class="pre">--fit</span></code>. The fitted columns (<code class="docutils literal notranslate"><span class="pre">fit_dra</span></code>,
+<code class="docutils literal notranslate"><span class="pre">fit_ddec</span></code>, <code class="docutils literal notranslate"><span class="pre">fit_ra</span></code>, <code class="docutils literal notranslate"><span class="pre">fit_dec</span></code>; <code class="docutils literal notranslate"><span class="pre">fit_bmaj</span></code>, <code class="docutils literal notranslate"><span class="pre">fit_bmin</span></code> as sigma and <code class="docutils literal notranslate"><span class="pre">fit_pa</span></code>;
+<code class="docutils literal notranslate"><span class="pre">fit_freq_ghz</span></code>, <code class="docutils literal notranslate"><span class="pre">fit_width</span></code> as FWHM in km/s, <code class="docutils literal notranslate"><span class="pre">fit_peak</span></code>, <code class="docutils literal notranslate"><span class="pre">fit_line_flux</span></code> and
+<code class="docutils literal notranslate"><span class="pre">fit_continuum</span></code> at the line centre, each with an <code class="docutils literal notranslate"><span class="pre">_error</span></code>) are intrinsic, PB-corrected values.
+A faint line may not constrain its size: if the Gaussian fit fails, an axis runs to its bound
+(twice the resolution) or both collapse to zero, the line is refitted as a point source
+(<code class="docutils literal notranslate"><span class="pre">fit_point</span></code>); <code class="docutils literal notranslate"><span class="pre">point=True</span></code> asks for that directly and <code class="docutils literal notranslate"><span class="pre">fixed_position=True</span></code> keeps the
+catalogue position.</p>
+<p>The errors are formal, from the Hessian of chi^2 with the visibility weights as the noise and the
+channels independent. ALMA’s Hanning response correlates neighbouring channels (+0.67, +0.17),
+which the fit does not model, so these errors are underestimated, most for broad lines.</p>
 </section>
 <section id="diagnostic-figures">
 <h2>Diagnostic figures<a class="headerlink" href="#diagnostic-figures" title="Link to this heading">¶</a></h2>
@@ -286,10 +409,11 @@ through <code class="xref py py-func docutils literal notranslate"><span class="
 <section id="parameter-naming">
 <h2>Parameter naming<a class="headerlink" href="#parameter-naming" title="Link to this heading">¶</a></h2>
 <p>Every component attribute is exposed as <code class="docutils literal notranslate"><span class="pre">src_{index:02d}_{name}</span></code>
-(<code class="docutils literal notranslate"><span class="pre">src_00_dra</span></code>, <code class="docutils literal notranslate"><span class="pre">src_00_nu_center</span></code>, …). Grid dictionaries on a component are
+(<code class="docutils literal notranslate"><span class="pre">src_00_dra</span></code>, <code class="docutils literal notranslate"><span class="pre">src_00_width</span></code>, …). Grid dictionaries on a component are
 prefixed the same way when added to a <code class="xref py py-class docutils literal notranslate"><span class="pre">Model</span></code>. A grid
-entry may be a scalar (fixed), an array (enumerated), or a callable of the width
-(derived, e.g. <code class="xref py py-func docutils literal notranslate"><span class="pre">nu_center_func()</span></code>).</p>
+entry may be a scalar (fixed) or an array (enumerated). The line centre is not a
+grid axis: the filter places its kernel in every spectral window and slides it
+across the window.</p>
 </section>
 </section>
 
@@ -350,7 +474,10 @@ entry may be a scalar (fixed), an array (enumerated), or a callable of the width
             <ul>
 <li><a class="reference internal" href="#">Usage</a><ul>
 <li><a class="reference internal" href="#command-line">Command line</a></li>
+<li><a class="reference internal" href="#data-layout">Data layout</a></li>
 <li><a class="reference internal" href="#signal-to-noise-units">Signal-to-noise units</a></li>
+<li><a class="reference internal" href="#catalogue">Catalogue</a></li>
+<li><a class="reference internal" href="#fitting-the-detected-lines">Fitting the detected lines</a></li>
 <li><a class="reference internal" href="#diagnostic-figures">Diagnostic figures</a></li>
 <li><a class="reference internal" href="#parameter-naming">Parameter naming</a></li>
 </ul>
