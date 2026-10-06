@@ -80,6 +80,13 @@ and shrinks every downstream array, and once the data are a few thousand points
 the NUFFT cost is dominated by its FFT rather than by spreading. Bin first, then
 transform.
 
+The line fit is the easiest place to start. It moves within about a resolution of
+the matched filter's peak and its sources are a few arcsec, so after a phase
+rotation to the peak the cells can be large: 5 klambda loses
+`sinc(pi 5 klambda 2")` ~ 0.4% at 2" in Band 3, and leaves a few hundred to a
+thousand cells of 196 k rows. Each pass of the fit (`kernel.point_moments`) would be
+100-200x cheaper; worth it for Band 1's 960-channel window or larger mosaics.
+
 ### The position search is a Fourier transform
 
 The response is built along two different axes, and only the first is expensive.
@@ -139,8 +146,9 @@ Open:
   from two detected lines, is no longer detected (fidelity 0.43), but when it was
   its fit ran to a 1818 km/s line 101 MHz off the peak (chi^2_red 3.5, 10.8
   times the catalogue flux) and still reported `fit_converged`. Fit neighbouring
-  lines jointly, or bound the width and centre to the window between them, and
-  let a chi^2 or bound check fail the fit.
+  lines jointly. Cutting the fit to a few widths around the peak does not help:
+  in so few channels the quadratic continuum mimics a broad line (tried: one line
+  ran to 5800 km/s, another lost 30% of its flux).
 
 ### 2.3 Joint Band 1 and Band 3 identification
 One pointing per band. A line in each band at the same sky position is a redshift

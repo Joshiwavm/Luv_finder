@@ -140,18 +140,19 @@ Fitting the detected lines
 --------------------------
 
 Detection stays a grid search. :func:`luv_finder.fit.fit_lines` then refines every detected line
-by a deterministic least-squares fit in the visibilities: an elliptical Gaussian source (position,
-axes, position angle) whose spectrum is a Gaussian line (peak, centre, FWHM) on a polynomial
-continuum of the same shape, of the search's degree, times each pointing's primary beam at the
-source. It is fitted jointly in every pointing whose primary beam covers the line (PB >= 0.2), in
-the spectral window holding it.
+by least squares in the visibilities: an elliptical Gaussian source (position and sky covariance)
+whose spectrum is a Gaussian line (peak, centre, FWHM) on a polynomial continuum of the search's
+degree, times each pointing's primary beam at the source, jointly in every pointing whose primary
+beam covers the line (PB >= 0.2), in the spectral window holding it.
 
-The fit is exact without a loop over visibilities: chi^2 over all of them depends on the data only
-through each pointing's template-weighted spectrum at the trial position and shape
-(:func:`~luv_finder.kernel.template_spectrum`, the search's own collapse at one point). At a
-given position and shape the spectrum is a weighted least-squares fit, linear in the peak and the
-continuum; Nelder-Mead moves the position and the shape. A Band 3 line takes 0.5-3 minutes on 12
-cores, depending on how many pointings cover it; the mosaic's 16 lines take 25 minutes.
+Every derivative of the model in position and shape is the model times a polynomial in (u, v), so
+one pass over the visibilities collects a few per-channel moments
+(:func:`~luv_finder.kernel.point_moments`) that give chi^2, its gradient and the Gauss-Newton
+matrix exactly. The spectrum (peak, continuum, centre, width) is fitted on those moments without
+another pass, and ``scipy.optimize.minimize`` (trust-exact) moves the position and shape on the
+profiled chi^2, starting from the matched filter's peak: 7-10 passes per line. The shape is an
+unconstrained covariance, so a point source is an interior point; an unresolved axis can come out
+slightly negative (a signed square root), as a deconvolved size can.
 
 .. code-block:: python
 
@@ -164,14 +165,9 @@ or ``luv-find ... --jackknife --catalogue lines.ecsv --fit``. The fitted columns
 ``fit_ddec``, ``fit_ra``, ``fit_dec``; ``fit_bmaj``, ``fit_bmin`` as sigma and ``fit_pa``;
 ``fit_freq_ghz``, ``fit_width`` as FWHM in km/s, ``fit_peak``, ``fit_line_flux`` and
 ``fit_continuum`` at the line centre, each with an ``_error``) are intrinsic, PB-corrected values.
-A faint line may not constrain its size: if the Gaussian fit fails, an axis runs to its bound
-(twice the resolution) or both collapse to zero, the line is refitted as a point source
-(``fit_point``); ``point=True`` asks for that directly and ``fixed_position=True`` keeps the
-catalogue position.
-
-The errors are formal, from the Hessian of chi^2 with the visibility weights as the noise,
-corrected for the channel correlation measured on the jackknife by a sandwich estimator over the
-channels (see :mod:`luv_finder.fit`).
+Errors are formal, ``2 H^-1``, corrected for the channel correlation measured on the jackknife by
+a sandwich estimator over the channels. The axes of an unresolved source and the angle of a round
+one are unconstrained, and their errors are correspondingly large.
 
 Diagnostic figures
 ------------------

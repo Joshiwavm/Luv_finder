@@ -10,7 +10,7 @@ import jax.numpy as jnp
 import numpy as np
 
 from .data import Chunk
-from .model import covariance, envelope
+from .model import envelope
 from .utils import ARCSEC, BLOCK_BYTES, C
 
 #: The :class:`~luv_finder.data.Chunk` arrays :func:`_collapse` reads, in its argument order.
@@ -71,9 +71,34 @@ def on_device(chunk: Chunk) -> Chunk:
         return dataclasses.replace(chunk, **{k: jnp.asarray(getattr(chunk, k)) for k in COLLAPSE_ARRAYS})
 
 
-def template_spectrum(chunk: Chunk, dra: float, ddec: float, bmaj: float, bmin: float, pa: float):
-    """Template-weighted spectrum of one window at one position and source shape."""
-    cov = tuple(np.atleast_1d(c) for c in covariance(bmaj * ARCSEC, bmin * ARCSEC, float(pa)))
-    with jax.enable_x64(True):
-        [(_, (sig, weight))] = _blocks(chunk, [dra], [ddec], cov)
-        return np.asarray(sig)[:, 0, 0, 0], np.asarray(weight)[:, 0]
+#: Powers ``(i, j)`` of ``u^i v^j`` in the data moments (degree <= 2) and the weight moments (degree <= 4).
+DATA_POWERS = ((0, 0), (1, 0), (0, 1), (2, 0), (1, 1), (0, 2))
+WEIGHT_POWERS = tuple((i, d - i) for d in range(5) for i in range(d, -1, -1))
+
+
+@jax.jit
+def _moments(u, v, X, w_row, flag, freq, dra, ddec, cov):
+    """Per channel ``sum E X e^{-i phi} u^i v^j`` and ``sum w E^2 u^i v^j``, u and v in cycles per arcsec."""
+
+    def channel(_, inputs):
+        nu, x, f = inputs
+        uw, vw = u * nu / C * ARCSEC, v * nu / C * ARCSEC
+        shape = envelope(uw, vw, cov, xp=jnp)
+        data = shape * x * jnp.exp(-2j * jnp.pi * (uw * dra + vw * ddec))
+        weight = jnp.where(f, 0.0, w_row) * shape**2
+        up, vp = [jnp.ones_like(uw)], [jnp.ones_like(vw)]
+        for _ in range(4):
+            up.append(up[-1] * uw)
+            vp.append(vp[-1] * vw)
+        return None, (
+            jnp.stack([data @ (up[i] * vp[j]) for i, j in DATA_POWERS]),
+            jnp.stack([weight @ (up[i] * vp[j]) for i, j in WEIGHT_POWERS]),
+        )
+
+    return jax.lax.scan(channel, None, (freq, X, flag))[1]
+
+
+def point_moments(chunk: Chunk, dra: float, ddec: float, cov) -> tuple:
+    """:func:`_moments` of one window at one position (arcsec, sky frame) and sky covariance (arcsec^2)."""
+    arrays = [getattr(chunk, k) for k in COLLAPSE_ARRAYS]
+    return _moments(*arrays, dra - chunk.offset[0], ddec - chunk.offset[1], cov)

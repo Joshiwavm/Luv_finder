@@ -264,7 +264,7 @@ def test_continuum_far_off_centre_is_fitted_at_its_position():
 
 
 def test_lags_the_continuum_reproduces_are_uncovered():
-    """In three channels a quadratic mimics any line (nothing covered); a linear one leaves one direction for all lags."""
+    """Three channels: a quadratic mimics any line (nothing covered); a linear one leaves one direction for all lags."""
     data = _synthetic(3, snr=10.0)
     quadratic, linear = (_finder(data, continuum_order=order, dra=0.0, ddec=0.0) for order in (2, 1))
     quadratic.run()
