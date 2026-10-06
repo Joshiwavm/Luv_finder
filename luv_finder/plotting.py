@@ -15,6 +15,8 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 import numpy as np  # noqa: E402
 
+# TODO: double check if these are all still relevant.
+
 
 def _save(fig, plots_dir: str, name: str) -> str:
     os.makedirs(plots_dir, exist_ok=True)
@@ -306,7 +308,7 @@ def amp_phase_check(data, positions, plots_dir="plots", name="amp_phase", line_g
 def dirty_maps_check(dra, ddec, moment8, continuum, sigma, plots_dir="plots", name="dirty_maps", marks=None):
     """Moment-8 (S/N), continuum (mJy/beam), and the moment-8 with continuum contours.
 
-    Takes the output of :func:`luv_finder.matchedfilter.dirty_maps` on the ``dra x ddec`` grid.
+    Takes the output of :func:`luv_finder.imaging.dirty_maps` on the ``dra x ddec`` grid.
     Contours are at -3 (dashed) and 3, 5, 10, 20, 50 times the continuum noise ``sigma``, a scalar
     or a per-pixel map shaped like ``continuum`` (a mosaic's noise varies across the field).
     NaN pixels, outside every primary beam, are left blank. The colour scales are robust to a few
@@ -405,7 +407,7 @@ def _templates(result):
 def response_shape_check(nc, result, peaks=(), plots_dir="plots", name="response_shape"):
     """The null correlation rho of the response against what bright lines actually look like.
 
-    ``nc`` is a :class:`~luv_finder.catalogue.NoiseCorrelation` measured on ``result``,
+    ``nc`` is a :class:`~luv_finder.catalogue.ResponseCorrelation` measured on ``result``,
     ``peaks`` a sequence of ``(i, j, t, k)`` indices into ``result.snr``. Top row: rho over position
     lags for the first template with its half-power ellipse and rho = 0 contour; rho over channel
     lags per template (solid) against the white-channel analytic ``exp(-k^2 / 4 s^2)`` of a Gaussian

@@ -46,7 +46,7 @@ from scipy import linalg, optimize
 
 from .data import Chunk, DataHandler, load, sky_direction
 from .data import channel_correlation as measure_correlation
-from .matchedfilter import limit_cores, on_device, template_spectrum
+from .kernel import limit_cores, on_device, template_spectrum
 from .model import C_KMS, FWHM_TO_SIGMA
 from .utils import primary_beam
 

@@ -156,12 +156,12 @@ def test_fit_lines_of_the_fixture(data, truth, tmp_path):
     # fit only the detection nearest each injected line: fitting all of them costs ~2 s each
     nearest = [
         np.argmin(np.where(cat["detected"], np.hypot(cat["dra"] - x, cat["ddec"] - y), np.inf))
-        for x, y in (src["position_model"] for src in truth["sources"])
+        for x, y in (src["position"] for src in truth["sources"])
     ]
     cat = fit_lines(data, cat, rows=np.isin(np.arange(len(cat)), nearest))
     for src, i in zip(truth["sources"], nearest, strict=True):
         row = cat[i]
-        near = np.hypot(row["fit_dra"] - src["position_model"][0], row["fit_ddec"] - src["position_model"][1])
+        near = np.hypot(row["fit_dra"] - src["position"][0], row["fit_ddec"] - src["position"][1])
         assert near < 3 * np.hypot(row["fit_dra_error"], row["fit_ddec_error"])
         assert abs(row["fit_freq_ghz"] - src["line"]["mean"]) < 3 * row["fit_freq_ghz_error"]
     path = tmp_path / "fitted.ecsv"

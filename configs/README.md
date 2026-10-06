@@ -21,9 +21,5 @@ adding a grid changes the template and the injected source together.
 Antenna configurations are not vendored. `alma_config` names a file that CASA
 ships, such as `alma.cycle13.3.cfg`, resolved from its data directory.
 
-**`dra` is sign-flipped between the two conventions.** Mock `position` is in image
-convention; the UV model uses `dra_model = -dra_mock`, `ddec_model = +ddec_mock`.
-Grids are written in model convention. `tests/test_mock.py` asserts the relation.
-
 `total_flux` is not a grid key: it cancels in the matched-filter normalisation, so
 the response is already in S/N units and varying the flux only duplicates points.

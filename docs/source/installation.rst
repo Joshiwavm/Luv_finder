@@ -17,9 +17,6 @@ Extras
    environment's OpenSSL: ``conda install -c conda-forge "openssl>=3.6"``
    (casatools bundles OpenSSL 3.6 and dyld reuses whichever
    ``libcrypto.3.dylib`` loads first).
-``jax``
-   ``jax-finufft``. Not used yet; see the roadmap. JAX itself is a core
-   dependency: the matched filter runs on it.
 ``dev``
    pytest, ruff, pre-commit, Sphinx.
 

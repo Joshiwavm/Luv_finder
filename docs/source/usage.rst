@@ -21,7 +21,7 @@ The science preset uses the 12 m array and 50 channels:
    luv-find --ms line13_line9.npz --grid configs/grids/line13_line9.yaml --jackknife --out response.npz
 
 Each mock preset has a grid preset of the same name. ``configs/README.md``
-documents the pairing and the ``dra`` sign flip.
+documents the pairing.
 
 A mosaic is searched one pointing at a time, on one sky grid. In Python
 :func:`~luv_finder.matchedfilter.search_pointings` loads each field of an NPZ or measurement set
@@ -31,7 +31,7 @@ in turn, searches it, corrects it for its primary beam and combines the pointing
 
    from luv_finder.matchedfilter import search_pointings
 
-   result, cubes = search_pointings("mosaic.npz", {"width": [200.0, 300.0]}, jackknife=True)
+   result = search_pointings("mosaic.npz", {"width": [200.0, 300.0]}, jackknife=True)
 
 Each pointing covers the region where its primary beam is at least ``pb_limit``. A dataset with
 a single field is primary-beam corrected too, so everything downstream sees PB-corrected
@@ -148,7 +148,7 @@ the spectral window holding it.
 
 The fit is exact without a loop over visibilities: chi^2 over all of them depends on the data only
 through each pointing's template-weighted spectrum at the trial position and shape
-(:func:`~luv_finder.matchedfilter.template_spectrum`, the search's own collapse at one point). At a
+(:func:`~luv_finder.kernel.template_spectrum`, the search's own collapse at one point). At a
 given position and shape the spectrum is a weighted least-squares fit, linear in the peak and the
 continuum; Nelder-Mead moves the position and the shape. A Band 3 line takes 0.5-3 minutes on 12
 cores, depending on how many pointings cover it; the mosaic's 16 lines take 25 minutes.

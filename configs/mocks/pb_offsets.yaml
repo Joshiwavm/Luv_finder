@@ -13,11 +13,11 @@ fits_filename: support/pb_offsets_input.fits   # pins the project name to "pb_of
 calibrate_snr: false
 
 sources:
-  - position: [0.0, 0.0]      # image convention (dra, ddec); the offset is 0"
+  - position: [0.0, 0.0]      # the offset is 0"
     line: {mean: 91.324866271, width: 300, snr: 30}
-  - position: [9.0, 12.0]     # 15"
+  - position: [-9.0, 12.0]    # 15"
     line: {mean: 91.754496826, width: 300, snr: 30}
-  - position: [-15.0, 20.0]   # 25"
+  - position: [15.0, 20.0]    # 25"
     line: {mean: 92.184127381, width: 300, snr: 30}
-  - position: [21.0, -28.0]   # 35"
+  - position: [-21.0, -28.0]  # 35"
     line: {mean: 92.613757935, width: 300, snr: 30}

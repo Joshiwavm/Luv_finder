@@ -62,7 +62,7 @@ def _fitted_flux(data: DataHandler, source: dict, sigma: float) -> np.ndarray:
     """Best-fit peak flux density (Jy) per channel of a point source's template at its position."""
     comp = Gaussian()
     comp.grid = {
-        "dra": -source["position"][0],  # model convention
+        "dra": source["position"][0],
         "ddec": source["position"][1],
         "bmin": sigma,
         "bmaj": sigma,
@@ -70,7 +70,7 @@ def _fitted_flux(data: DataHandler, source: dict, sigma: float) -> np.ndarray:
     }
     mod = Model()
     mod.addcomponent(comp)
-    mf = MatchedFilter(data, mod, weighting="template", continuum_order=None)
+    mf = MatchedFilter(data, mod, continuum_order=None)
     mf.run()
     return mf.result.flux[0, 0, 0]
 

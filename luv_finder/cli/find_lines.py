@@ -83,7 +83,7 @@ def main(argv: list[str] | None = None) -> None:
     fields = fields_in(args.ms) if args.field is None else [args.field]
     mosaic = len(fields) > 1
     if mosaic:
-        result, _ = search_pointings(
+        result = search_pointings(
             args.ms, grid_cfg, args.jackknife, cores=args.cores, continuum_order=args.continuum_order
         )
     else:

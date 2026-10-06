@@ -7,17 +7,17 @@ from astropy.table import Table
 
 from luv_finder import MatchedFilter
 from luv_finder.catalogue import (
-    NoiseCorrelation,
+    ResponseCorrelation,
     catalogue,
     fidelity,
     groups,
     jackknife_spread,
     likelihood,
-    noise_correlation,
+    response_correlation,
 )
 from luv_finder.data import sky_offset
 from luv_finder.matchedfilter import SearchResult, build_grid, grid_model, pb_corrected
-from luv_finder.model import C_KMS, envelope
+from luv_finder.model import C_KMS, covariance, envelope
 
 STEP = 0.5  # arcsec
 NU, DV = 40e9, 50.0  # Hz, km/s per channel
@@ -37,7 +37,7 @@ def _smooth(noise, major, minor, pa, chan, steps=(STEP, STEP)):
     q_ra, q_dec, q_chan = np.meshgrid(
         np.fft.fftfreq(SHAPE[0], steps[0]), np.fft.fftfreq(SHAPE[1], steps[1]), np.fft.fftfreq(SHAPE[2]), indexing="ij"
     )
-    transfer = envelope(q_ra, q_dec, major, minor, pa) * np.exp(-2 * np.pi**2 * (chan * q_chan) ** 2)
+    transfer = envelope(q_ra, q_dec, covariance(major, minor, pa)) * np.exp(-2 * np.pi**2 * (chan * q_chan) ** 2)
     x = np.fft.ifftn(np.fft.fftn(noise) * transfer).real
     return x / x.std()
 
@@ -85,10 +85,10 @@ def test_jackknife_spread(result):
 
 
 @pytest.mark.parametrize("pa, step_ra", [(90.0, STEP), (0.0, STEP), (30.0, -STEP)])
-def test_noise_correlation(pa, step_ra):
+def test_response_correlation(pa, step_ra):
     """Smoothing by sigma s gives rho = exp(-d^2 / (4 s^2)), whatever the orientation of the dra axis."""
     major, minor, chan = 2.0, 1.0, 2.0
-    nc = noise_correlation(_result(_field(major, minor, pa, chan, (step_ra, STEP)), step_ra), max_lag=10.0)
+    nc = response_correlation(_result(_field(major, minor, pa, chan, (step_ra, STEP)), step_ra), max_lag=10.0)
     assert nc.spatial.shape == (len(WIDTHS), len(nc.lags_ra), len(nc.lags_dec)) == (2, 41, 41)
     np.testing.assert_allclose(nc.spatial[:, 20, 20], 1.0)
     np.testing.assert_allclose(nc.hwhm_major, HWHM * major, rtol=0.1)
@@ -108,7 +108,7 @@ def test_template_correlation():
     s1, s2 = 1.5, 4.0
     noise = np.random.default_rng(2).standard_normal(SHAPE)
     jackknife = np.stack([_smooth(noise, 1.0, 1.0, 0.0, s) for s in (s1, s2)], 2)
-    nc = noise_correlation(_result(jackknife), max_lag=5.0)
+    nc = response_correlation(_result(jackknife), max_lag=5.0)
     np.testing.assert_allclose(np.diag(nc.templates), 1.0)
     np.testing.assert_allclose(nc.templates[0, 1], np.sqrt(2 * s1 * s2 / (s1**2 + s2**2)), atol=0.03)
     np.testing.assert_allclose(nc.spectral_hwhm, HWHM * np.array([s1, s2]), rtol=0.1)
@@ -123,7 +123,7 @@ def test_spectral_lags_stay_in_windows():
     noise = np.random.default_rng(3).standard_normal((*SHAPE[:2], len(WIDTHS), n_window, n_chan + 2))
     hanning = 0.25 * noise[..., :-2] + 0.5 * noise[..., 1:-1] + 0.25 * noise[..., 2:]
     channels = (np.arange(n_window)[:, None] * (n_chan + 3) + np.arange(n_chan)).ravel()
-    nc = noise_correlation(_result(hanning.reshape(*SHAPE[:2], len(WIDTHS), -1), channels=channels), max_lag=2.0)
+    nc = response_correlation(_result(hanning.reshape(*SHAPE[:2], len(WIDTHS), -1), channels=channels), max_lag=2.0)
     np.testing.assert_allclose(nc.spectral[:, 1:4], np.broadcast_to([2 / 3, 1 / 6, 0.0], (2, 3)), atol=0.01)
 
 
@@ -135,8 +135,8 @@ def test_masked_positions(result):
     def mask(r):
         return dataclasses.replace(r, snr=np.where(cut[:, :, None, None], np.nan, r.snr))
 
-    full = noise_correlation(result, max_lag=10.0)
-    masked = noise_correlation(dataclasses.replace(mask(result), jackknife=mask(result.jackknife)), max_lag=10.0)
+    full = response_correlation(result, max_lag=10.0)
+    masked = response_correlation(dataclasses.replace(mask(result), jackknife=mask(result.jackknife)), max_lag=10.0)
     for key in ("hwhm_major", "hwhm_minor", "spectral_hwhm"):
         np.testing.assert_allclose(getattr(masked, key), getattr(full, key), rtol=0.1)
     assert np.all(masked.sidelobe < 0.05)
@@ -164,7 +164,7 @@ def _snr(*blobs):
 def _nc(major=6.0, minor=3.0, pa=30.0, chan=4.0):
     """Noise correlation of both templates with these half-power semi-axes (arcsec), PA (deg) and HWHM (channels)."""
     every = np.ones(len(WIDTHS))
-    return NoiseCorrelation(
+    return ResponseCorrelation(
         **dict.fromkeys(("spatial", "lags_ra", "lags_dec", "spectral", "templates")),
         hwhm_major=major * every,
         hwhm_minor=minor * every,
@@ -270,7 +270,7 @@ def test_catalogue_of_the_fixture(data, truth, tmp_path):
     assert np.all(np.diff(cat["snr"]) <= 0) and cat["snr"].tolist() == cat.meta["snr_data"]
     channel = np.median(np.diff(data.freqs)) / 1e9
     for src in truth["sources"]:
-        x, y = src["position_model"]
+        x, y = src["position"]
         near = (np.hypot(cat["dra"] - x, cat["ddec"] - y) < data.metadata.minresolution() / 2) & (
             np.abs(cat["freq_ghz"] - src["line"]["mean"]) <= channel
         )
