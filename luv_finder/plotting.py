@@ -15,7 +15,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 import numpy as np  # noqa: E402
 
-# TODO: double check if these are all still relevant.
+from .model import C_KMS  # noqa: E402
 
 
 def _save(fig, plots_dir: str, name: str) -> str:
@@ -109,25 +109,6 @@ def source_size_check(freqs, expected, noisy, declared, title, plots_dir="plots"
     return _save(fig, plots_dir, name)
 
 
-def responses_check(freqs, curves, title, plots_dir="plots", name="responses", line_ghz=None):
-    """Several S/N spectra on one axis, e.g. the phase centre against the source positions.
-
-    ``curves`` maps a legend label to a response with one value per frequency in ``freqs`` (GHz).
-    """
-    fig, ax = plt.subplots(figsize=(8, 4))
-    ax.axhline(0, ls="--", c="gray", lw=0.8)
-    ax.axhline(5, ls=":", c="C3", lw=0.8)
-    if line_ghz is not None:
-        ax.axvline(line_ghz, c="C3", ls="--", lw=0.8)
-    for label, response in curves.items():
-        ax.plot(freqs, response, lw=1.4, label=f"{label} (peak {np.max(response):.1f})")
-    ax.set_xlabel("Frequency [GHz]")
-    ax.set_ylabel("Matched-filter S/N")
-    ax.set_title(title)
-    ax.legend(fontsize=8)
-    return _save(fig, plots_dir, name)
-
-
 def _nanmax(a, axis=None):
     """Maximum ignoring NaN; NaN where everything is NaN, without np.nanmax's warning."""
     return np.fmax.reduce(a, axis=axis)
@@ -187,121 +168,6 @@ def mosaic_layout(offsets, primary_beam, plots_dir="plots", name="mosaic", marks
     ax.set_ylim(-extent, extent)
     _sky_axes(ax)
     ax.set_title(f'{len(offsets)} pointings, primary beam FWHM {primary_beam:.0f}"')
-    return _save(fig, plots_dir, name)
-
-
-def noise_check(mf, plots_dir="plots", name="noise"):
-    """Response statistics of the data against its jackknife and a unit Gaussian.
-
-    Left: the distribution of the response over all grid points and channels. Right: how many
-    of them exceed a threshold, which is what a detection threshold has to be calibrated on.
-    Neighbouring grid points and channels are correlated, so the counts are not independent.
-    NaN entries (positions outside every primary beam of a mosaic) are dropped.
-    """
-    from scipy.stats import norm
-
-    panels = {"data": mf.response, "jackknife": mf.response_jackknife}
-    panels = {k: v[np.isfinite(v)] for k, v in panels.items() if v is not None}
-    fig, (left, right) = plt.subplots(1, 2, figsize=(11, 4))
-    bins = np.linspace(-7, 7, 141)
-    for i, (label, values) in enumerate(panels.items()):
-        left.hist(values, bins=bins, density=True, histtype="step", lw=1.4, color=f"C{i}",
-                  label=f"{label}: std {values.std():.2f}")  # fmt: skip
-        thresholds = np.linspace(0, 8, 81)
-        right.semilogy(thresholds, [(values > t).sum() for t in thresholds], color=f"C{i}", label=label)
-    x = np.linspace(-7, 7, 300)
-    left.plot(x, norm.pdf(x), "k--", lw=1, label="unit Gaussian")
-    left.set_yscale("log")
-    left.set_ylim(1e-6, 1)
-    left.set_xlabel("Matched-filter S/N")
-    left.set_ylabel("Density")
-    left.legend(fontsize=8)
-    n = next(iter(panels.values())).size
-    right.semilogy(thresholds, n * norm.sf(thresholds), "k--", lw=1, label="unit Gaussian, independent")
-    right.set_ylim(0.5, n)
-    right.set_xlabel("Threshold [S/N]")
-    right.set_ylabel("Grid points x channels above")
-    right.legend(fontsize=8)
-    return _save(fig, plots_dir, name)
-
-
-def uv_profile(datasets, dra, ddec, models, freq_ghz, plots_dir="plots", name="uv_profile", bins=25):
-    """Visibility amplitude against uv distance at one channel, data binned and model envelopes.
-
-    ``datasets`` and ``models`` map a label to a single-window :class:`~luv_finder.data.DataHandler`
-    and a source component. Each dataset is phase-shifted onto (``dra``, ``ddec``) and scaled by
-    its least-squares flux against the model envelope, so only the shapes are compared: a
-    resolved source fades on long baselines.
-    """
-    fig, ax = plt.subplots(figsize=(7, 4.5))
-    for i, (label, data) in enumerate(datasets.items()):
-        (chunk,) = data.chunks
-        k = int(np.argmin(np.abs(chunk.freq / 1e9 - freq_ghz)))
-        one = chunk.channels(slice(k, k + 1))
-        uvdist = np.hypot(*one.uv_waves())[0] / 1e3
-        vis = (one.vis * one.phase(dra, ddec)).real[0]
-        envelope = models[label].envelope(one)[0]
-        w = one.w[0]
-        flux = np.sum(w * vis * envelope) / np.sum(w * envelope**2)
-        edges = np.linspace(0, uvdist.max(), bins + 1)
-        idx = np.digitize(uvdist, edges) - 1
-        sums = np.bincount(idx, w * vis / flux, bins + 1)[:bins]
-        wsum = np.bincount(idx, w, bins + 1)[:bins]
-        centres = 0.5 * (edges[1:] + edges[:-1])
-        ok = wsum > 0
-        ax.plot(centres[ok], sums[ok] / wsum[ok], "o", ms=4, color=f"C{i}", label=f"{label}, data")
-        order = np.argsort(uvdist)
-        ax.plot(uvdist[order], envelope[order], "-", lw=1.2, color=f"C{i}", alpha=0.8, label=f"{label}, model")
-    ax.axhline(0, c="gray", ls="--", lw=0.8)
-    ax.set_xlabel("uv distance [klambda]")
-    ax.set_ylabel("Re(V) / flux")
-    ax.set_title(f"Visibility profile at {freq_ghz:.3f} GHz")
-    ax.legend(fontsize=7, ncol=2)
-    return _save(fig, plots_dir, name)
-
-
-def scan_check(x, curves, xlabel, title, truth=None, plots_dir="plots", name="scan"):
-    """Peak S/N against one trial parameter, e.g. template size, width or position angle.
-
-    ``curves`` maps a label to the peak S/N at every value of ``x``; ``truth`` marks the
-    injected value.
-    """
-    fig, ax = plt.subplots(figsize=(7, 4))
-    for label, y in curves.items():
-        ax.plot(x, y, "o-", ms=3, lw=1.4, label=label)
-    if truth is not None:
-        ax.axvline(truth, c="C3", ls="--", lw=0.8, label="injected")
-    ax.set_xlabel(xlabel)
-    ax.set_ylabel("Peak S/N")
-    ax.set_title(title)
-    ax.legend(fontsize=8)
-    return _save(fig, plots_dir, name)
-
-
-def amp_phase_check(data, positions, plots_dir="plots", name="amp_phase", line_ghz=None):
-    """Amplitude and phase of the vector-averaged visibility against frequency.
-
-    ``positions`` maps a label to a (dra, ddec) the visibilities are phase-shifted onto first.
-    On a source the phase stays near zero across its line and the amplitude rises; elsewhere the
-    phase wanders and the amplitude is the noise floor.
-    """
-    freqs = data.freqs / 1e9
-    fig, (amp, phase) = plt.subplots(2, 1, sharex=True, figsize=(7.5, 6))
-    for label, (dra, ddec) in positions.items():
-        spectrum = data.spectrum(dra, ddec)
-        amp.plot(freqs, 1e3 * np.abs(spectrum), lw=1.2, label=label)
-        phase.plot(freqs, np.degrees(np.angle(spectrum)), ".", ms=4, label=label)
-    for ax in (amp, phase):
-        if line_ghz is not None:
-            ax.axvline(line_ghz, c="C3", ls="--", lw=0.8)
-    phase.axhline(0, c="gray", ls="--", lw=0.8)
-    phase.set_ylim(-185, 185)
-    phase.set_yticks([-180, -90, 0, 90, 180])
-    amp.set_ylabel("|V|  [mJy]")
-    phase.set_ylabel("phase [deg]")
-    phase.set_xlabel("Frequency [GHz]")
-    amp.legend(fontsize=8)
-    amp.set_title("Vector-averaged visibility")
     return _save(fig, plots_dir, name)
 
 
@@ -591,3 +457,51 @@ def contact_sheet(plots_dir: str, title: str = "Luv_finder diagnostics") -> str:
     with open(path, "w") as fh:
         fh.write(html)
     return path
+
+
+def _panels(n, height, ncol=5):
+    nrow = int(np.ceil(n / ncol))
+    fig, axes = plt.subplots(nrow, ncol, figsize=(3.4 * ncol, height * nrow), squeeze=False)
+    for ax in axes.flat[n:]:
+        ax.axis("off")
+    return fig, axes.flat
+
+
+def line_maps_check(maps, cat, plots_dir="plots", name="line_maps"):
+    """Moment-0 map of every fitted line (:func:`luv_finder.imaging.line_maps`), the fitted position marked."""
+    rows = cat[np.isfinite(cat["fit_dra"])]
+    fig, axes = _panels(len(rows), 2.9)
+    for ax, row, (dra, ddec, m0) in zip(axes, rows, maps, strict=False):
+        half = np.diff(dra[:2])[0] / 2
+        extent = (dra[0] - half, dra[-1] + half, ddec[0] - half, ddec[-1] + half)
+        im = ax.imshow(m0.T, origin="lower", extent=extent, cmap="magma")
+        ax.plot(row["fit_dra"], row["fit_ddec"], "+", c="C0", ms=12, mew=1.5)
+        fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04, label="Jy/beam km/s")
+        _sky_axes(ax)
+        ax.set_title(f"#{row['id']}  {row['fit_freq_ghz']:.3f} GHz", fontsize=10)
+    return _save(fig, plots_dir, name)
+
+
+def line_spectra_check(cat, span=3.0, plots_dir="plots", name="line_spectra"):
+    """Each fitted line's spectrum and best fit within ``span`` FWHM of its centre, both over the fitted peak."""
+    rows = [r for r in cat if str(r["id"]) in cat.meta.get("spectra", {})]
+    fig, axes = _panels(len(rows), 3.2)
+    for ax, row in zip(axes, rows, strict=False):
+        sp = {k: np.asarray(v) for k, v in cat.meta["spectra"][str(row["id"])].items()}
+        near = np.abs(sp["freq_ghz"] / row["fit_freq_ghz"] - 1) * C_KMS <= span * row["fit_width"]
+        f, peak = sp["freq_ghz"][near], row["fit_peak"]
+        ax.fill_between(
+            f,
+            (sp["flux"] - sp["error"])[near] / peak,
+            (sp["flux"] + sp["error"])[near] / peak,
+            step="mid",
+            color="0.8",
+            lw=0,
+        )
+        ax.step(f, sp["flux"][near] / peak, where="mid", c="k", lw=1)
+        ax.plot(f, sp["model"][near] / peak, c="C3", lw=1.5)
+        ax.axhline(0, c="0.5", lw=0.5)
+        ax.set_title(f"#{row['id']}  S/N {row['snr']:.1f}", fontsize=10)
+        ax.set_xlabel("frequency [GHz]")
+        ax.set_ylabel("flux / fitted peak")
+    return _save(fig, plots_dir, name)

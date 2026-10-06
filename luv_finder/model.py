@@ -17,9 +17,14 @@ FWHM_TO_SIGMA = 1 / 2.355
 
 def covariance(bmaj, bmin, pa, xp=np):
     """Sky covariance ``(s_ee, s_nn, s_en)`` of a Gaussian of axes (sigma) ``bmaj``, ``bmin`` at ``pa`` deg E of N."""
+    return rotated(bmaj**2, bmin**2, pa, xp)
+
+
+def rotated(major, minor, pa, xp=np):
+    """``(s_ee, s_nn, s_en)`` of variances ``major`` along ``pa`` deg east of north and ``minor`` across it."""
     # the major axis points along (sin pa, cos pa) in (east, north)
     sin, cos = xp.sin(xp.deg2rad(pa)), xp.cos(xp.deg2rad(pa))
-    return bmaj**2 * sin**2 + bmin**2 * cos**2, bmaj**2 * cos**2 + bmin**2 * sin**2, (bmaj**2 - bmin**2) * sin * cos
+    return major * sin**2 + minor * cos**2, major * cos**2 + minor * sin**2, (major - minor) * sin * cos
 
 
 def envelope(uw, vw, cov, xp=np):

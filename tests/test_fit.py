@@ -10,9 +10,11 @@ from luv_finder import DataHandler, Gaussian, MatchedFilter
 from luv_finder.catalogue import catalogue
 from luv_finder.data import Chunk, Metadata, sky_offset
 from luv_finder.fit import COLUMNS, LINE_FLUX, _moments, _system, fit_line, fit_lines
+from luv_finder.imaging import line_maps
 from luv_finder.kernel import on_device
 from luv_finder.matchedfilter import build_grid, grid_model, pb_corrected
 from luv_finder.model import C_KMS, FWHM_TO_SIGMA, covariance
+from luv_finder.plotting import line_maps_check, line_spectra_check
 from luv_finder.utils import C, primary_beam
 
 NU0, N_CHAN, DNU = 100e9, 64, 10e6  # Hz: channels of 30 km/s
@@ -154,6 +156,13 @@ def test_fit_lines_of_the_fixture(data, truth, tmp_path):
     back = Table.read(path)
     for name in COLUMNS:
         np.testing.assert_array_equal(back[name], cat[name])
+    assert set(back.meta["spectra"]) == {str(cat["id"][i]) for i in nearest}
+    maps = line_maps(data, cat)
+    for (dra, ddec, m0), i in zip(maps, sorted(nearest), strict=True):
+        peak = np.unravel_index(np.argmax(m0), m0.shape)
+        assert np.hypot(dra[peak[0]] - cat["fit_dra"][i], ddec[peak[1]] - cat["fit_ddec"][i]) < 2.0
+    assert line_maps_check(maps, back, plots_dir=str(tmp_path)).endswith(".png")
+    assert line_spectra_check(back, plots_dir=str(tmp_path)).endswith(".png")
 
 
 HANNING = np.array([1.0, 2 / 3, 1 / 6])

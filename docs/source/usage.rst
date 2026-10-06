@@ -149,10 +149,10 @@ Every derivative of the model in position and shape is the model times a polynom
 one pass over the visibilities collects a few per-channel moments
 (:func:`~luv_finder.kernel.point_moments`) that give chi^2, its gradient and the Gauss-Newton
 matrix exactly. The spectrum (peak, continuum, centre, width) is fitted on those moments without
-another pass, and ``scipy.optimize.minimize`` (trust-exact) moves the position and shape on the
-profiled chi^2, starting from the matched filter's peak: 7-10 passes per line. The shape is an
-unconstrained covariance, so a point source is an interior point; an unresolved axis can come out
-slightly negative (a signed square root), as a deconvolved size can.
+another pass, and ``scipy.optimize.minimize`` (L-BFGS-B) moves the position and shape on the
+profiled chi^2, starting from the matched filter's peak: 4-16 passes per line. The shape is two
+axis variances and an angle, bounded at zero (a flat prior on sizes >= 0), so an unresolved axis
+lands on zero; its error, one-sided there, is NaN, and so is the angle of a point source.
 
 .. code-block:: python
 
@@ -166,8 +166,9 @@ or ``luv-find ... --jackknife --catalogue lines.ecsv --fit``. The fitted columns
 ``fit_freq_ghz``, ``fit_width`` as FWHM in km/s, ``fit_peak``, ``fit_line_flux`` and
 ``fit_continuum`` at the line centre, each with an ``_error``) are intrinsic, PB-corrected values.
 Errors are formal, ``2 H^-1``, corrected for the channel correlation measured on the jackknife by
-a sandwich estimator over the channels. The axes of an unresolved source and the angle of a round
-one are unconstrained, and their errors are correspondingly large.
+a sandwich estimator over the channels. ``meta["spectra"]`` keeps every fitted line's
+PB-corrected spectrum and best fit, for :func:`~luv_finder.plotting.line_spectra_check`;
+:func:`~luv_finder.imaging.line_maps` makes their moment-0 maps.
 
 Diagnostic figures
 ------------------

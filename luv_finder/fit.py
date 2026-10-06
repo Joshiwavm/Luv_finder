@@ -21,7 +21,7 @@ from scipy import linalg, optimize
 from .data import Chunk, DataHandler, load, sky_direction
 from .data import channel_correlation as measure_correlation
 from .kernel import DATA_POWERS, WEIGHT_POWERS, limit_cores, on_device, point_moments
-from .model import C_KMS, FWHM_TO_SIGMA, covariance
+from .model import C_KMS, FWHM_TO_SIGMA, covariance, rotated
 from .utils import primary_beam
 
 #: Line flux per peak flux density and FWHM, as :meth:`~luv_finder.matchedfilter.SearchResult.integrated_flux`.
@@ -124,7 +124,7 @@ def _system(theta, moments, chunks, freq, basis, dish):
 
 
 def _reported(theta, freq, basis):
-    """The :data:`REPORTED` quantities; the axes (sigma) are signed square roots of the covariance's eigenvalues."""
+    """The :data:`REPORTED` quantities; the axes (sigma) from the covariance's eigenvalues, 0 where unresolved."""
     s_ee, s_nn, s_en = theta[2:5]
     half, split = (s_ee + s_nn) / 2, jnp.hypot((s_ee - s_nn) / 2, s_en)
     t = 2 * (theta[5] - freq[0]) / (freq[-1] - freq[0]) - 1
@@ -133,8 +133,8 @@ def _reported(theta, freq, basis):
         [
             theta[0],
             theta[1],
-            jnp.sign(major) * jnp.sqrt(jnp.abs(major)),
-            jnp.sign(minor) * jnp.sqrt(jnp.abs(minor)),
+            jnp.sqrt(jnp.maximum(major, 0.0)),
+            jnp.sqrt(jnp.maximum(minor, 0.0)),
             jnp.degrees(0.5 * jnp.arctan2(2 * s_en, s_nn - s_ee)) % 180,
             theta[5] / 1e9,
             theta[6],
@@ -251,13 +251,9 @@ def fit_line(
                 SPECTRAL,
                 lambda t: system(t, moments),
             )
-            value, grad, hess, _, _ = system(theta, moments)
-            hess = hess.copy()
-            hess[SPATIAL, SPATIAL] -= hess[SPATIAL, SPECTRAL] @ np.linalg.solve(
-                hess[SPECTRAL, SPECTRAL], hess[SPECTRAL, SPATIAL]
-            )
+            value, grad = system(theta, moments)[:2]
             best.update(theta=theta, ok=ok, moments=moments)
-            return value, grad, hess
+            return value, grad
 
         # start: the peak and continuum, linear in the model, by one Newton step from zero
         theta0 = np.array([dra, ddec, *covariance(bmaj, bmin, pa), freq_ghz * 1e9, width, 0.0, *np.zeros(n_continuum)])
@@ -267,18 +263,43 @@ def fit_line(
         scale = 1 / np.sqrt(np.diag(system(theta0, moments)[2]) / 2)
         best = {"theta": theta0, "moments": moments}
 
-        spatial, converged = solve(theta0, SPATIAL, profiled)
-        profiled(spatial)
-        converged = converged and best["ok"]
+        # position and shape as dra, ddec, major and minor variance and pa: sizes >= 0 are bounds
+        y0 = np.array([dra, ddec, bmaj**2, bmin**2, pa])
+        y_scale = np.array([*scale[:4], 10.0])
+
+        def to_theta(y):
+            return jnp.stack([y[0], y[1], *rotated(y[2], y[3], y[4], xp=jnp)])
+
+        def objective(z):
+            y = jnp.asarray(y0 + y_scale * z)
+            t = theta0.copy()
+            t[SPATIAL] = np.asarray(to_theta(y))
+            value, grad = profiled(t)
+            return float(value), np.asarray(grad[SPATIAL] @ jax.jacfwd(to_theta)(y)) * y_scale
+
+        result = optimize.minimize(
+            objective,
+            np.zeros(5),
+            jac=True,
+            method="L-BFGS-B",
+            bounds=[(None, None), (None, None), (-y0[2] / y_scale[2], None), (-y0[3] / y_scale[3], None), (None, None)],
+            options={"gtol": 1e-3},
+        )
+        objective(result.x)
+        converged = result.success and best["ok"]
         _, _, hess, S, Q = system(best["theta"], best["moments"])
         best = best["theta"]
         factor = _correlation_scale(jnp.asarray(best), Q, *spectral, rho)
         cov = 2 * np.linalg.inv(hess) * np.outer(factor, factor)
-        values = np.asarray(_reported(jnp.asarray(best), *spectral))
+        values = np.array(_reported(jnp.asarray(best), *spectral))
         J = np.asarray(jax.jacfwd(_reported)(jnp.asarray(best), *spectral))
         F = np.asarray(_spectrum(jnp.asarray(best), *spectral))
 
     errors = np.sqrt(np.diag(J @ cov @ J.T))
+    # an axis on its bound (variance below 1e-6 of its scale) has a one-sided error; a point has no angle
+    on_bound = np.sort((y0 + y_scale * result.x)[2:4])[::-1] < 1e-6 * y_scale[2:4].min()
+    errors[2:4][on_bound] = np.nan
+    values[4], errors[4] = (np.nan, np.nan) if on_bound.all() else (values[4], errors[4])
     ok = Q > 0
     ra, dec = np.degrees(sky_direction(values[:2], data.metadata.ref))
     out = {f"fit_{k}": v for k, v in zip(REPORTED, values, strict=True)}
@@ -289,11 +310,20 @@ def fit_line(
         "fit_chi2_reduced": float(Q[ok] @ (S[ok] / Q[ok] - F[ok]) ** 2) / max(int(ok.sum()) - 3 - n_continuum, 1),
         "fit_n_pointings": len(chunks),
         "fit_converged": bool(converged),
+        "spectrum": {
+            "freq_ghz": freq / 1e9,
+            "flux": np.where(ok, S / np.where(ok, Q, 1.0), np.nan),
+            "error": np.where(ok, 1 / np.sqrt(np.where(ok, Q, 1.0)), np.nan),
+            "model": F,
+        },
     }
 
 
 def fit_lines(data: DataHandler | str, cat: Table, rows=None, cores: int | None = None, **kwargs) -> Table:
-    """A copy of ``cat`` with the :data:`COLUMNS` of every ``rows`` line (default the detected); failures warn."""
+    """A copy of ``cat`` with the :data:`COLUMNS` of every ``rows`` line (default the detected); failures warn.
+
+    ``meta["spectra"]`` holds each fitted line's PB-corrected spectrum at its fitted position and the best-fit model.
+    """
     limit_cores(cores)
     if not isinstance(data, DataHandler):
         data = load(data)
@@ -313,6 +343,10 @@ def fit_lines(data: DataHandler | str, cat: Table, rows=None, cores: int | None 
         except Exception as err:  # one line's failure must not cost the table
             warnings.warn(f"the fit of catalogue row {i} failed: {err}", stacklevel=2)
             continue
+        spectrum = values.pop("spectrum")
+        out.meta.setdefault("spectra", {})[str(int(cat["id"][i]) if "id" in cat.colnames else i)] = {
+            k: np.asarray(v).tolist() for k, v in spectrum.items()
+        }
         for name, value in values.items():
             out[name][i] = value
     return out
