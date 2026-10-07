@@ -137,11 +137,12 @@ Open:
   catalogue sits below an independent by-eye line list. Catalogue frequencies and
   redshifts should be LSRK, which needs the observation times and the site in
   `Metadata`.
-- **Fluxes against image-plane fits** (low priority). For the lines matched to
-  that by-eye list, the source fit's line fluxes are 1.4-6.0 times (median 2.8)
-  those of Gaussian fits to peak-pixel spectra, which miss the flux of resolved
-  lines. Moment-0 maps of the matched lines would show whether they are
-  resolved.
+- **Fluxes against the by-eye list** (low priority). That list is the published
+  one: lines found by eye in the image cubes, their fluxes from Gaussian fits to
+  the extracted spectra. The uv fit's line fluxes are 1.4-6.0 times (median 2.8)
+  those, so this compares that simple image-plane method with the full fit; the
+  moment-0 maps (`imaging.line_maps`) show which lines are extended, where a
+  spectrum misses flux.
 - **A fit that absorbs its neighbours.** The candidate at 85.857 GHz, 16-31 MHz
   from two detected lines, is no longer detected (fidelity 0.43), but when it was
   its fit ran to a 1818 km/s line 101 MHz off the peak (chi^2_red 3.5, 10.8
