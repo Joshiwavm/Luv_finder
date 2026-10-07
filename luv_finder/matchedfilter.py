@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import dataclasses
 import os
-from collections.abc import Sequence
+from collections.abc import Iterable
 from dataclasses import dataclass
 from functools import partial
 from itertools import product
@@ -187,41 +187,62 @@ def pb_corrected(result: SearchResult, data: DataHandler, pb_limit: float = 0.2)
     return correct(result)
 
 
-def combine_pointings(results: Sequence[SearchResult]) -> SearchResult:
-    """Combine the PB-corrected searches of a mosaic's pointings on the union of their grids."""
-    first = results[0]
-    for r in results[1:]:
-        for k in TEMPLATE_KEYS:
-            if not _same(r.axes[k], first.axes[k]):
-                raise ValueError(
-                    f"the pointings were searched with different {k} templates: {first.axes[k]}, {r.axes[k]}"
-                )
-    _check_freqs([r.freqs for r in results])
-    dra, ira = _union_lattice([r.axes["dra"] for r in results], "dra")
-    ddec, idec = _union_lattice([r.axes["ddec"] for r in results], "ddec")
+@dataclass(eq=False)
+class _Mosaic:
+    """Inverse-variance sums of PB-corrected pointings on the union of their lattices, ``coverage`` squared."""
 
-    wsum = np.zeros((len(dra), len(ddec), *first.snr.shape[2:]))
-    wflux = np.zeros_like(wsum)
-    coverage = np.zeros((len(dra), len(ddec), len(first.freqs)))
-    for r, i, j in zip(results, ira, idec, strict=True):
-        at = np.ix_(i, j)
+    axes: dict
+    freqs: np.ndarray
+    w: np.ndarray
+    wflux: np.ndarray
+    coverage: np.ndarray
+    jackknife: _Mosaic | None
+
+    @classmethod
+    def of(cls, r: SearchResult) -> _Mosaic:
         w = np.nan_to_num(r.error**-2.0)
-        wsum[at] += w
-        wflux[at] += w * np.nan_to_num(r.flux)
-        coverage[at] += r.coverage**2
-    wsum = np.where(wsum > 0, wsum, np.nan)
-    flux, error = wflux / wsum, 1 / np.sqrt(wsum)
+        jackknife = None if r.jackknife is None else cls.of(r.jackknife)
+        return cls(dict(r.axes), r.freqs, w, w * np.nan_to_num(r.flux), r.coverage**2, jackknife)
 
-    jackknives = [r.jackknife for r in results]
-    return SearchResult(
-        axes={"dra": dra.tolist(), "ddec": ddec.tolist(), **{k: first.axes[k] for k in TEMPLATE_KEYS}},
-        freqs=first.freqs,
-        snr=flux / error,
-        flux=flux,
-        error=error,
-        coverage=np.sqrt(coverage),
-        jackknife=combine_pointings(jackknives) if all(j is not None for j in jackknives) else None,
-    )
+    def add(self, other: _Mosaic) -> None:
+        """Add another pointing in place; the lattice grows only where it reaches beyond."""
+        for k in TEMPLATE_KEYS:
+            if not _same(other.axes[k], self.axes[k]):
+                raise ValueError(
+                    f"the pointings were searched with different {k} templates: {self.axes[k]}, {other.axes[k]}"
+                )
+        _check_freqs([self.freqs, other.freqs])
+        dra, (i, ira) = _union_lattice([self.axes["dra"], other.axes["dra"]], "dra")
+        ddec, (j, idec) = _union_lattice([self.axes["ddec"], other.axes["ddec"]], "ddec")
+        for name in ("w", "wflux", "coverage"):
+            total = getattr(self, name)
+            if total.shape[:2] != (dra.size, ddec.size):
+                grown = np.zeros((dra.size, ddec.size, *total.shape[2:]))
+                grown[np.ix_(i, j)] = total
+                setattr(self, name, total := grown)
+            total[np.ix_(ira, idec)] += getattr(other, name)
+        self.axes |= {"dra": dra.tolist(), "ddec": ddec.tolist()}
+        if self.jackknife is None or other.jackknife is None:
+            self.jackknife = None
+        else:
+            self.jackknife.add(other.jackknife)
+
+    def result(self) -> SearchResult:
+        w = np.where(self.w > 0, self.w, np.nan)
+        flux, error = self.wflux / w, 1 / np.sqrt(w)
+        jackknife = None if self.jackknife is None else self.jackknife.result()
+        return SearchResult(self.axes, self.freqs, flux / error, flux, error, np.sqrt(self.coverage), jackknife)
+
+
+def combine_pointings(results: Iterable[SearchResult]) -> SearchResult:
+    """Combine the PB-corrected searches of a mosaic's pointings on the union of their grids, one at a time."""
+    mosaic = None
+    for r in results:
+        if mosaic is None:
+            mosaic = _Mosaic.of(r)
+        else:
+            mosaic.add(_Mosaic.of(r))
+    return mosaic.result()
 
 
 class MatchedFilter(_Grid):
@@ -370,13 +391,16 @@ def search_pointings(
     pb_limit: float = 0.2,
     **filter_kwargs,
 ) -> SearchResult:
-    """Search every field of a measurement set or NPZ and combine the pointings on one sky grid."""
-    results = []
-    for field in fields_in(path):
-        data = load(path, [field])
-        grid = build_grid(data, {**(grid_cfg or {}), "pb_limit": pb_limit})
-        mf = MatchedFilter(data, grid_model(grid), **filter_kwargs)
-        mf.run(jackknife=jackknife, cores=cores)
-        results.append(pb_corrected(mf.result, data, pb_limit))
-        del data, mf  # free this field's visibilities before loading the next
-    return combine_pointings(results) if len(results) > 1 else results[0]
+    """Search every field of a measurement set or NPZ and combine the pointings on one sky grid as they come."""
+
+    def pointings():
+        for field in fields_in(path):
+            data = load(path, [field])
+            grid = build_grid(data, {**(grid_cfg or {}), "pb_limit": pb_limit})
+            mf = MatchedFilter(data, grid_model(grid), **filter_kwargs)
+            mf.run(jackknife=jackknife, cores=cores)
+            result = pb_corrected(mf.result, data, pb_limit)
+            del data, mf  # free this field before loading the next
+            yield result
+
+    return combine_pointings(pointings())

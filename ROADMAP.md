@@ -143,6 +143,12 @@ Open:
   those, so this compares that simple image-plane method with the full fit; the
   moment-0 maps (`imaging.line_maps`) show which lines are extended, where a
   spectrum misses flux.
+- **Windows that overlap in frequency.** ASPECS 3mm observes 96.2-102.9 GHz
+  twice, in spws of two tunings with offset channel grids. The spws are searched
+  apart and their catalogues merged (`merge_catalogues`), so a line there is found
+  twice; the run marks the fainter one a duplicate. Combining the two needs one
+  channel grid (`mstransform` regridding in alma-data-prep, or the filter on
+  a common grid).
 - **A fit that absorbs its neighbours.** The candidate at 85.857 GHz, 16-31 MHz
   from two detected lines, is no longer detected (fidelity 0.43), but when it was
   its fit ran to a 1818 km/s line 101 MHz off the peak (chi^2_red 3.5, 10.8

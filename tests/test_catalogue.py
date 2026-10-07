@@ -13,6 +13,7 @@ from luv_finder.catalogue import (
     groups,
     jackknife_spread,
     likelihood,
+    merge_catalogues,
     response_correlation,
 )
 from luv_finder.data import sky_offset
@@ -288,3 +289,11 @@ def test_catalogue_of_the_fixture(data, truth, tmp_path):
         np.testing.assert_array_equal(back[name], cat[name])
     assert back["line_flux"].unit == "Jy km / s"
     assert json.dumps(dict(back.meta), sort_keys=True) == json.dumps(dict(cat.meta), sort_keys=True)
+
+    one, two = merge_catalogues([cat]), merge_catalogues([back, cat])
+    for name in ("snr", "likelihood", "fidelity", "detected"):
+        np.testing.assert_array_equal(one[name], cat[name])
+    assert two["id"].tolist() == list(range(1, 2 * len(cat) + 1)) and len(two.meta["parts"]) == 2
+    assert sorted(two.meta["snr_jackknife"]) == sorted(2 * cat.meta["snr_jackknife"])
+    counted = ~cat["likelihood_lower_limit"]
+    np.testing.assert_allclose(two["likelihood"][::2][counted], cat["likelihood"][counted], rtol=1e-12)

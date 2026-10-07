@@ -379,7 +379,7 @@ def test_pb_correction_divides_the_flux_and_masks_the_beam_edge():
 
 
 def test_combined_pointings_recover_the_flux_and_add_snr_in_quadrature():
-    """Inverse-variance weights restore the flux; a pointing beyond its pb_limit changes nothing."""
+    """Inverse-variance weights restore the flux; a pointing beyond its pb_limit changes nothing; order is free."""
     src = _line(dra=20.0)
 
     def pointing(field, offset, dra, ddec):
@@ -392,6 +392,10 @@ def test_combined_pointings_recover_the_flux_and_add_snr_in_quadrature():
     pair, mosaic = combine_pointings([a, b]), combine_pointings([a, b, far])
     assert mosaic.axes["dra"] == np.arange(-20.0, 221.0, 20.0).tolist()
     assert mosaic.axes["ddec"] == [-20.0, 0.0, 20.0]
+    folded = combine_pointings([combine_pointings([far, b]), a])
+    for r, s in ((folded, mosaic), (folded.jackknife, mosaic.jackknife)):
+        for k in ("snr", "flux", "error", "coverage"):
+            assert np.allclose(getattr(r, k), getattr(s, k), rtol=1e-12, atol=0, equal_nan=True)
 
     def at(r, dra=20.0, ddec=0.0):
         return r.axes["dra"].index(dra), r.axes["ddec"].index(ddec)

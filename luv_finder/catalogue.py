@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import warnings
+from collections.abc import Sequence
 from dataclasses import dataclass
 from itertools import product
 
 import numpy as np
-from astropy.table import Table
+from astropy.table import Table, vstack
 from scipy import fft, ndimage, optimize, special, stats
 
 from .data import sky_direction
@@ -282,6 +283,10 @@ UNITS = {
 }
 
 
+#: ``meta`` of :func:`catalogue` that belongs to one search, kept per part by :func:`merge_catalogues`.
+SEARCH_META = ("jackknife_spread", "hwhm_major", "hwhm_minor", "pa", "spectral_hwhm", "sidelobe")
+
+
 def catalogue(result: SearchResult, ref=None, floor: float = 4.0, k: float = 3.0, fidelity_min: float = 0.6) -> Table:
     """Catalogue the line candidates of a search: one row per group of the data, by S/N descending.
 
@@ -333,11 +338,6 @@ def catalogue(result: SearchResult, ref=None, floor: float = 4.0, k: float = 3.0
         for name, values in (("data", result.snr), ("jackknife", result.jackknife.snr), ("negative", -result.snr))
     }
     snr = {name: np.array([g.snr for g in gs]) for name, gs in found.items()}
-    ratio, lower = likelihood(snr["data"], snr["jackknife"])
-    fid, (centre, sigma), bins = fidelity(snr["data"], snr["jackknife"], floor)
-    passes = (ratio >= k) | lower
-    detected = passes & ((fid >= fidelity_min) | np.isnan(fid))
-
     i, j, t, c = (np.array([getattr(g, a) for g in found["data"]], dtype=int) for a in "ijtk")
     templates = np.array(list(product(*(result.axes[a] for a in TEMPLATE_KEYS))))[t]
     line_flux, line_flux_error = (a[i, j, t, c] for a in result.integrated_flux())
@@ -348,25 +348,41 @@ def catalogue(result: SearchResult, ref=None, floor: float = 4.0, k: float = 3.0
     columns |= {"freq_ghz": result.freqs[c] / 1e9, **dict(zip(TEMPLATE_KEYS, templates.T, strict=True))}
     columns |= {key: getattr(result, key)[i, j, t, c] for key in ("snr", "flux", "error")}
     columns |= {"line_flux": line_flux, "line_flux_error": line_flux_error, "coverage": result.coverage[i, j, c]}
-    columns |= {
-        "n_peaks": np.array([g.n_peaks for g in found["data"]], dtype=int),
-        "likelihood": ratio,
-        "likelihood_lower_limit": lower,
-        "fidelity": fid,
-        "detected": detected,
-    }
+    columns["n_peaks"] = np.array([g.n_peaks for g in found["data"]], dtype=int)
+    reliable, meta = _reliability(snr, floor, k, fidelity_min)
+    search = {"jackknife_spread": jackknife_spread(result)} | {key: getattr(nc, key) for key in SEARCH_META[1:]}
+    cat = Table(columns | reliable, meta={key: value.tolist() for key, value in search.items()} | meta)
+    for name, unit in UNITS.items():
+        if name in cat.colnames:
+            cat[name].unit = unit
+    return cat
 
-    meta = {"jackknife_spread": jackknife_spread(result).tolist()}
-    meta |= {key: getattr(nc, key).tolist() for key in ("hwhm_major", "hwhm_minor", "pa", "spectral_hwhm", "sidelobe")}
-    meta |= {"floor": float(floor), "k": float(k), "fidelity_min": float(fidelity_min)}
+
+def _reliability(snr: dict, floor: float, k: float, fidelity_min: float) -> tuple[dict, dict]:
+    """Likelihood ratio, fidelity and detection of the data groups against the jackknife's, as columns and meta."""
+    ratio, lower = likelihood(snr["data"], snr["jackknife"])
+    fid, (centre, sigma), bins = fidelity(snr["data"], snr["jackknife"], floor)
+    detected = ((ratio >= k) | lower) & ((fid >= fidelity_min) | np.isnan(fid))
+    columns = {"likelihood": ratio, "likelihood_lower_limit": lower, "fidelity": fid, "detected": detected}
+    meta = {"floor": float(floor), "k": float(k), "fidelity_min": float(fidelity_min)}
     meta |= {"fidelity_centre": float(centre), "fidelity_sigma": float(sigma)}
     meta["snr_likelihood"] = float(snr["data"][ratio >= k].min()) if np.any(ratio >= k) else np.nan
     meta["snr_fidelity"] = float(centre + sigma * special.erfinv(2 * fidelity_min - 1))
     meta |= {f"snr_{name}": values.tolist() for name, values in snr.items()}
     meta["fidelity_bins"] = {key: values.tolist() for key, values in bins.items()}
+    return columns, meta
 
-    cat = Table(columns, meta=meta)
-    for name, unit in UNITS.items():
-        if name in cat.colnames:
-            cat[name].unit = unit
+
+def merge_catalogues(cats: Sequence[Table]) -> Table:
+    """One catalogue of several searches (e.g. one per spectral window), its reliability over their whole volume."""
+    floor, k, fidelity_min = (cats[0].meta[key] for key in ("floor", "k", "fidelity_min"))
+    cat = vstack(list(cats), metadata_conflicts="silent").copy()  # vstack of one table returns it
+    snr = {"data": np.asarray(cat["snr"])}
+    snr |= {name: np.concatenate([c.meta[f"snr_{name}"] for c in cats]) for name in ("jackknife", "negative")}
+    reliable, meta = _reliability(snr, floor, k, fidelity_min)
+    for name, values in reliable.items():
+        cat[name] = values
+    cat.meta = meta | {"parts": [{key: c.meta[key] for key in SEARCH_META} for c in cats]}
+    cat.sort("snr", reverse=True)
+    cat["id"] = np.arange(1, len(cat) + 1)
     return cat
