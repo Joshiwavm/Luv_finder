@@ -8,11 +8,10 @@
 
    .. autosummary::
    
-      SPATIAL
       LINE_FLUX
+      REPORTED
       COLUMNS
-      XATOL
-      FATOL
+      START
    
    .. rubric:: Functions
 
@@ -20,10 +19,4 @@
    
       fit_line
       fit_lines
-   
-   .. rubric:: Classes
-
-   .. autosummary::
-   
-      LineWindow
    

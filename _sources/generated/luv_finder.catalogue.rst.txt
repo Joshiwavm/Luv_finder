@@ -8,8 +8,6 @@
 
    .. autosummary::
    
-      CHUNK_BYTES
-      MAD_TO_SIGMA
       UNITS
    
    .. rubric:: Functions
@@ -22,12 +20,12 @@
       groups
       jackknife_spread
       likelihood
-      noise_correlation
+      response_correlation
    
    .. rubric:: Classes
 
    .. autosummary::
    
       Group
-      NoiseCorrelation
+      ResponseCorrelation
    

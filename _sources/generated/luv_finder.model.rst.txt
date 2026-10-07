@@ -8,7 +8,9 @@
 
    .. autosummary::
    
+      covariance
       envelope
+      rotated
    
    .. rubric:: Classes
 

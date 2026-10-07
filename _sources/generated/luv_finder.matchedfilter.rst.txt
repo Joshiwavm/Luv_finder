@@ -4,38 +4,20 @@
 .. automodule:: luv_finder.matchedfilter
 
    
-   .. rubric:: Module Attributes
-
-   .. autosummary::
-   
-      TEMPLATE_KEYS
-      GRID_KEYS
-      WEIGHTINGS
-      COLLAPSE_ARRAYS
-      BLOCK_BYTES
-   
    .. rubric:: Functions
 
    .. autosummary::
    
       build_grid
       combine_pointings
-      default_cores
-      dirty_cube
-      dirty_maps
       grid_model
-      limit_cores
-      mosaic_dirty_maps
-      on_device
       pb_corrected
       search_pointings
-      template_spectrum
    
    .. rubric:: Classes
 
    .. autosummary::
    
-      DirtyCube
       MatchedFilter
       SearchResult
    

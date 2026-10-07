@@ -3,7 +3,7 @@
   <head><meta charset="utf-8">
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
-<link rel="index" title="Index" href="../genindex.html"><link rel="search" title="Search" href="../search.html"><link rel="next" title="luv_finder.matchedfilter" href="luv_finder.matchedfilter.html"><link rel="prev" title="luv_finder.data" href="luv_finder.data.html">
+<link rel="index" title="Index" href="../genindex.html"><link rel="search" title="Search" href="../search.html"><link rel="next" title="luv_finder.kernel" href="luv_finder.kernel.html"><link rel="prev" title="luv_finder.data" href="luv_finder.data.html">
 
     <!-- Generated with Sphinx 9.1.0 and Furo 2025.12.19 -->
         <title>luv_finder.model - Luv_finder</title>
@@ -203,7 +203,9 @@
 <li class="toctree-l1 current has-children"><a class="reference internal" href="../api.html">API</a><input aria-label="Toggle navigation of API" checked="" class="toctree-checkbox" id="toctree-checkbox-2" name="toctree-checkbox-2" role="switch" type="checkbox"/><label for="toctree-checkbox-2"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul class="current">
 <li class="toctree-l2"><a class="reference internal" href="luv_finder.data.html">luv_finder.data</a></li>
 <li class="toctree-l2 current current-page"><a class="current reference internal" href="#">luv_finder.model</a></li>
+<li class="toctree-l2"><a class="reference internal" href="luv_finder.kernel.html">luv_finder.kernel</a></li>
 <li class="toctree-l2"><a class="reference internal" href="luv_finder.matchedfilter.html">luv_finder.matchedfilter</a></li>
+<li class="toctree-l2"><a class="reference internal" href="luv_finder.imaging.html">luv_finder.imaging</a></li>
 <li class="toctree-l2"><a class="reference internal" href="luv_finder.catalogue.html">luv_finder.catalogue</a></li>
 <li class="toctree-l2"><a class="reference internal" href="luv_finder.fit.html">luv_finder.fit</a></li>
 <li class="toctree-l2"><a class="reference internal" href="luv_finder.mock.html">luv_finder.mock</a></li>
@@ -258,8 +260,14 @@ matched filter parses this key to route values back onto the component.</p>
 <div class="table-wrapper autosummary longtable docutils container">
 <table class="autosummary longtable docutils align-default">
 <tbody>
-<tr class="row-odd"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">envelope</span></code>(uw, vw, bmaj, bmin, pa[, xp])</p></td>
-<td><p>Visibility amplitude of a unit-flux elliptical Gaussian at (uw, vw) wavelengths.</p></td>
+<tr class="row-odd"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">covariance</span></code>(bmaj, bmin, pa[, xp])</p></td>
+<td><p>Sky covariance <code class="docutils literal notranslate"><span class="pre">(s_ee,</span> <span class="pre">s_nn,</span> <span class="pre">s_en)</span></code> of a Gaussian of axes (sigma) <code class="docutils literal notranslate"><span class="pre">bmaj</span></code>, <code class="docutils literal notranslate"><span class="pre">bmin</span></code> at <code class="docutils literal notranslate"><span class="pre">pa</span></code> deg E of N.</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">envelope</span></code>(uw, vw, cov[, xp])</p></td>
+<td><p>Visibility amplitude at (uw, vw) wavelengths of a unit-flux Gaussian of sky covariance <code class="docutils literal notranslate"><span class="pre">cov</span></code> (rad^2).</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">rotated</span></code>(major, minor, pa[, xp])</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">(s_ee,</span> <span class="pre">s_nn,</span> <span class="pre">s_en)</span></code> of variances <code class="docutils literal notranslate"><span class="pre">major</span></code> along <code class="docutils literal notranslate"><span class="pre">pa</span></code> deg east of north and <code class="docutils literal notranslate"><span class="pre">minor</span></code> across it.</p></td>
 </tr>
 </tbody>
 </table>
@@ -284,12 +292,12 @@ matched filter parses this key to route values back onto the component.</p>
       <footer>
         
         <div class="related-pages">
-          <a class="next-page" href="luv_finder.matchedfilter.html">
+          <a class="next-page" href="luv_finder.kernel.html">
               <div class="page-info">
                 <div class="context">
                   <span>Next</span>
                 </div>
-                <div class="title">luv_finder.matchedfilter</div>
+                <div class="title">luv_finder.kernel</div>
               </div>
               <svg class="furo-related-icon"><use href="#svg-arrow-right"></use></svg>
             </a>

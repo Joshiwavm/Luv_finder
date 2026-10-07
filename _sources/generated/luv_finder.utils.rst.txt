@@ -8,6 +8,7 @@
 
    .. autosummary::
    
+      BLOCK_BYTES
       FWHM_FACTOR
       X_HALF
    

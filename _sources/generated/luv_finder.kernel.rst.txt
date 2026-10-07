@@ -1,0 +1,22 @@
+﻿luv\_finder.kernel
+==================
+
+.. automodule:: luv_finder.kernel
+
+   
+   .. rubric:: Module Attributes
+
+   .. autosummary::
+   
+      COLLAPSE_ARRAYS
+      DATA_POWERS
+   
+   .. rubric:: Functions
+
+   .. autosummary::
+   
+      default_cores
+      limit_cores
+      on_device
+      point_moments
+   

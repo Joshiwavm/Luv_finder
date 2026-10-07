@@ -203,7 +203,9 @@
 <li class="toctree-l1 current has-children current-page"><a class="current reference internal" href="#">API</a><input aria-label="Toggle navigation of API" checked="" class="toctree-checkbox" id="toctree-checkbox-2" name="toctree-checkbox-2" role="switch" type="checkbox"/><label for="toctree-checkbox-2"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
 <li class="toctree-l2"><a class="reference internal" href="generated/luv_finder.data.html">luv_finder.data</a></li>
 <li class="toctree-l2"><a class="reference internal" href="generated/luv_finder.model.html">luv_finder.model</a></li>
+<li class="toctree-l2"><a class="reference internal" href="generated/luv_finder.kernel.html">luv_finder.kernel</a></li>
 <li class="toctree-l2"><a class="reference internal" href="generated/luv_finder.matchedfilter.html">luv_finder.matchedfilter</a></li>
+<li class="toctree-l2"><a class="reference internal" href="generated/luv_finder.imaging.html">luv_finder.imaging</a></li>
 <li class="toctree-l2"><a class="reference internal" href="generated/luv_finder.catalogue.html">luv_finder.catalogue</a></li>
 <li class="toctree-l2"><a class="reference internal" href="generated/luv_finder.fit.html">luv_finder.fit</a></li>
 <li class="toctree-l2"><a class="reference internal" href="generated/luv_finder.mock.html">luv_finder.mock</a></li>
@@ -259,14 +261,20 @@
 <tr class="row-even"><td><p><a class="reference internal" href="generated/luv_finder.model.html#module-luv_finder.model" title="luv_finder.model"><code class="xref py py-obj docutils literal notranslate"><span class="pre">luv_finder.model</span></code></a></p></td>
 <td><p>Parametric UV-domain source models.</p></td>
 </tr>
-<tr class="row-odd"><td><p><a class="reference internal" href="generated/luv_finder.matchedfilter.html#module-luv_finder.matchedfilter" title="luv_finder.matchedfilter"><code class="xref py py-obj docutils literal notranslate"><span class="pre">luv_finder.matchedfilter</span></code></a></p></td>
-<td><p>Grid-search matched filter for spectral lines in the UV plane, evaluated with JAX.</p></td>
+<tr class="row-odd"><td><p><a class="reference internal" href="generated/luv_finder.kernel.html#module-luv_finder.kernel" title="luv_finder.kernel"><code class="xref py py-obj docutils literal notranslate"><span class="pre">luv_finder.kernel</span></code></a></p></td>
+<td><p>Spatial collapse of one window's visibilities onto trial positions and source shapes, in JAX.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="generated/luv_finder.matchedfilter.html#module-luv_finder.matchedfilter" title="luv_finder.matchedfilter"><code class="xref py py-obj docutils literal notranslate"><span class="pre">luv_finder.matchedfilter</span></code></a></p></td>
+<td><p>Grid-search matched filter for spectral lines in the UV plane, in JAX (float64).</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="generated/luv_finder.imaging.html#module-luv_finder.imaging" title="luv_finder.imaging"><code class="xref py py-obj docutils literal notranslate"><span class="pre">luv_finder.imaging</span></code></a></p></td>
+<td><p>Natural-weighted dirty cubes and moment-8/continuum maps on a regular grid, by NUFFT.</p></td>
 </tr>
 <tr class="row-even"><td><p><a class="reference internal" href="generated/luv_finder.catalogue.html#module-luv_finder.catalogue" title="luv_finder.catalogue"><code class="xref py py-obj docutils literal notranslate"><span class="pre">luv_finder.catalogue</span></code></a></p></td>
-<td><p>From a matched-filter search to a catalogue of line candidates.</p></td>
+<td><p></p></td>
 </tr>
 <tr class="row-odd"><td><p><a class="reference internal" href="generated/luv_finder.fit.html#module-luv_finder.fit" title="luv_finder.fit"><code class="xref py py-obj docutils literal notranslate"><span class="pre">luv_finder.fit</span></code></a></p></td>
-<td><p>Least-squares fit of catalogued lines in the visibilities.</p></td>
+<td><p>Least-squares fit of catalogued lines in the visibilities, by Newton steps on per-channel moments.</p></td>
 </tr>
 <tr class="row-even"><td><p><a class="reference internal" href="generated/luv_finder.mock.html#module-luv_finder.mock" title="luv_finder.mock"><code class="xref py py-obj docutils literal notranslate"><span class="pre">luv_finder.mock</span></code></a></p></td>
 <td><p>Synthetic ALMA observations of spectral-line sources via CASA <code class="docutils literal notranslate"><span class="pre">simobserve</span></code>.</p></td>

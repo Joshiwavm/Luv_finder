@@ -3,10 +3,10 @@
   <head><meta charset="utf-8">
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
-<link rel="index" title="Index" href="../genindex.html"><link rel="search" title="Search" href="../search.html"><link rel="next" title="luv_finder.utils" href="luv_finder.utils.html"><link rel="prev" title="luv_finder.fit" href="luv_finder.fit.html">
+<link rel="index" title="Index" href="../genindex.html"><link rel="search" title="Search" href="../search.html"><link rel="next" title="luv_finder.catalogue" href="luv_finder.catalogue.html"><link rel="prev" title="luv_finder.matchedfilter" href="luv_finder.matchedfilter.html">
 
     <!-- Generated with Sphinx 9.1.0 and Furo 2025.12.19 -->
-        <title>luv_finder.mock - Luv_finder</title>
+        <title>luv_finder.imaging - Luv_finder</title>
       <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=03e43079" />
     <link rel="stylesheet" type="text/css" href="../_static/styles/furo.css?v=7bdb33bb" />
     <link rel="stylesheet" type="text/css" href="../_static/copybutton.css?v=76b2166b" />
@@ -205,10 +205,10 @@
 <li class="toctree-l2"><a class="reference internal" href="luv_finder.model.html">luv_finder.model</a></li>
 <li class="toctree-l2"><a class="reference internal" href="luv_finder.kernel.html">luv_finder.kernel</a></li>
 <li class="toctree-l2"><a class="reference internal" href="luv_finder.matchedfilter.html">luv_finder.matchedfilter</a></li>
-<li class="toctree-l2"><a class="reference internal" href="luv_finder.imaging.html">luv_finder.imaging</a></li>
+<li class="toctree-l2 current current-page"><a class="current reference internal" href="#">luv_finder.imaging</a></li>
 <li class="toctree-l2"><a class="reference internal" href="luv_finder.catalogue.html">luv_finder.catalogue</a></li>
 <li class="toctree-l2"><a class="reference internal" href="luv_finder.fit.html">luv_finder.fit</a></li>
-<li class="toctree-l2 current current-page"><a class="current reference internal" href="#">luv_finder.mock</a></li>
+<li class="toctree-l2"><a class="reference internal" href="luv_finder.mock.html">luv_finder.mock</a></li>
 <li class="toctree-l2"><a class="reference internal" href="luv_finder.utils.html">luv_finder.utils</a></li>
 </ul>
 </li>
@@ -232,7 +232,7 @@
         </a>
         <div class="content-icon-container">
           <div class="view-this-page">
-  <a class="muted-link" href="../_sources/generated/luv_finder.mock.rst.txt" title="View this page">
+  <a class="muted-link" href="../_sources/generated/luv_finder.imaging.rst.txt" title="View this page">
     <svg><use href="#svg-eye"></use></svg>
     <span class="visually-hidden">View this page</span>
   </a>
@@ -250,18 +250,27 @@
           </label>
         </div>
         <article role="main" id="furo-main-content">
-          <section id="module-luv_finder.mock">
-<span id="luv-finder-mock"></span><h1>luv_finder.mock<a class="headerlink" href="#module-luv_finder.mock" title="Link to this heading">¶</a></h1>
-<p>Synthetic ALMA observations of spectral-line sources via CASA <code class="docutils literal notranslate"><span class="pre">simobserve</span></code>.</p>
+          <section id="module-luv_finder.imaging">
+<span id="luv-finder-imaging"></span><h1>luv_finder.imaging<a class="headerlink" href="#module-luv_finder.imaging" title="Link to this heading">¶</a></h1>
+<p>Natural-weighted dirty cubes and moment-8/continuum maps on a regular grid, by NUFFT.</p>
 <p class="rubric">Functions</p>
 <div class="table-wrapper autosummary longtable docutils container">
 <table class="autosummary longtable docutils align-default">
 <tbody>
-<tr class="row-odd"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">resolve_antenna_config</span></code>(name)</p></td>
-<td><p>Absolute path to a CASA antenna configuration, by bare name or path.</p></td>
+<tr class="row-odd"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">dirty_cube</span></code>(data, dra, ddec[, cores])</p></td>
+<td><p>Natural-weighted dirty cube of one field on the regular <code class="docutils literal notranslate"><span class="pre">dra</span> <span class="pre">x</span> <span class="pre">ddec</span></code> grid (arcsec, sky frame).</p></td>
 </tr>
-<tr class="row-even"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">source_from_grid</span></code>(grid, source)</p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">source</span></code> with position, size and line width taken from a targeted grid.</p></td>
+<tr class="row-even"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">dirty_maps</span></code>(data, dra, ddec[, cores])</p></td>
+<td><p>Moment-8 (S/N), continuum (Jy/beam) and continuum noise of one field on the <code class="docutils literal notranslate"><span class="pre">dra</span> <span class="pre">x</span> <span class="pre">ddec</span></code> grid.</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">line_maps</span></code>(data, cat[, size, pb_limit])</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">(dra,</span> <span class="pre">ddec,</span> <span class="pre">moment0)</span></code> within <code class="docutils literal notranslate"><span class="pre">size</span></code> arcsec of each fitted line, Jy/beam km/s over +-1 FWHM, no continuum.</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">mosaic_dirty_maps</span></code>(cubes[, pb_limit])</p></td>
+<td><p>Linear mosaic of the pointings' cubes (PB &gt;= <code class="docutils literal notranslate"><span class="pre">pb_limit</span></code>): <code class="docutils literal notranslate"><span class="pre">(dra,</span> <span class="pre">ddec,</span> <span class="pre">moment8,</span> <span class="pre">continuum,</span> <span class="pre">sigma)</span></code>.</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">pointing_cubes</span></code>(path[, grid_cfg, pb_limit, cores])</p></td>
+<td><p>The dirty cube of every field of a measurement set or NPZ, each on its search grid.</p></td>
 </tr>
 </tbody>
 </table>
@@ -270,8 +279,8 @@
 <div class="table-wrapper autosummary longtable docutils container">
 <table class="autosummary longtable docutils align-default">
 <tbody>
-<tr class="row-odd"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">MockObservation</span></code>([cube_shape, dv, ...])</p></td>
-<td><p>Build a line cube, observe it with <code class="docutils literal notranslate"><span class="pre">simobserve</span></code>, image it, and move the products.</p></td>
+<tr class="row-odd"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">DirtyCube</span></code>(cube, weight, dra, ddec, offset, ...)</p></td>
+<td><p>Dirty cube of one pointing, <code class="docutils literal notranslate"><span class="pre">(n_chan,</span> <span class="pre">n_dra,</span> <span class="pre">n_ddec)</span></code> Jy/beam; channel <code class="docutils literal notranslate"><span class="pre">i</span></code> has noise <code class="docutils literal notranslate"><span class="pre">weight[i]**-0.5</span></code>.</p></td>
 </tr>
 </tbody>
 </table>
@@ -283,23 +292,23 @@
       <footer>
         
         <div class="related-pages">
-          <a class="next-page" href="luv_finder.utils.html">
+          <a class="next-page" href="luv_finder.catalogue.html">
               <div class="page-info">
                 <div class="context">
                   <span>Next</span>
                 </div>
-                <div class="title">luv_finder.utils</div>
+                <div class="title">luv_finder.catalogue</div>
               </div>
               <svg class="furo-related-icon"><use href="#svg-arrow-right"></use></svg>
             </a>
-          <a class="prev-page" href="luv_finder.fit.html">
+          <a class="prev-page" href="luv_finder.matchedfilter.html">
               <svg class="furo-related-icon"><use href="#svg-arrow-right"></use></svg>
               <div class="page-info">
                 <div class="context">
                   <span>Previous</span>
                 </div>
                 
-                <div class="title">luv_finder.fit</div>
+                <div class="title">luv_finder.matchedfilter</div>
                 
               </div>
             </a>

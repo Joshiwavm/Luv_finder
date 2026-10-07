@@ -203,7 +203,9 @@
 <li class="toctree-l1 has-children"><a class="reference internal" href="api.html">API</a><input aria-label="Toggle navigation of API" class="toctree-checkbox" id="toctree-checkbox-2" name="toctree-checkbox-2" role="switch" type="checkbox"/><label for="toctree-checkbox-2"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
 <li class="toctree-l2"><a class="reference internal" href="generated/luv_finder.data.html">luv_finder.data</a></li>
 <li class="toctree-l2"><a class="reference internal" href="generated/luv_finder.model.html">luv_finder.model</a></li>
+<li class="toctree-l2"><a class="reference internal" href="generated/luv_finder.kernel.html">luv_finder.kernel</a></li>
 <li class="toctree-l2"><a class="reference internal" href="generated/luv_finder.matchedfilter.html">luv_finder.matchedfilter</a></li>
+<li class="toctree-l2"><a class="reference internal" href="generated/luv_finder.imaging.html">luv_finder.imaging</a></li>
 <li class="toctree-l2"><a class="reference internal" href="generated/luv_finder.catalogue.html">luv_finder.catalogue</a></li>
 <li class="toctree-l2"><a class="reference internal" href="generated/luv_finder.fit.html">luv_finder.fit</a></li>
 <li class="toctree-l2"><a class="reference internal" href="generated/luv_finder.mock.html">luv_finder.mock</a></li>
@@ -265,13 +267,13 @@ luv-find<span class="w"> </span>--ms<span class="w"> </span>line13_line9.npz<spa
 </pre></div>
 </div>
 <p>Each mock preset has a grid preset of the same name. <code class="docutils literal notranslate"><span class="pre">configs/README.md</span></code>
-documents the pairing and the <code class="docutils literal notranslate"><span class="pre">dra</span></code> sign flip.</p>
+documents the pairing.</p>
 <p>A mosaic is searched one pointing at a time, on one sky grid. In Python
 <code class="xref py py-func docutils literal notranslate"><span class="pre">search_pointings()</span></code> loads each field of an NPZ or measurement set
 in turn, searches it, corrects it for its primary beam and combines the pointings:</p>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">luv_finder.matchedfilter</span><span class="w"> </span><span class="kn">import</span> <span class="n">search_pointings</span>
 
-<span class="n">result</span><span class="p">,</span> <span class="n">cubes</span> <span class="o">=</span> <span class="n">search_pointings</span><span class="p">(</span><span class="s2">"mosaic.npz"</span><span class="p">,</span> <span class="p">{</span><span class="s2">"width"</span><span class="p">:</span> <span class="p">[</span><span class="mf">200.0</span><span class="p">,</span> <span class="mf">300.0</span><span class="p">]},</span> <span class="n">jackknife</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="n">result</span> <span class="o">=</span> <span class="n">search_pointings</span><span class="p">(</span><span class="s2">"mosaic.npz"</span><span class="p">,</span> <span class="p">{</span><span class="s2">"width"</span><span class="p">:</span> <span class="p">[</span><span class="mf">200.0</span><span class="p">,</span> <span class="mf">300.0</span><span class="p">]},</span> <span class="n">jackknife</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
 </pre></div>
 </div>
 <p>Each pointing covers the region where its primary beam is at least <code class="docutils literal notranslate"><span class="pre">pb_limit</span></code>. A dataset with
@@ -368,17 +370,18 @@ fidelity; <code class="xref py py-func docutils literal notranslate"><span class
 <section id="fitting-the-detected-lines">
 <h2>Fitting the detected lines<a class="headerlink" href="#fitting-the-detected-lines" title="Link to this heading">¶</a></h2>
 <p>Detection stays a grid search. <code class="xref py py-func docutils literal notranslate"><span class="pre">luv_finder.fit.fit_lines()</span></code> then refines every detected line
-by a deterministic least-squares fit in the visibilities: an elliptical Gaussian source (position,
-axes, position angle) whose spectrum is a Gaussian line (peak, centre, FWHM) on a polynomial
-continuum of the same shape, of the search’s degree, times each pointing’s primary beam at the
-source. It is fitted jointly in every pointing whose primary beam covers the line (PB &gt;= 0.2), in
-the spectral window holding it.</p>
-<p>The fit is exact without a loop over visibilities: chi^2 over all of them depends on the data only
-through each pointing’s template-weighted spectrum at the trial position and shape
-(<code class="xref py py-func docutils literal notranslate"><span class="pre">template_spectrum()</span></code>, the search’s own collapse at one point). At a
-given position and shape the spectrum is a weighted least-squares fit, linear in the peak and the
-continuum; Nelder-Mead moves the position and the shape. A Band 3 line takes 0.5-3 minutes on 12
-cores, depending on how many pointings cover it; the mosaic’s 16 lines take 25 minutes.</p>
+by least squares in the visibilities: an elliptical Gaussian source (position and sky covariance)
+whose spectrum is a Gaussian line (peak, centre, FWHM) on a polynomial continuum of the search’s
+degree, times each pointing’s primary beam at the source, jointly in every pointing whose primary
+beam covers the line (PB &gt;= 0.2), in the spectral window holding it.</p>
+<p>Every derivative of the model in position and shape is the model times a polynomial in (u, v), so
+one pass over the visibilities collects a few per-channel moments
+(<code class="xref py py-func docutils literal notranslate"><span class="pre">point_moments()</span></code>) that give chi^2, its gradient and the Gauss-Newton
+matrix exactly. The spectrum (peak, continuum, centre, width) is fitted on those moments without
+another pass, and <code class="docutils literal notranslate"><span class="pre">scipy.optimize.minimize</span></code> (L-BFGS-B) moves the position and shape on the
+profiled chi^2, starting from the matched filter’s peak: 4-16 passes per line. The shape is two
+axis variances and an angle, bounded at zero (a flat prior on sizes &gt;= 0), so an unresolved axis
+lands on zero; its error, one-sided there, is NaN, and so is the angle of a point source.</p>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">luv_finder.fit</span><span class="w"> </span><span class="kn">import</span> <span class="n">fit_lines</span>
 
 <span class="n">fitted</span> <span class="o">=</span> <span class="n">fit_lines</span><span class="p">(</span><span class="s2">"mosaic.npz"</span><span class="p">,</span> <span class="n">cat</span><span class="p">)</span>  <span class="c1"># or the search's DataHandler</span>
@@ -389,13 +392,10 @@ cores, depending on how many pointings cover it; the mosaic’s 16 lines take 25
 <code class="docutils literal notranslate"><span class="pre">fit_ddec</span></code>, <code class="docutils literal notranslate"><span class="pre">fit_ra</span></code>, <code class="docutils literal notranslate"><span class="pre">fit_dec</span></code>; <code class="docutils literal notranslate"><span class="pre">fit_bmaj</span></code>, <code class="docutils literal notranslate"><span class="pre">fit_bmin</span></code> as sigma and <code class="docutils literal notranslate"><span class="pre">fit_pa</span></code>;
 <code class="docutils literal notranslate"><span class="pre">fit_freq_ghz</span></code>, <code class="docutils literal notranslate"><span class="pre">fit_width</span></code> as FWHM in km/s, <code class="docutils literal notranslate"><span class="pre">fit_peak</span></code>, <code class="docutils literal notranslate"><span class="pre">fit_line_flux</span></code> and
 <code class="docutils literal notranslate"><span class="pre">fit_continuum</span></code> at the line centre, each with an <code class="docutils literal notranslate"><span class="pre">_error</span></code>) are intrinsic, PB-corrected values.
-A faint line may not constrain its size: if the Gaussian fit fails, an axis runs to its bound
-(twice the resolution) or both collapse to zero, the line is refitted as a point source
-(<code class="docutils literal notranslate"><span class="pre">fit_point</span></code>); <code class="docutils literal notranslate"><span class="pre">point=True</span></code> asks for that directly and <code class="docutils literal notranslate"><span class="pre">fixed_position=True</span></code> keeps the
-catalogue position.</p>
-<p>The errors are formal, from the Hessian of chi^2 with the visibility weights as the noise,
-corrected for the channel correlation measured on the jackknife by a sandwich estimator over the
-channels (see <a class="reference internal" href="generated/luv_finder.fit.html#module-luv_finder.fit" title="luv_finder.fit"><code class="xref py py-mod docutils literal notranslate"><span class="pre">luv_finder.fit</span></code></a>).</p>
+Errors are formal, <code class="docutils literal notranslate"><span class="pre">2</span> <span class="pre">H^-1</span></code>, corrected for the channel correlation measured on the jackknife by
+a sandwich estimator over the channels. <code class="docutils literal notranslate"><span class="pre">meta[&quot;spectra&quot;]</span></code> keeps every fitted line’s
+PB-corrected spectrum and best fit, for <code class="xref py py-func docutils literal notranslate"><span class="pre">line_spectra_check()</span></code>;
+<code class="xref py py-func docutils literal notranslate"><span class="pre">line_maps()</span></code> makes their moment-0 maps.</p>
 </section>
 <section id="diagnostic-figures">
 <h2>Diagnostic figures<a class="headerlink" href="#diagnostic-figures" title="Link to this heading">¶</a></h2>
