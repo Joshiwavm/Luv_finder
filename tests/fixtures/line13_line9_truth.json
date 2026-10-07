@@ -8,11 +8,7 @@
   "primary_beam_arcsec": 157.19432671767393,
   "sources": [
     {
-      "position_mock": [
-        -4.25,
-        23.5
-      ],
-      "position_model": [
+      "position": [
         4.25,
         23.5
       ],
@@ -25,11 +21,7 @@
       "bmaj": 0.3165162974192775
     },
     {
-      "position_mock": [
-        -12.0,
-        -4.25
-      ],
-      "position_model": [
+      "position": [
         12.0,
         -4.25
       ],

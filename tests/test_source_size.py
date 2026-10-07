@@ -3,10 +3,8 @@
 Every ``configs/grids/size_*.yaml`` is a targeted search as a user would write it: one
 position, width and size. The mock of the same name only sets the observation and the
 declared ``snr``; its source geometry is taken from the grid, so the template and the injected
-source cannot drift apart. Each mock is calibrated so its ``snr`` is the optimal S/N and is
-searched with both weightings. Weighting by the source envelope ("template") should recover
-the declared S/N at every size; the plain average ("natural") keeps only
-sum(w A) / sqrt(sum(w) sum(w A^2)) of it.
+source cannot drift apart. Each mock is calibrated so its ``snr`` is the optimal S/N, which the
+search should recover at every size.
 
 The mocks are exported to ``output/npz/size_<name>{,_noiseless}.npz`` and rebuilt whenever
 either YAML is newer than them.
@@ -49,20 +47,19 @@ def _mock_npz(name: str) -> tuple[Path, Path]:
     return noisy, clean
 
 
-def _response(data, grid_cfg, weighting, correlation):
+def _response(data, grid_cfg, correlation):
     comp = Gaussian()
     comp.grid = build_grid(data, grid_cfg)
     mod = Model()
     mod.addcomponent(comp)
-    mf = MatchedFilter(data, mod, weighting=weighting, continuum_order=None, channel_correlation=correlation)
+    mf = MatchedFilter(data, mod, continuum_order=None, channel_correlation=correlation)
     mf.run()
     return mf
 
 
 @pytest.mark.casa
-@pytest.mark.parametrize("weighting", ["natural", "template"])
 @pytest.mark.parametrize("name", NAMES)
-def test_recovers_declared_snr(name, weighting, request):
+def test_recovers_declared_snr(name, request):
     mock_path, grid_path = _configs(name)
     declared = yaml.safe_load(mock_path.read_text())["sources"][0]["line"]["snr"]
     grid_cfg = yaml.safe_load(grid_path.read_text())
@@ -78,13 +75,9 @@ def test_recovers_declared_snr(name, weighting, request):
     # the noise model, channel correlation included, is the noisy data's: a noiseless jackknife
     # holds only the signal's residual between integrations, smooth in frequency
     correlation = noisy.channel_correlation()
-    expected = _response(clean, grid_cfg, weighting, correlation)
-    drawn = _response(noisy, grid_cfg, weighting, correlation)
+    expected = _response(clean, grid_cfg, correlation)
+    drawn = _response(noisy, grid_cfg, correlation)
     peak = expected.response[0].max()
-
-    a = Gaussian(bmin=grid_cfg["bmin"], bmaj=grid_cfg["bmaj"], pa=grid_cfg.get("pa", 0.0)).envelope(chunk)
-    kept = np.sum(chunk.w * a) / np.sqrt(np.sum(chunk.w) * np.sum(chunk.w * a**2))
-    predicted = declared if weighting == "template" else declared * kept
 
     if request.config.getoption("--plots"):
         source_size_check(
@@ -92,9 +85,9 @@ def test_recovers_declared_snr(name, weighting, request):
             expected.response[0],
             drawn.response[0],
             declared,
-            f"size_{name}, {weighting}: expected {peak:.2f}, predicted {predicted:.2f}",
+            f"size_{name}: expected {peak:.2f}, declared {declared:.2f}",
             plots_dir=str(REPO / "plots" / "source_size"),
-            name=f"size_{name}_{weighting}",
+            name=f"size_{name}",
         )
 
-    assert peak == pytest.approx(predicted, rel=0.05)
+    assert peak == pytest.approx(declared, rel=0.05)

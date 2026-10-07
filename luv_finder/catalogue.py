@@ -1,35 +1,3 @@
-"""From a matched-filter search to a catalogue of line candidates.
-
-A :class:`~luv_finder.matchedfilter.SearchResult`, PB-corrected and for a mosaic combined, is not
-yet a catalogue: one source lights up many neighbouring grid points, and how often noise alone
-reaches a given S/N is not known. Both are measured on the search's jackknife, one realisation of
-the data's noise without the sky. :func:`catalogue` takes these steps:
-
-1. The S/N is the filter's, which accounts for the noise correlation between channels (ALMA's
-   Hanning response) measured on the jackknife, so the jackknife's S/N has unit variance.
-   :func:`jackknife_spread` reports how far its spread is from 1, as a check; a search run with
-   ``channel_correlation=None`` on Hanning data gives about 1.4-1.6. The tests below compare the
-   data with the jackknife, so they would be unbiased either way.
-2. :func:`noise_correlation` measures the correlation function rho of the response under the null
-   over positions, channels and templates. A matched source's expected response has the same
-   shape, ``E[r(p)] = (S/N)_0 rho(p - s)`` (Vio & Andreani 2021): spatially the dirty beam,
-   sidelobes included, spectrally about sqrt(2) times the template width, and between Gaussian
-   line templates of FWHM W1 and W2 ``sqrt(2 W1 W2 / (W1^2 + W2^2))``.
-3. :func:`groups` merges the local maxima of the best-template S/N, brightest first, that lie
-   within the half-power ellipsoid of rho around a brighter one: one group per source. The data,
-   the jackknife and the negated data are grouped alike.
-4. :func:`likelihood` compares the cumulative group counts of the data and the jackknife,
-   ``Lambda(gamma) = N_data(>= gamma) / N_jk(>= gamma)`` (van Marrewijk et al. 2025, A&A 695,
-   A204), and :func:`fidelity` their counts per S/N bin, ``1 - N_jk / N_data`` fitted with an
-   error function (Walter et al. 2016, ApJ 833, 67, with the jackknife in place of the negative
-   peaks). The jackknife's positive groups are the noise reference of both; the data's negative
-   groups are kept for comparison only.
-5. One table row per data group, ``detected`` where both pass their thresholds. Nothing is
-   clipped: the candidates are ``cat[cat["detected"]]``.
-
-Arrays are numpy; NaN marks positions and channels a search does not cover.
-"""
-
 from __future__ import annotations
 
 import warnings
@@ -38,17 +6,12 @@ from itertools import product
 
 import numpy as np
 from astropy.table import Table
-from scipy import fft, ndimage, optimize, special
+from scipy import fft, ndimage, optimize, special, stats
 
 from .data import sky_direction
 from .matchedfilter import TEMPLATE_KEYS, SearchResult
 from .model import C_KMS
-
-#: Channels of the spatial correlation are Fourier transformed in chunks whose transform stays near this size.
-CHUNK_BYTES = 2**28
-
-#: 1.4826 x the median absolute deviation is the standard deviation of a Gaussian.
-MAD_TO_SIGMA = 1.4826
+from .utils import BLOCK_BYTES
 
 
 def _jackknife(result: SearchResult) -> SearchResult:
@@ -60,43 +23,14 @@ def _jackknife(result: SearchResult) -> SearchResult:
 
 
 def jackknife_spread(result: SearchResult) -> np.ndarray:
-    """Spread of the jackknife S/N per template, ``(n_template,)``: 1 if the channel noise is independent.
-
-    The spread is 1.4826 times the median absolute deviation about the median, over every finite
-    position and channel, so a few outliers do not set it. Above 1 the search assumed less channel
-    correlation than the noise has (for instance ``channel_correlation=None`` on ALMA's Hanning
-    response), and its S/N is overestimated by that factor.
-
-    Raises
-    ------
-    ValueError
-        If ``result`` has no jackknife.
-    """
+    """Robust spread of the jackknife S/N per template, ``(n_template,)``: 1 under H0."""
     snr = _jackknife(result).snr
-    spread = []
-    for t in range(snr.shape[2]):
-        x = snr[:, :, t, :]
-        x = x[np.isfinite(x)]
-        spread.append(MAD_TO_SIGMA * np.median(np.abs(x - np.median(x))))
-    return np.array(spread)
+    return np.array([stats.median_abs_deviation(x[np.isfinite(x)], scale="normal") for x in np.moveaxis(snr, 2, 0)])
 
 
 @dataclass(frozen=True, eq=False)
-class NoiseCorrelation:
-    """Correlation function of the matched-filter response under the null (see :func:`noise_correlation`).
-
-    Attributes
-    ----------
-    spatial : (n_template, n_lag_ra, n_lag_dec) correlation over position lags, averaged over channels
-    lags_ra, lags_dec : arcsec east and north, ascending, the axes of ``spatial``
-    spectral : (n_template, n_lag_chan) correlation over channel lags 0, 1, ...
-    templates : (n_template, n_template) correlation between templates at one position and channel
-    hwhm_major, hwhm_minor : (n_template,) arcsec, semi-axes of the half-power region of ``spatial``
-    pa : (n_template,) deg east of north of its major axis, in [0, 180)
-    spectral_hwhm : (n_template,) channels, half width at half maximum of ``spectral``
-    spectral_hwhm_kms : (n_template,) the same in km/s at the median frequency
-    sidelobe : (n_template,) largest ``|rho|`` of ``spatial`` outside its main lobe
-    """
+class ResponseCorrelation:
+    """Correlation function of the matched-filter response under the null (see :func:`response_correlation`)."""
 
     spatial: np.ndarray
     lags_ra: np.ndarray
@@ -128,10 +62,7 @@ def _lattice(axis, max_lag: float) -> tuple[float, int]:
 
 
 def _windows(freqs: np.ndarray) -> list[slice]:
-    """Runs of uniformly spaced channels: the spectral windows, as far as the frequencies tell.
-
-    A channel step unlike both of its neighbours is a gap between windows.
-    """
+    """Runs of uniformly spaced channels: the spectral windows, as far as the frequencies tell."""
     step = np.diff(freqs)
     if step.size < 2:
         return [slice(None)]
@@ -153,23 +84,13 @@ def _lag_sums(x: np.ndarray, axes: tuple, lags: tuple) -> np.ndarray:
 
 
 def _autocorrelation(x: np.ndarray, m: np.ndarray, axes: tuple, lags: tuple, chunks: list[slice]) -> np.ndarray:
-    """NaN-aware autocorrelation of ``x`` (zero where the mask ``m`` is 0), normalised to 1 at lag 0.
-
-    The lag sums of ``x`` are divided by those of ``m``, the number of pairs at each lag, so
-    masked positions neither count as zeros nor bias the edges. Channel ``chunks`` of the
-    ``(n_dra, n_ddec, n_chan)`` arrays are transformed one at a time and their sums added; a lag
-    no pair covers is NaN.
-    """
+    """NaN-aware autocorrelation of ``x`` (zero where the mask ``m`` is 0), normalised to 1 at lag 0."""
     num, den = (sum(_lag_sums(a[:, :, c], axes, lags) for c in chunks) for a in (x, m))
     rho = np.where(den > 0.5, num / np.where(den > 0.5, den, 1.0), np.nan)
     return rho / rho[tuple(lags)]
 
 
 def _half_power(rho: np.ndarray, lags_ra: np.ndarray, lags_dec: np.ndarray) -> tuple[float, float, float]:
-    """Semi-axes (arcsec) and PA (deg east of north) of the connected region ``rho >= 0.5`` around lag 0.
-
-    For a uniform ellipse the variance along a semi-axis ``a`` is ``a^2 / 4``.
-    """
     labels = ndimage.label(rho >= 0.5)[0]
     i, j = np.nonzero(labels == labels[len(lags_ra) // 2, len(lags_dec) // 2])
     variance, vectors = np.linalg.eigh(np.cov(np.stack([lags_ra[i], lags_dec[j]]), bias=True))
@@ -193,31 +114,10 @@ def _half_width(rho: np.ndarray) -> float:
     return k - 1 + (rho[k - 1] - 0.5) / (rho[k - 1] - rho[k])
 
 
-def noise_correlation(result: SearchResult, max_lag: float = 30.0, max_lag_chan: int | None = None) -> NoiseCorrelation:
-    """Measure the correlation function of the response under the null on the search's jackknife.
-
-    The jackknife S/N is standardised per template (zero mean, unit variance over its finite
-    values), so the result does not depend on the jackknife's overall spread. NaN
-    positions and channels are zero-filled and every lag's sum of products is divided by its number
-    of unmasked pairs, both from zero-padded FFTs, so mosaic edges and holes do not bias it.
-    Spectral lags are taken within runs of uniformly spaced channels only, never across the gap
-    between two windows.
-
-    Parameters
-    ----------
-    result : SearchResult
-        With a jackknife, on a uniform position lattice.
-    max_lag : float
-        Largest position lag in arcsec, along each axis.
-    max_lag_chan : int, optional
-        Largest channel lag; by default 4 times the widest template's FWHM in channels at the
-        median frequency.
-
-    Raises
-    ------
-    ValueError
-        If ``result`` has no jackknife or its positions are not on a uniform lattice.
-    """
+def response_correlation(
+    result: SearchResult, max_lag: float = 30.0, max_lag_chan: int | None = None
+) -> ResponseCorrelation:
+    """Measure the correlation function of the response under the null on the search's jackknife."""
     snr = _jackknife(result).snr
     n_dra, n_ddec, n_template, n_chan = snr.shape
     (step_ra, lag_ra), (step_dec, lag_dec) = (_lattice(result.axes[k], max_lag) for k in ("dra", "ddec"))
@@ -235,7 +135,7 @@ def noise_correlation(result: SearchResult, max_lag: float = 30.0, max_lag_chan:
         zt /= zt.std(where=ft)
         zt[~ft] = 0.0
 
-    per_chunk = max(1, CHUNK_BYTES // (32 * n_dra * n_ddec))
+    per_chunk = max(1, BLOCK_BYTES // (32 * n_dra * n_ddec))
     chunks = [slice(c, c + per_chunk) for c in range(0, n_chan, per_chunk)]
     windows = _windows(result.freqs)
     spatial, spectral = [], []
@@ -254,7 +154,7 @@ def noise_correlation(result: SearchResult, max_lag: float = 30.0, max_lag_chan:
     lags_dec = abs(step_dec) * np.arange(-lag_dec, lag_dec + 1)
     major, minor, pa = np.array([_half_power(rho, lags_ra, lags_dec) for rho in spatial]).T
     spectral_hwhm = np.array([_half_width(rho) for rho in spectral])
-    return NoiseCorrelation(
+    return ResponseCorrelation(
         spatial=np.array(spatial),
         lags_ra=lags_ra,
         lags_dec=lags_dec,
@@ -271,14 +171,7 @@ def noise_correlation(result: SearchResult, max_lag: float = 30.0, max_lag_chan:
 
 @dataclass(frozen=True)
 class Group:
-    """Local maxima of the S/N merged into one candidate (see :func:`groups`).
-
-    Attributes
-    ----------
-    i, j, t, k : int, indices of its brightest maximum along (dra, ddec, template, channel)
-    snr : float, the S/N there
-    n_peaks : int, local maxima merged, the brightest included
-    """
+    """Local maxima of the S/N merged into one candidate (see :func:`groups`)."""
 
     i: int
     j: int
@@ -299,31 +192,8 @@ def _maxima(snr: np.ndarray, floor: float) -> tuple[np.ndarray, ...]:
     return i, j, t, k, best[i, j, k]
 
 
-def groups(snr: np.ndarray, result: SearchResult, nc: NoiseCorrelation, floor: float = 4.0) -> list[Group]:
-    """Group the local maxima of ``snr`` into candidates, one per source, brightest first.
-
-    The maxima are the points at or above ``floor`` that no neighbour in the 3x3x3 box over
-    (dra, ddec, channel) exceeds, of the S/N maximised over templates (NaN counts as -inf). Taken
-    brightest first, each maximum not yet in a group starts one, its representative r, and takes in
-    every fainter free maximum inside r's half-power ellipsoid of the noise correlation,
-
-    ``(d_major / hwhm_major)^2 + (d_minor / hwhm_minor)^2 + (d_chan / spectral_hwhm)^2 <= 1``
-
-    for the template of r: (d_major, d_minor) is the sky offset along the axes of rho, rotated by
-    its ``pa``, and d_chan the frequency difference in median channel widths, so maxima in
-    different windows are as far apart as their frequencies.
-
-    Parameters
-    ----------
-    snr : (n_dra, n_ddec, n_template, n_chan) array
-        S/N on the grid of ``result``: its data, its jackknife or the negated data.
-    result : SearchResult
-        Gives the positions and frequencies.
-    nc : NoiseCorrelation
-        Of ``result`` (see :func:`noise_correlation`).
-    floor : float
-        Lowest S/N of a maximum.
-    """
+def groups(snr: np.ndarray, result: SearchResult, nc: ResponseCorrelation, floor: float = 4.0) -> list[Group]:
+    """Group the local maxima of ``snr`` into candidates, one per source, brightest first."""
     i, j, t, k, value = _maxima(snr, floor)
     x, y = np.asarray(result.axes["dra"])[i], np.asarray(result.axes["ddec"])[j]
     chan = result.freqs[k] / _channel_width(result.freqs)
@@ -345,20 +215,7 @@ def groups(snr: np.ndarray, result: SearchResult, nc: NoiseCorrelation, floor: f
 
 
 def likelihood(snr_data, snr_noise) -> tuple[np.ndarray, np.ndarray]:
-    """Likelihood ratio ``Lambda(gamma) = N_data(>= gamma) / N_noise(>= gamma)`` at every data S/N gamma.
-
-    Empirical cumulative counts of groups, no fit (van Marrewijk et al. 2025).
-
-    Parameters
-    ----------
-    snr_data, snr_noise : (n,) arrays
-        S/N of the data's and the noise's (jackknife's) groups.
-
-    Returns
-    -------
-    ratio : (n_data,) Lambda; where no noise group reaches gamma, ``N_noise = 1``
-    lower_limit : (n_data,) bool, where no noise group reaches gamma, so ``ratio`` is a lower limit
-    """
+    """``N_data(>= gamma) / N_noise(>= gamma)`` of peak counts at every data S/N (Vio & Andreani 2021)."""
     snr_data, snr_noise = np.asarray(snr_data, dtype=float), np.asarray(snr_noise, dtype=float)
     n_data, n_noise = (x.size - np.searchsorted(np.sort(x), snr_data) for x in (snr_data, snr_noise))
     return n_data / np.maximum(n_noise, 1), n_noise == 0
@@ -369,20 +226,7 @@ def fidelity_curve(snr, centre, sigma):
 
 
 def fidelity(snr_data, snr_noise, floor: float, step: float = 0.25) -> tuple[np.ndarray, tuple, dict]:
-    """Fidelity ``1 - N_noise / N_data`` per S/N bin, fitted, at every data S/N (Walter et al. 2016).
-
-    The groups are counted in bins of ``step`` from ``floor``. Over the bins holding data the
-    fidelity, clipped to [0, 1], is fitted with ``0.5 erf((snr - C) / sigma) + 0.5``, weighted by
-    its Poisson error ``sqrt(max(N_noise, 1) + N_noise^2 / N_data) / N_data``. With fewer than 3
-    such bins, or if the fit fails, the fidelity is NaN and a warning says why.
-
-    Returns
-    -------
-    values : (n_data,) the fitted fidelity at each data S/N
-    fit : (C, sigma)
-    bins : dict of (n_bin,) arrays over the bins holding data: ``snr`` (centre), ``n_data``,
-        ``n_noise``, ``fidelity`` and its ``error``
-    """
+    """Fidelity ``1 - N_noise / N_data`` per S/N bin, fitted, at every data S/N (Walter et al. 2016)."""
     snr_data, snr_noise = np.asarray(snr_data, dtype=float), np.asarray(snr_noise, dtype=float)
     top = max(snr_data.max(initial=floor), snr_noise.max(initial=floor))
     edges = floor + step * np.arange(int((top - floor) / step) + 2)
@@ -483,7 +327,7 @@ def catalogue(result: SearchResult, ref=None, floor: float = 4.0, k: float = 3.0
     ValueError
         If ``result`` has no jackknife.
     """
-    nc = noise_correlation(result)
+    nc = response_correlation(result)
     found = {
         name: groups(values, result, nc, floor)
         for name, values in (("data", result.snr), ("jackknife", result.jackknife.snr), ("negative", -result.snr))

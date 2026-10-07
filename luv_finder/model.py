@@ -15,37 +15,26 @@ C_KMS = c.to(u.km / u.s).value
 FWHM_TO_SIGMA = 1 / 2.355
 
 
-def envelope(uw, vw, bmaj, bmin, pa, xp=np):
-    """Visibility amplitude of a unit-flux elliptical Gaussian at (uw, vw) wavelengths.
+def covariance(bmaj, bmin, pa, xp=np):
+    """Sky covariance ``(s_ee, s_nn, s_en)`` of a Gaussian of axes (sigma) ``bmaj``, ``bmin`` at ``pa`` deg E of N."""
+    return rotated(bmaj**2, bmin**2, pa, xp)
 
-    ``bmaj``/``bmin`` are the axes' sigma in rad and ``pa`` the major axis' position angle in
-    degrees east of north. ``xp`` is the array module, so the matched filter can pass
-    ``jax.numpy``.
-    """
-    # u, v pair with east, north; the major axis points along (sin pa, cos pa)
+
+def rotated(major, minor, pa, xp=np):
+    """``(s_ee, s_nn, s_en)`` of variances ``major`` along ``pa`` deg east of north and ``minor`` across it."""
+    # the major axis points along (sin pa, cos pa) in (east, north)
     sin, cos = xp.sin(xp.deg2rad(pa)), xp.cos(xp.deg2rad(pa))
-    u_maj, u_min = uw * sin + vw * cos, uw * cos - vw * sin
-    return xp.exp(-2 * np.pi**2 * ((bmaj * u_maj) ** 2 + (bmin * u_min) ** 2))
+    return major * sin**2 + minor * cos**2, major * cos**2 + minor * sin**2, (major - minor) * sin * cos
+
+
+def envelope(uw, vw, cov, xp=np):
+    """Visibility amplitude at (uw, vw) wavelengths of a unit-flux Gaussian of sky covariance ``cov`` (rad^2)."""
+    s_ee, s_nn, s_en = cov
+    return xp.exp(-2 * np.pi**2 * (s_ee * uw**2 + s_nn * vw**2 + 2 * s_en * uw * vw))
 
 
 class Gaussian:
-    """2D spatial x 1D spectral Gaussian evaluated directly in the UV plane.
-
-    Parameters
-    ----------
-    dra, ddec : float
-        Position in arcsec east and north of the dataset's reference direction.
-    total_flux : float
-        Integrated line flux, Jy km/s.
-    bmin, bmaj : float
-        Source axes (sigma), arcsec.
-    pa : float
-        Position angle of the ``bmaj`` axis, degrees east of north.
-    nu_center : float
-        Line centre, Hz.
-    width : float
-        Line FWHM, km/s.
-    """
+    """2D spatial x 1D spectral Gaussian evaluated directly in the UV plane."""
 
     positive = True
 
@@ -89,7 +78,7 @@ class Gaussian:
 
     def envelope(self, chunk) -> np.ndarray:
         """Spatial envelope A(u, v): the source's visibility amplitude, 1 at zero spacing, (n_chan, n_row)."""
-        return envelope(*chunk.uv_waves(), self.bmaj, self.bmin, self.pa)
+        return envelope(*chunk.uv_waves(), covariance(self.bmaj, self.bmin, self.pa))
 
     def spectrum(self, freq: np.ndarray) -> np.ndarray:
         """Line profile in Jy at ``freq`` (Hz)."""

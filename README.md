@@ -14,7 +14,7 @@ Documentation: https://joshiwavm.github.io/Luv_finder/
 ```bash
 conda create -n luv python=3.12 && conda activate luv
 git clone https://github.com/Joshiwavm/Luv_finder && cd Luv_finder
-pip install -e ".[casa,dev]"        # add ,jax for jax-finufft (not used yet)
+pip install -e ".[casa,dev]"
 ```
 
 Runs natively on Apple Silicon (casatools ships arm64 wheels for Python 3.12,

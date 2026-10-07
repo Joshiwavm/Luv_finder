@@ -3,7 +3,7 @@
 # size_point mock source from this file, so template and injected source always agree.
 # Beam FWHM 4.78" at 40 GHz: sqrt(BMAJ*BMIN) of the centre channel (5.12" x 4.47")
 # measured on the noiseless size_point image; k beams is sigma = k * 4.78 / 2.355.
-dra: 6.0                    # model convention, sign-flipped from the mock
+dra: 6.0
 ddec: 8.0
 width: 300
 bmin: 0.25

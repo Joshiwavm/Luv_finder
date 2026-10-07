@@ -1,175 +1,166 @@
-"""Least-squares fit of catalogued lines in the visibilities.
+"""Least-squares fit of catalogued lines in the visibilities, by Newton steps on per-channel moments.
 
-Detection stays a grid search (:mod:`~luv_finder.matchedfilter`, :mod:`~luv_finder.catalogue`); each
-catalogued line is then refined by a deterministic fit of the package's source model: an elliptical
-Gaussian on the sky (position ``dra``, ``ddec``, axes ``bmaj``, ``bmin`` as sigma in arcsec, ``pa``)
-whose spectrum is a Gaussian line on a polynomial continuum of the same shape,
-
-    ``F(nu) = A exp(-(nu - nu0)^2 / (2 s^2)) + P(nu)``,
-
-``s`` the sigma of a FWHM ``width`` in km/s at ``nu0`` and ``P`` of degree ``continuum_order`` in the
-channel index scaled to [-1, 1] over the line's window, as in the search. In pointing p the model
-visibility is ``PB_p(nu) F(nu) E(u, v) e^{+i phi}`` (:class:`~luv_finder.model.Gaussian`), ``PB_p``
-the primary beam at the source, so ``A`` and ``P`` are intrinsic flux densities.
-
-The fit is exact in the visibilities without visiting them one by one. Over every visibility of the
-line's window in every pointing that covers it,
-
-    ``chi^2 = sum w |V - model|^2 = const - 2 sum_nu F S + sum_nu F^2 Q``,
-
-with ``S = sum_p PB_p sig_p`` and ``Q = sum_p PB_p^2 W_p`` from the template-weighted spectra at the
-trial position and shape (:func:`~luv_finder.matchedfilter.template_spectrum`). So at a fixed
-position and shape the spectrum is a weighted least-squares fit to ``S / Q`` with weights ``Q``,
-linear in ``A`` and ``P`` and non-linear in (``nu0``, ``width``) only (variable projection); the
-position and shape are optimised on that profiled chi^2 by Nelder-Mead, one collapse per covering
-pointing per step.
-
-Errors are the inverse Fisher matrix, half the numerical Hessian of chi^2 in every free parameter at
-the optimum, with the visibility weights as the noise. Neighbouring channels share noise (ALMA's
-Hanning response correlates them by 2/3 and 1/6), which the chi^2 treats as independent: the fit is
-still unbiased, but its errors would be too small. They are corrected by the sandwich estimator
-``F^-1 (J^T R J) F^-1`` over the channels, ``J`` the whitened derivatives of the spectrum model and
-``R`` the channel correlation measured on the jackknife
-(:func:`~luv_finder.data.channel_correlation`): a factor per spectral parameter, and one for the
-spatial parameters, whose information follows the model spectrum.
+The model in pointing p is ``a_p(nu) E(u, v) e^{+i phi}``, ``a_p = PB_p F``: an elliptical Gaussian
+of sky covariance ``(s_ee, s_nn, s_en)`` whose spectrum ``F`` is a Gaussian line on a polynomial
+continuum. Every derivative of ``E e^{+i phi}`` in position and shape is itself times a polynomial
+in (u, v), so one pass over the visibilities (:func:`~luv_finder.kernel.point_moments`) gives
+chi^2, its gradient and the Gauss-Newton matrix ``J^T W J`` in every parameter exactly. Errors are
+``2 (J^T W J)^-1``, corrected for the channel correlation by a sandwich estimator over the channels.
 """
 
 from __future__ import annotations
 
 import warnings
-from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass
 
+import jax
+import jax.numpy as jnp
 import numpy as np
 from astropy.table import Table
 from scipy import linalg, optimize
 
 from .data import Chunk, DataHandler, load, sky_direction
 from .data import channel_correlation as measure_correlation
-from .matchedfilter import limit_cores, on_device, template_spectrum
-from .model import C_KMS, FWHM_TO_SIGMA
+from .kernel import DATA_POWERS, WEIGHT_POWERS, limit_cores, on_device, point_moments
+from .model import C_KMS, FWHM_TO_SIGMA, covariance, rotated
 from .utils import primary_beam
-
-#: Spatial parameters: arcsec, the axes as sigma, and deg east of north.
-SPATIAL = ("dra", "ddec", "bmaj", "bmin", "pa")
 
 #: Line flux per peak flux density and FWHM, as :meth:`~luv_finder.matchedfilter.SearchResult.integrated_flux`.
 LINE_FLUX = np.sqrt(2 * np.pi) * FWHM_TO_SIGMA
 
+#: Quantities reported per line, each with an ``_error``, and their units.
+REPORTED = {
+    "dra": "arcsec",
+    "ddec": "arcsec",
+    "bmaj": "arcsec",
+    "bmin": "arcsec",
+    "pa": "deg",
+    "freq_ghz": "GHz",
+    "width": "km/s",
+    "peak": "Jy",
+    "line_flux": "Jy km/s",
+    "continuum": "Jy",
+}
+
 #: Columns :func:`fit_lines` adds, with their units.
 COLUMNS = {
-    "fit_dra": "arcsec",
-    "fit_dra_error": "arcsec",
-    "fit_ddec": "arcsec",
-    "fit_ddec_error": "arcsec",
+    **{f"fit_{k}{e}": u for k, u in REPORTED.items() for e in ("", "_error")},
     "fit_ra": "deg",
     "fit_dec": "deg",
-    "fit_bmaj": "arcsec",
-    "fit_bmaj_error": "arcsec",
-    "fit_bmin": "arcsec",
-    "fit_bmin_error": "arcsec",
-    "fit_pa": "deg",
-    "fit_pa_error": "deg",
-    "fit_freq_ghz": "GHz",
-    "fit_freq_ghz_error": "GHz",
-    "fit_width": "km/s",
-    "fit_width_error": "km/s",
-    "fit_peak": "Jy",
-    "fit_peak_error": "Jy",
-    "fit_line_flux": "Jy km/s",
-    "fit_line_flux_error": "Jy km/s",
-    "fit_continuum": "Jy",
-    "fit_continuum_error": "Jy",
     "fit_chi2_reduced": None,
     "fit_n_pointings": None,
-    "fit_point": None,
     "fit_converged": None,
 }
 
-#: Nelder-Mead tolerances: on the parameters in units of its first steps (a quarter of the
-#: resolution, 30 deg for ``pa``), and on chi^2.
-XATOL, FATOL = 1e-3, 1e-4
+#: Catalogue columns a fit starts from; the source shape defaults to a point.
+START = ("dra", "ddec", "freq_ghz", "width", "bmaj", "bmin", "pa")
+
+_WEIGHT = {p: k for k, p in enumerate(WEIGHT_POWERS)}
+#: Weight moments of the data powers, and of the products of two of them.
+_SINGLE = np.array([_WEIGHT[p] for p in DATA_POWERS])
+_PAIR = np.array([[_WEIGHT[(i + k, j + l)] for k, l in DATA_POWERS] for i, j in DATA_POWERS])
+#: d ln(E e^{+i phi}) / d(dra, ddec, s_ee, s_nn, s_en) over the data powers, u and v in cycles per arcsec.
+_GAMMA = np.zeros((5, len(DATA_POWERS)), dtype=complex)
+for _row, _power, _value in (
+    (0, (1, 0), 2j * np.pi),
+    (1, (0, 1), 2j * np.pi),
+    (2, (2, 0), -2 * np.pi**2),
+    (3, (0, 2), -2 * np.pi**2),
+    (4, (1, 1), -4 * np.pi**2),
+):
+    _GAMMA[_row, DATA_POWERS.index(_power)] = _value
 
 
-class LineWindow:
-    """The window holding one line in every pointing that covers it, and the chi^2 of the line model.
+def _spectrum(theta, freq, basis):
+    """``F``; ``theta`` is dra, ddec (arcsec), s_ee, s_nn, s_en (arcsec^2), nu0 (Hz), width (km/s), peak, c (Jy)."""
+    sigma = theta[5] * theta[6] * FWHM_TO_SIGMA / C_KMS
+    return theta[7] * jnp.exp(-0.5 * ((freq - theta[5]) / sigma) ** 2) + basis @ theta[8:]
 
-    Parameters
-    ----------
-    chunks : list of Chunk
-        The same spectral window of each covering pointing.
-    dish_diameter : float
-        m, for the primary beam.
-    continuum_order : int or None
-        Degree of the continuum polynomial; None fits none.
-    rho : array, optional
-        Channel correlation from lag 0 (see :func:`~luv_finder.data.channel_correlation`); None
-        for independent channels.
-    """
 
-    def __init__(
-        self, chunks: list[Chunk], dish_diameter: float, continuum_order: int | None = 2, rho: np.ndarray | None = None
-    ):
-        self.rho = None if rho is None or len(rho) == 1 else np.asarray(rho, dtype=float)
-        self.freq = np.asarray(chunks[0].freq, dtype=float)
-        if not all(np.allclose(c.freq, self.freq, rtol=1e-9, atol=0) for c in chunks[1:]):
-            raise ValueError("the pointings' channel frequencies differ; only one spectral setup can be fitted")
-        self.offsets = np.array([c.offset for c in chunks], dtype=float)
-        self.chunks = [on_device(c) for c in chunks]
-        self.dish_diameter = dish_diameter
-        n_basis = 0 if continuum_order is None else continuum_order + 1
-        self.basis = np.linspace(-1.0, 1.0, self.freq.size)[:, None] ** np.arange(n_basis)
-        self._statistics: dict[tuple, tuple] = {}
+def _beam(theta, freq, offset, dish):
+    return primary_beam(jnp.hypot(theta[0] - offset[0], theta[1] - offset[1]), freq, dish, xp=jnp)
 
-    def statistics(self, spatial) -> tuple[np.ndarray, np.ndarray]:
-        """``S`` and ``Q``, ``(n_chan,)`` each, at ``spatial`` = (dra, ddec, bmaj, bmin, pa); cached."""
-        key = tuple(float(p) for p in spatial)
-        if key not in self._statistics:
-            with ThreadPoolExecutor(len(self.chunks)) as pool:
-                spectra = list(pool.map(lambda c: template_spectrum(c, *key), self.chunks))
-            sig, weight = (np.array(a) for a in zip(*spectra, strict=True))
-            distance = np.hypot(key[0] - self.offsets[:, :1], key[1] - self.offsets[:, 1:])
-            pb = primary_beam(distance, self.freq, self.dish_diameter)
-            self._statistics[key] = (pb * sig).sum(axis=0), (pb**2 * weight).sum(axis=0)
-        return self._statistics[key]
 
-    def design(self, nu0: float, width: float) -> np.ndarray:
-        """Columns of ``F``: the unit-peak line at ``nu0`` (Hz) of FWHM ``width`` (km/s) and the continuum basis."""
-        sigma = nu0 * width * FWHM_TO_SIGMA / C_KMS
-        return np.column_stack([np.exp(-0.5 * ((self.freq - nu0) / sigma) ** 2), self.basis])
+def _amplitude(theta, freq, basis, offset, dish):
+    """``a = PB F`` of one pointing per channel."""
+    return _beam(theta, freq, offset, dish) * _spectrum(theta, freq, basis)
 
-    def chi2(self, spectral, spatial) -> float:
-        """chi^2 less the data's own ``sum w |V|^2``; ``spectral`` is (A, c_0, ..., nu0, width)."""
-        S, Q = self.statistics(spatial)
-        F = self.design(*spectral[-2:]) @ spectral[:-2]
-        return float(F**2 @ Q - 2 * F @ S)
 
-    def profile(self, spatial, start, bounds) -> tuple[float, np.ndarray, optimize.OptimizeResult]:
-        """The best spectrum at ``spatial``: its :meth:`chi2`, (A, c_0, ..., nu0, width) and the non-linear fit.
+@jax.jit
+def _normal(a, da, data, weight):
+    """chi^2 (less ``sum w |V|^2``), its gradient and ``2 J^T W J`` of one pointing from its moments."""
+    gamma = jnp.zeros((da.shape[1], len(DATA_POWERS)), dtype=complex).at[:5].set(_GAMMA)
+    single, pair, total = weight[:, _SINGLE], weight[:, _PAIR], weight[:, 0]
+    chi2 = jnp.sum(a**2 * total - 2 * a * data[:, 0].real)
+    # sum w (V - M)^* dM and sum w M^* dM, then sum w dM^* dM
+    cross = jnp.einsum("n,km,nm->k", a, gamma, data.conj()) + da.T @ data[:, 0].conj()
+    model = jnp.einsum("n,km,nm->k", a**2, gamma, single) + da.T @ (a * total)
+    left = jnp.einsum("km,nm->nk", gamma.conj(), single)
+    right = jnp.einsum("km,nm->nk", gamma, single)
+    jtj = (
+        jnp.einsum("n,km,nmo,lo->kl", a**2, gamma.conj(), pair, gamma)
+        + jnp.einsum("n,nk,nl->kl", a, left, da)
+        + jnp.einsum("n,nk,nl->kl", a, da, right)
+        + jnp.einsum("n,nk,nl->kl", total, da, da)
+    )
+    return chi2, 2 * (model - cross).real, 2 * jtj.real
 
-        ``start`` and ``bounds`` (a pair of arrays) set the search over (nu0, width); A and the
-        continuum follow by linear least squares at every (nu0, width).
-        """
-        S, Q = self.statistics(spatial)
-        ok = Q > 0
-        root, d = np.sqrt(Q[ok]), S[ok] / Q[ok]
 
-        def linear(theta):
-            G = root[:, None] * self.design(*theta)[ok]
-            coef = np.linalg.lstsq(G, root * d, rcond=None)[0]
-            return coef, root * d - G @ coef
+def _moments(theta, chunks) -> list:
+    """Every pointing's moments at the position and shape of ``theta``: the one pass over the visibilities."""
+    return [point_moments(c, theta[0], theta[1], tuple(theta[2:5])) for c in chunks]
 
-        scale = (self.freq[1] - self.freq[0], 0.1 * start[1])
-        nonlinear = optimize.least_squares(lambda t: linear(t)[1], start, bounds=bounds, x_scale=scale, xtol=1e-12)
-        coef, residual = linear(nonlinear.x)
-        return float(residual @ residual - d**2 @ Q[ok]), np.concatenate([coef, nonlinear.x]), nonlinear
+
+def _system(theta, moments, chunks, freq, basis, dish):
+    """chi^2, gradient and Gauss-Newton matrix of the window, and its ``S``, ``Q`` spectra, from ``moments``."""
+    chi2, grad, hess, S, Q = 0.0, 0.0, 0.0, 0.0, 0.0
+    for c, (data, weight) in zip(chunks, moments, strict=True):
+        args = (theta, freq, basis, c.offset, dish)
+        a, da = _amplitude(*args), jax.jacfwd(_amplitude)(*args)
+        pb = _beam(theta, freq, c.offset, dish)
+        terms = _normal(a, da, data, weight)
+        chi2, grad, hess = chi2 + terms[0], grad + terms[1], hess + terms[2]
+        S, Q = S + pb * data[:, 0].real, Q + pb**2 * weight[:, 0]
+    return chi2, grad, hess, S, Q
+
+
+def _reported(theta, freq, basis):
+    """The :data:`REPORTED` quantities; the axes (sigma) from the covariance's eigenvalues, 0 where unresolved."""
+    s_ee, s_nn, s_en = theta[2:5]
+    half, split = (s_ee + s_nn) / 2, jnp.hypot((s_ee - s_nn) / 2, s_en)
+    t = 2 * (theta[5] - freq[0]) / (freq[-1] - freq[0]) - 1
+    major, minor = half + split, half - split
+    return jnp.stack(
+        [
+            theta[0],
+            theta[1],
+            jnp.sqrt(jnp.maximum(major, 0.0)),
+            jnp.sqrt(jnp.maximum(minor, 0.0)),
+            jnp.degrees(0.5 * jnp.arctan2(2 * s_en, s_nn - s_ee)) % 180,
+            theta[5] / 1e9,
+            theta[6],
+            theta[7],
+            theta[7] * theta[6] * LINE_FLUX,
+            t ** jnp.arange(basis.shape[1]) @ theta[8:],
+        ]
+    )
+
+
+def _correlation_scale(theta, Q, freq, basis, rho) -> np.ndarray:
+    """Factors on the errors of ``theta`` for the channel correlation ``rho``: a sandwich over the channels."""
+    if rho is None or len(rho) == 1:
+        return np.ones(theta.size)
+    ok = Q > 0
+    root = np.sqrt(Q[ok])
+    J = root[:, None] * np.asarray(jax.jacfwd(_spectrum)(theta, freq, basis))[ok, 5:]
+    a = root * np.asarray(_spectrum(theta, freq, basis))[ok]
+    R = linalg.toeplitz(np.pad(rho, (0, freq.size - len(rho))))[np.ix_(ok, ok)]
+    inverse = np.linalg.pinv(J.T @ J)
+    spectral = np.sqrt(np.diag(inverse @ J.T @ R @ J @ inverse) / np.diag(inverse))
+    return np.concatenate([np.full(5, np.sqrt(a @ R @ a / (a @ a))), spectral])
 
 
 def _window_chunks(data: DataHandler, dra: float, ddec: float, nu: float, pb_limit: float) -> list[Chunk]:
-    """The window holding ``nu`` Hz, where it lies farthest from an edge, of each pointing with PB >= ``pb_limit``.
-
-    The primary beam is taken at (``dra``, ``ddec``) and ``nu``.
-    """
+    """The window holding ``nu`` Hz, farthest from its edges, of each pointing with PB >= ``pb_limit`` there."""
     best: dict[int, tuple[float, Chunk]] = {}
     for c in data.chunks:
         margin = min(nu - c.freq[0], c.freq[-1] - nu)
@@ -185,219 +176,9 @@ def _window_chunks(data: DataHandler, dra: float, ddec: float, nu: float, pb_lim
         raise ValueError(
             f"no pointing covers {nu / 1e9:.4f} GHz at ({dra:.2f}, {ddec:.2f}) arcsec with PB >= {pb_limit}"
         )
+    if not all(np.allclose(c.freq, chunks[0].freq, rtol=1e-9, atol=0) for c in chunks[1:]):
+        raise ValueError("the pointings' channel frequencies differ; only one spectral setup can be fitted")
     return chunks
-
-
-def _correlation_scale(window: LineWindow, spectral: np.ndarray, spatial, n_free: int) -> np.ndarray:
-    """Factors on the errors of (A, c_0, ..., nu0, width, free spatial...) for the channel correlation.
-
-    Sandwich estimator over the channels: ``sqrt(diag(F^-1 J^T R J F^-1) / diag(F^-1))`` for the
-    spectral parameters, ``J`` the derivatives of the spectrum model whitened by ``sqrt(Q)``, and
-    ``sqrt(a^T R a / a^T a)`` with ``a = sqrt(Q) F`` for the spatial ones. All ones without ``rho``.
-    """
-    n_spec = spectral.size
-    if window.rho is None:
-        return np.ones(n_spec + n_free)
-    _, Q = window.statistics(spatial)
-    ok = Q > 0
-    peak, nu0, width = spectral[0], spectral[-2], spectral[-1]
-    dnu, dw = 1e-3 * (window.freq[1] - window.freq[0]), 1e-3 * width
-    G = window.design(nu0, width)
-    line_nu0 = (window.design(nu0 + dnu, width)[:, 0] - window.design(nu0 - dnu, width)[:, 0]) / (2 * dnu)
-    line_w = (window.design(nu0, width + dw)[:, 0] - window.design(nu0, width - dw)[:, 0]) / (2 * dw)
-    root = np.sqrt(Q[ok])[:, None]
-    J = root * np.column_stack([G, peak * line_nu0, peak * line_w])[ok]
-    a = root[:, 0] * (G @ spectral[:-2])[ok]
-    full = np.zeros(window.freq.size)
-    full[: window.rho.size] = window.rho
-    R = linalg.toeplitz(full)[np.ix_(ok, ok)]
-    inverse = np.linalg.pinv(J.T @ J)
-    corrected = inverse @ (J.T @ R @ J) @ inverse
-    spectral_scale = np.sqrt(np.diag(corrected) / np.diag(inverse))
-    return np.concatenate([spectral_scale, np.full(n_free, np.sqrt(a @ R @ a / (a @ a)))])
-
-
-def _hessian(f, x: np.ndarray, h: np.ndarray) -> np.ndarray:
-    """Central-difference Hessian of ``f`` at ``x`` with steps ``h``."""
-    n = x.size
-
-    def at(*steps):
-        y = x.copy()
-        for i, s in steps:
-            y[i] += s * h[i]
-        return f(y)
-
-    f0, H = f(x), np.empty((n, n))
-    for i in range(n):
-        H[i, i] = (at((i, 1)) - 2 * f0 + at((i, -1))) / h[i] ** 2
-        for j in range(i):
-            corners = at((i, 1), (j, 1)) - at((i, 1), (j, -1)) - at((i, -1), (j, 1)) + at((i, -1), (j, -1))
-            H[i, j] = H[j, i] = corners / (4 * h[i] * h[j])
-    return H
-
-
-def _covariance(H: np.ndarray, droppable: np.ndarray) -> tuple[np.ndarray, bool]:
-    """``2 H^-1`` if ``H`` is positive definite, else over all but ``droppable`` (NaN there) if that is.
-
-    Returns the covariance and whether either was; NaN throughout if neither.
-    """
-    cov = np.full(H.shape, np.nan)
-    for keep in (np.ones(len(H), dtype=bool), ~droppable):
-        sub = H[np.ix_(keep, keep)]
-        diag = np.diag(sub)
-        if np.all(diag > 0) and np.linalg.eigvalsh(sub / np.sqrt(np.outer(diag, diag))).min() > 1e-10:
-            cov[np.ix_(keep, keep)] = 2 * np.linalg.inv(sub)
-            return cov, True
-    return cov, False
-
-
-@dataclass(frozen=True)
-class _Fit:
-    spectral: np.ndarray  # A, c_0, ..., nu0, width
-    spatial: np.ndarray  # SPATIAL
-    free: np.ndarray  # bool over SPATIAL
-    cov: np.ndarray  # over the spectral, then the free spatial parameters
-    chi2_reduced: float
-    converged: bool
-    at_bound: bool
-
-
-def _fit(window: LineWindow, spatial, free, step, start, res: float, limits: dict) -> _Fit:
-    """Nelder-Mead over the ``free`` spatial parameters on the profiled chi^2, then the Hessian at the optimum.
-
-    ``spatial`` is the start (and the value of the fixed parameters) and ``step`` the first steps
-    of the simplex, both over :data:`SPATIAL`; ``start`` (nu0 Hz, width km/s) starts the line,
-    ``res`` is the resolution in arcsec and ``limits`` the largest ``offset`` from the start and
-    ``size`` (sigma), arcsec.
-    """
-    dnu = window.freq[1] - window.freq[0]
-    kms = C_KMS / start[0]
-    bounds = (
-        np.array([window.freq[0], dnu * kms]),
-        np.array([window.freq[-1], (window.freq[-1] - window.freq[0]) * kms / 2]),
-    )
-    start = np.clip(start, *bounds)
-    radius = np.array([limits["offset"], limits["offset"], limits["size"], limits["size"], np.inf])
-    centre = np.array([*spatial[:2], 0.0, 0.0, 0.0])
-    # axes below 1% of the resolution change the envelope by < 0.2% on the longest baseline: a point
-    collapsed = 0.01 * res
-    step = step[free]
-
-    def place(values):
-        p = spatial.copy()
-        p[free] = values
-        return p
-
-    success = True
-    if free.any():
-        origin, n = spatial[free], free.sum()
-        result = optimize.minimize(
-            lambda z: window.profile(place(origin + z * step), start, bounds)[0],
-            np.zeros(n),
-            method="Nelder-Mead",
-            bounds=optimize.Bounds(
-                ((centre - radius)[free] - origin) / step, ((centre + radius)[free] - origin) / step
-            ),
-            options={"initial_simplex": np.vstack([np.zeros(n), np.eye(n)]), "xatol": XATOL, "fatol": FATOL},
-        )
-        spatial, success = place(origin + result.x * step), result.success
-    _, best, nonlinear = window.profile(spatial, start, bounds)
-    n_spec = best.size
-
-    def chi2(theta):
-        return window.chi2(theta[:n_spec], place(theta[n_spec:]))
-
-    # Hessian steps of about one sigma: from the linear fit, the non-linear one and the diagonal
-    S, Q = window.statistics(spatial)
-    G = window.design(*best[-2:])
-    h = np.concatenate(
-        [
-            np.sqrt(np.diag(np.linalg.pinv(G.T @ (Q[:, None] * G)))),
-            np.minimum(np.sqrt(np.diag(np.linalg.pinv(nonlinear.jac.T @ nonlinear.jac))), [2 * dnu, best[-1] / 3]),
-            np.array([res / 50, res / 50, res / 50, res / 50, 2.0])[free],
-        ]
-    )
-    h[:n_spec] = np.where(h[:n_spec] > 0, h[:n_spec], [*np.ones(n_spec - 2), dnu / 10, best[-1] / 20])
-    theta = np.concatenate([best, spatial[free]])
-    h_max = np.array([res / 2, res / 2, res / 2, res / 2, 20.0])[free]
-    f0 = chi2(theta)
-    for i, k in enumerate(range(n_spec, theta.size)):
-        e = np.zeros_like(theta)
-        e[k] = h[k]
-        curvature = (chi2(theta + e) - 2 * f0 + chi2(theta - e)) / h[k] ** 2
-        h[k] = np.clip(np.sqrt(2 / curvature), h[k], h_max[i]) if curvature > 0 else h_max[i]
-    pa = np.zeros(theta.size, dtype=bool)
-    pa[n_spec:] = np.asarray(SPATIAL)[free] == "pa"
-    cov, positive = _covariance(_hessian(chi2, theta, h), pa)
-    scale = _correlation_scale(window, best, spatial, int(free.sum()))
-    cov = cov * np.outer(scale, scale)
-
-    ok = Q > 0
-    chi2_spectrum = float(Q[ok] @ (S[ok] / Q[ok] - (G @ best[:-2])[ok]) ** 2)
-    return _Fit(
-        spectral=best,
-        spatial=spatial,
-        free=free,
-        cov=cov,
-        chi2_reduced=chi2_spectrum / max(int(ok.sum()) - n_spec, 1),
-        converged=bool(success and nonlinear.success and positive),
-        at_bound=bool(free[2:4].any() and not collapsed < np.abs(spatial[2:4]).max() < 0.99 * limits["size"]),
-    )
-
-
-def _columns(fit: _Fit, window: LineWindow, ref, point: bool) -> dict:
-    """The :data:`COLUMNS` of one fit."""
-    n_spec = fit.spectral.size
-    cov = fit.cov
-    error = np.full(len(SPATIAL), np.nan)
-    error[fit.free] = np.sqrt(np.diag(cov)[n_spec:])
-    (dra, ddec, bmaj, bmin, pa), (e_dra, e_ddec, e_bmaj, e_bmin, e_pa) = fit.spatial, error
-    bmaj, bmin = abs(bmaj), abs(bmin)
-    if bmin > bmaj:
-        bmaj, bmin, e_bmaj, e_bmin, pa = bmin, bmaj, e_bmin, e_bmaj, pa + 90
-    peak, coef, nu0, width = fit.spectral[0], fit.spectral[1:-2], fit.spectral[-2], fit.spectral[-1]
-
-    def propagate(gradient):
-        used = gradient != 0
-        return float(np.sqrt(gradient[used] @ cov[np.ix_(used, used)] @ gradient[used]))
-
-    flux_gradient = np.zeros(len(cov))
-    flux_gradient[[0, n_spec - 1]] = width * LINE_FLUX, peak * LINE_FLUX
-    span = window.freq[-1] - window.freq[0]
-    t, powers = -1 + 2 * (nu0 - window.freq[0]) / span, np.arange(coef.size)
-    continuum_gradient = np.zeros(len(cov))
-    continuum_gradient[1 : n_spec - 2] = t**powers
-    continuum_gradient[n_spec - 2] = coef[1:] @ (powers[1:] * t ** (powers[1:] - 1.0)) * 2 / span
-    ra, dec = np.degrees(sky_direction((dra, ddec), ref))
-    spectral_error = np.sqrt(np.diag(cov)[:n_spec])
-    return {
-        "fit_dra": dra,
-        "fit_dra_error": e_dra,
-        "fit_ddec": ddec,
-        "fit_ddec_error": e_ddec,
-        "fit_ra": ra,
-        "fit_dec": dec,
-        "fit_bmaj": bmaj,
-        "fit_bmaj_error": e_bmaj,
-        "fit_bmin": bmin,
-        "fit_bmin_error": e_bmin,
-        "fit_pa": np.nan if np.isnan(e_pa) else pa % 180,
-        "fit_pa_error": e_pa,
-        "fit_freq_ghz": nu0 / 1e9,
-        "fit_freq_ghz_error": spectral_error[-2] / 1e9,
-        "fit_width": width,
-        "fit_width_error": spectral_error[-1],
-        "fit_peak": peak,
-        "fit_peak_error": spectral_error[0],
-        "fit_line_flux": peak * width * LINE_FLUX,
-        "fit_line_flux_error": propagate(flux_gradient),
-        "fit_continuum": coef @ t**powers if coef.size else np.nan,
-        "fit_continuum_error": propagate(continuum_gradient) if coef.size else np.nan,
-        "fit_chi2_reduced": fit.chi2_reduced,
-        "fit_n_pointings": len(window.chunks),
-        "fit_point": point,
-        "fit_converged": fit.converged,
-    }
 
 
 def fit_line(
@@ -406,110 +187,142 @@ def fit_line(
     ddec: float,
     freq_ghz: float,
     width: float,
+    bmaj: float = 0.0,
+    bmin: float = 0.0,
+    pa: float = 0.0,
     continuum_order: int | None = 2,
-    point: bool = False,
-    fixed_position: bool = False,
     pb_limit: float = 0.2,
-    max_offset: float | None = None,
-    size_max: float | None = None,
     channel_correlation: str | dict | None = "measure",
 ) -> dict:
-    """Fit one line in the visibilities, starting from a catalogue position, frequency and width.
-
-    The fit uses the window holding ``freq_ghz`` (of two overlapping windows, the one it lies
-    deeper in) of every pointing whose primary beam at the start is at least ``pb_limit``. Unless
-    ``point``, the source is an elliptical Gaussian, started round with axes of a quarter of the
-    resolution (at most half ``size_max``); if that fit fails, does not give a positive-definite
-    Hessian (``pa`` alone may be unconstrained, for a round source), runs an axis to ``size_max``
-    or collapses both to zero (unresolved), it is refitted as a point source.
-
-    Parameters
-    ----------
-    data : DataHandler
-        Every pointing of the search, or at least those covering the line.
-    dra, ddec : float
-        Start position, arcsec in the sky frame.
-    freq_ghz, width : float
-        Start line centre (GHz) and FWHM (km/s). The FWHM is fitted between one channel and half
-        the window.
-    continuum_order : int or None
-        Degree of the continuum polynomial over the window; None fits none.
-    point : bool
-        Fit a point source: position and spectrum only.
-    fixed_position : bool
-        Keep the position at (``dra``, ``ddec``).
-    pb_limit : float
-        Pointings whose primary beam at the start is below this are left out.
-    max_offset : float, optional
-        Largest distance of the fitted position from the start along either axis, arcsec; default
-        the resolution.
-    size_max : float, optional
-        Largest axis (sigma), arcsec; default twice the resolution.
-    channel_correlation : "measure", None or dict
-        Noise correlation between channels for the errors: "measure" (default) on the jackknife
-        of the line's window, None for independent channels, or ``{spw: (1, rho_1, ...)}``.
-
-    Returns
-    -------
-    dict
-        The :data:`COLUMNS`, see :func:`fit_lines`.
-    """
-    res = data.metadata.minresolution()
-    limits = {"offset": res if max_offset is None else max_offset, "size": 2 * res if size_max is None else size_max}
+    """Fit one line, started from the matched filter's position, template shape (sigma, arcsec) and width."""
     chunks = _window_chunks(data, dra, ddec, freq_ghz * 1e9, pb_limit)
-    if channel_correlation == "measure":
-        rho = measure_correlation(chunks)
-    else:
-        rho = (channel_correlation or {}).get(chunks[0].spw)
-    window = LineWindow(chunks, data.metadata.dish_diameter, continuum_order, rho)
-    start = np.array([freq_ghz * 1e9, width])
-    size = min(res / 4, limits["size"] / 2)
-    step = np.array([res / 4, res / 4, size, size, 30.0])
-    moving = not fixed_position
-    if not point:
-        free = np.array([moving, moving, True, True, True])
-        fit = _fit(window, np.array([dra, ddec, size, size, 0.0]), free, step, start, res, limits)
-        point = not fit.converged or fit.at_bound
-    if point:
-        free = np.array([moving, moving, False, False, False])
-        fit = _fit(window, np.array([dra, ddec, 0.0, 0.0, 0.0]), free, step, start, res, limits)
-    return _columns(fit, window, data.metadata.ref, point)
+    rho = (
+        measure_correlation(chunks)
+        if channel_correlation == "measure"
+        else (channel_correlation or {}).get(chunks[0].spw)
+    )
+    dish, freq = data.metadata.dish_diameter, np.asarray(chunks[0].freq, dtype=float)
+    n_continuum = 0 if continuum_order is None else continuum_order + 1
+
+    with jax.enable_x64(True):
+        chunks = [on_device(c) for c in chunks]
+        spectral = (jnp.asarray(freq), jnp.linspace(-1.0, 1.0, freq.size)[:, None] ** jnp.arange(n_continuum))
+
+        def system(theta, moments):
+            return [np.asarray(x) for x in _system(jnp.asarray(theta), moments, chunks, *spectral, dish)]
+
+        def solve(theta, free, at):
+            """Newton over ``theta[free]`` in units of the errors, to 1e-3 of them; ``at`` gives chi^2, grad, hess."""
+            cache: dict[bytes, tuple] = {}
+
+            def scaled(z):
+                if z.tobytes() not in cache:
+                    t = theta.copy()
+                    t[free] += scale[free] * z
+                    value, grad, hess = at(t)[:3]
+                    cache.clear()
+                    cache[z.tobytes()] = (
+                        value,
+                        grad[free] * scale[free],
+                        hess[free, free] * np.outer(scale, scale)[free, free],
+                    )
+                return cache[z.tobytes()]
+
+            result = optimize.minimize(
+                lambda z: float(scaled(z)[0]),
+                np.zeros(scale[free].size),
+                jac=lambda z: scaled(z)[1],
+                hess=lambda z: scaled(z)[2],
+                method="trust-exact",
+                options={"gtol": 1e-3, "initial_trust_radius": 10.0},
+            )
+            theta = theta.copy()
+            theta[free] += scale[free] * result.x
+            return theta, result.success
+
+        SPATIAL, SPECTRAL = slice(0, 5), slice(5, None)
+
+        def profiled(theta):
+            """One pass at theta's position and shape, the spectrum fitted exactly on its moments."""
+            same = np.array_equal(theta[SPATIAL], best["theta"][SPATIAL])
+            moments = best["moments"] if same else _moments(theta, chunks)
+            theta, ok = solve(
+                np.concatenate([theta[SPATIAL], best["theta"][SPECTRAL]]),
+                SPECTRAL,
+                lambda t: system(t, moments),
+            )
+            value, grad = system(theta, moments)[:2]
+            best.update(theta=theta, ok=ok, moments=moments)
+            return value, grad
+
+        # start: the peak and continuum, linear in the model, by one Newton step from zero
+        theta0 = np.array([dra, ddec, *covariance(bmaj, bmin, pa), freq_ghz * 1e9, width, 0.0, *np.zeros(n_continuum)])
+        moments = _moments(theta0, chunks)
+        _, grad, hess, _, _ = system(theta0, moments)
+        theta0[7:] -= np.linalg.solve(hess[7:, 7:], grad[7:])
+        scale = 1 / np.sqrt(np.diag(system(theta0, moments)[2]) / 2)
+        best = {"theta": theta0, "moments": moments}
+
+        # position and shape as dra, ddec, major and minor variance and pa: sizes >= 0 are bounds
+        y0 = np.array([dra, ddec, bmaj**2, bmin**2, pa])
+        y_scale = np.array([*scale[:4], 10.0])
+
+        def to_theta(y):
+            return jnp.stack([y[0], y[1], *rotated(y[2], y[3], y[4], xp=jnp)])
+
+        def objective(z):
+            y = jnp.asarray(y0 + y_scale * z)
+            t = theta0.copy()
+            t[SPATIAL] = np.asarray(to_theta(y))
+            value, grad = profiled(t)
+            return float(value), np.asarray(grad[SPATIAL] @ jax.jacfwd(to_theta)(y)) * y_scale
+
+        result = optimize.minimize(
+            objective,
+            np.zeros(5),
+            jac=True,
+            method="L-BFGS-B",
+            bounds=[(None, None), (None, None), (-y0[2] / y_scale[2], None), (-y0[3] / y_scale[3], None), (None, None)],
+            options={"gtol": 1e-3},
+        )
+        objective(result.x)
+        converged = result.success and best["ok"]
+        _, _, hess, S, Q = system(best["theta"], best["moments"])
+        best = best["theta"]
+        factor = _correlation_scale(jnp.asarray(best), Q, *spectral, rho)
+        cov = 2 * np.linalg.inv(hess) * np.outer(factor, factor)
+        values = np.array(_reported(jnp.asarray(best), *spectral))
+        J = np.asarray(jax.jacfwd(_reported)(jnp.asarray(best), *spectral))
+        F = np.asarray(_spectrum(jnp.asarray(best), *spectral))
+
+    errors = np.sqrt(np.diag(J @ cov @ J.T))
+    # an axis on its bound (variance below 1e-6 of its scale) has a one-sided error; a point has no angle
+    on_bound = np.sort((y0 + y_scale * result.x)[2:4])[::-1] < 1e-6 * y_scale[2:4].min()
+    errors[2:4][on_bound] = np.nan
+    values[4], errors[4] = (np.nan, np.nan) if on_bound.all() else (values[4], errors[4])
+    ok = Q > 0
+    ra, dec = np.degrees(sky_direction(values[:2], data.metadata.ref))
+    out = {f"fit_{k}": v for k, v in zip(REPORTED, values, strict=True)}
+    out |= {f"fit_{k}_error": e if np.isfinite(e) else np.nan for k, e in zip(REPORTED, errors, strict=True)}
+    return out | {
+        "fit_ra": ra,
+        "fit_dec": dec,
+        "fit_chi2_reduced": float(Q[ok] @ (S[ok] / Q[ok] - F[ok]) ** 2) / max(int(ok.sum()) - 3 - n_continuum, 1),
+        "fit_n_pointings": len(chunks),
+        "fit_converged": bool(converged),
+        "spectrum": {
+            "freq_ghz": freq / 1e9,
+            "flux": np.where(ok, S / np.where(ok, Q, 1.0), np.nan),
+            "error": np.where(ok, 1 / np.sqrt(np.where(ok, Q, 1.0)), np.nan),
+            "model": F,
+        },
+    }
 
 
 def fit_lines(data: DataHandler | str, cat: Table, rows=None, cores: int | None = None, **kwargs) -> Table:
-    """Fit catalogued lines in the visibilities (see the module docstring and :func:`fit_line`).
+    """A copy of ``cat`` with the :data:`COLUMNS` of every ``rows`` line (default the detected); failures warn.
 
-    Each line starts from its catalogue ``dra``, ``ddec``, ``freq_ghz`` and ``width``. A line whose
-    fit raises is warned about and left unfitted; the others are not affected.
-
-    Parameters
-    ----------
-    data : DataHandler or str
-        The searched data, or a measurement set or NPZ to load whole.
-    cat : astropy.table.Table
-        From :func:`~luv_finder.catalogue.catalogue`.
-    rows : array of bool, optional
-        Lines to fit; default the ``detected`` ones (all if there is no such column).
-    cores : int, optional
-        See :func:`~luv_finder.matchedfilter.limit_cores`.
-    **kwargs
-        Passed to :func:`fit_line`.
-
-    Returns
-    -------
-    astropy.table.Table
-        A copy of ``cat`` with the :data:`COLUMNS`: the fitted position ``fit_dra``, ``fit_ddec``
-        (arcsec) and ``fit_ra``, ``fit_dec`` (deg); the source axes ``fit_bmaj`` >= ``fit_bmin``
-        (sigma, arcsec, deconvolved; 0 for a point source) and ``fit_pa`` (deg east of north, in
-        [0, 180), NaN where unconstrained); the line centre ``fit_freq_ghz``, FWHM ``fit_width``
-        (km/s), intrinsic peak flux density ``fit_peak`` (Jy) and line flux ``fit_line_flux`` (Jy
-        km/s); the continuum at the line centre ``fit_continuum`` (Jy), each with an ``_error``;
-        ``fit_chi2_reduced`` of the combined spectrum ``S / Q`` against the fitted line and
-        continuum; ``fit_n_pointings`` fitted together; ``fit_point`` if the source was fitted as a
-        point; ``fit_converged`` if the optimisers converged and the Hessian is positive definite.
-        Errors are formal, corrected for the channel correlation (see the module docstring), which
-        is measured once per spectral window unless ``channel_correlation`` is passed. Unfitted
-        lines hold NaN, 0 and False.
+    ``meta["spectra"]`` holds each fitted line's PB-corrected spectrum at its fitted position and the best-fit model.
     """
     limit_cores(cores)
     if not isinstance(data, DataHandler):
@@ -520,16 +333,20 @@ def fit_lines(data: DataHandler | str, cat: Table, rows=None, cores: int | None 
         rows = cat["detected"] if "detected" in cat.colnames else np.ones(len(cat), dtype=bool)
     out = cat.copy()
     for name, unit in COLUMNS.items():
-        dtype = bool if name in ("fit_point", "fit_converged") else int if name == "fit_n_pointings" else float
+        dtype = bool if name == "fit_converged" else int if name == "fit_n_pointings" else float
         out[name] = np.full(len(cat), np.nan if dtype is float else 0, dtype=dtype)
         out[name].unit = unit
     for i in np.flatnonzero(rows):
-        start = (float(cat[k][i]) for k in ("dra", "ddec", "freq_ghz", "width"))
+        start = {k: float(cat[k][i]) for k in START if k in cat.colnames}
         try:
-            values = fit_line(data, *start, **kwargs)
+            values = fit_line(data, **start, **kwargs)
         except Exception as err:  # one line's failure must not cost the table
             warnings.warn(f"the fit of catalogue row {i} failed: {err}", stacklevel=2)
             continue
+        spectrum = values.pop("spectrum")
+        out.meta.setdefault("spectra", {})[str(int(cat["id"][i]) if "id" in cat.colnames else i)] = {
+            k: np.asarray(v).tolist() for k, v in spectrum.items()
+        }
         for name, value in values.items():
             out[name][i] = value
     return out

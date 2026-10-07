@@ -18,7 +18,7 @@ def test_spectrum_per_source(data, truth, plots):
     """Re/Im visibility spectra: data, jackknife and model, centred and shifted."""
     res = data.metadata.minresolution()
     for i, src in enumerate(truth["sources"]):
-        dra, ddec = src["position_model"]
+        dra, ddec = src["position"]
         model = Gaussian(
             dra=dra,
             ddec=ddec,
@@ -42,7 +42,7 @@ def test_spectrum_per_source(data, truth, plots):
 
 def test_response_figure(data, truth, plots):
     """Matched-filter S/N spectrum with the jackknife overlaid."""
-    positions = np.array([s["position_model"] for s in truth["sources"]])
+    positions = np.array([s["position"] for s in truth["sources"]])
     g = Gaussian()
     g.grid = {
         "dra": positions[:, 0],
@@ -72,7 +72,7 @@ def test_search_figures(data, truth, plots):
     mod.addcomponent(g)
     mf = MatchedFilter(data, mod)
     mf.run(jackknife=True)
-    marks = {f"line {s['line']['mean']} GHz": s["position_model"] for s in truth["sources"]}
+    marks = {f"line {s['line']['mean']} GHz": s["position"] for s in truth["sources"]}
     assert snr_map(mf, plots_dir=str(plots), name="snr_map", marks=marks).endswith(".png")
     assert noise_check(mf, plots_dir=str(plots), name="noise").endswith(".png")
 
@@ -104,10 +104,10 @@ def test_layout_and_scan_figures(data, plots):
 
 
 def test_amp_phase_and_dirty_map_figures(data, truth, plots):
-    from luv_finder.matchedfilter import dirty_maps
+    from luv_finder.imaging import dirty_maps
     from luv_finder.plotting import amp_phase_check, dirty_maps_check
 
-    marks = {f"line {s['line']['mean']} GHz": s["position_model"] for s in truth["sources"]}
+    marks = {f"line {s['line']['mean']} GHz": s["position"] for s in truth["sources"]}
     positions = {"phase centre": (0.0, 0.0), **marks}
     assert amp_phase_check(data, positions, plots_dir=str(plots), line_ghz=39.9).endswith(".png")
     axis = np.arange(-40.0, 40.1, 1.5)
@@ -193,7 +193,7 @@ def test_response_shape_figure(plots):
     """Null correlation of smoothed white noise, and cuts through a blob that has the same shape."""
     from scipy.ndimage import gaussian_filter
 
-    from luv_finder.catalogue import noise_correlation
+    from luv_finder.catalogue import response_correlation
     from luv_finder.matchedfilter import SearchResult
     from luv_finder.model import C_KMS, FWHM_TO_SIGMA
     from luv_finder.plotting import response_shape_check
@@ -219,7 +219,7 @@ def test_response_shape_figure(plots):
     noisy, jackknife = (n / n.std(axis=(0, 1, 3), keepdims=True) for n in map(noise, (1, 2)))
     data = noisy + np.stack([blob(s) for s in sigmas], 2)
     result = search(data, search(jackknife))
-    nc = noise_correlation(result, max_lag=10.0)
+    nc = response_correlation(result, max_lag=10.0)
     peaks = []
     for t in range(len(widths)):
         i, j, k = np.unravel_index(result.snr[:, :, t].argmax(), shape)

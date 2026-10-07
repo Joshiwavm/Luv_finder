@@ -7,6 +7,7 @@ about 1.13 lambda / D, and CASA models the beam as an Airy pattern scaled so tha
 from __future__ import annotations
 
 import astropy.constants as const
+import jax
 import numpy as np
 from scipy.optimize import brentq
 from scipy.special import j1, jn_zeros
@@ -16,6 +17,9 @@ from ._casa import tools
 C = const.c.value
 ARCSEC = np.deg2rad(1 / 3600)
 
+#: Arrays processed in blocks stay near this size in memory.
+BLOCK_BYTES = 2**31
+
 #: Measured primary-beam FWHM in units of lambda / D (ALMA Technical Handbook).
 FWHM_FACTOR = 1.13
 
@@ -23,11 +27,11 @@ FWHM_FACTOR = 1.13
 _X_NULL = jn_zeros(1, 1)[0]
 
 
-def _airy(x):
-    """Airy power pattern ``(2 J1(x) / x)**2``, equal to 1 at ``x = 0``."""
-    x = np.asarray(x, dtype=float)
-    safe = np.where(x == 0, 1.0, x)
-    return np.where(x == 0, 1.0, (2 * j1(safe) / safe) ** 2)
+def _airy(x, xp=np):
+    """Airy power pattern ``(2 J1(x) / x)**2``, equal to 1 at ``x = 0``; ``xp`` is numpy or ``jax.numpy``."""
+    bessel = j1 if xp is np else lambda z: jax.scipy.special.bessel_jn(z, v=1)[1]
+    safe = xp.where(x == 0, 1.0, x)
+    return xp.where(x == 0, 1.0, (2 * bessel(safe) / safe) ** 2)
 
 
 #: Argument at which the Airy pattern drops to one half.
@@ -35,54 +39,17 @@ X_HALF = brentq(lambda x: _airy(x) - 0.5, 1.0, _X_NULL)
 
 
 def primary_beam_fwhm(freq_hz, dish_diameter, fwhm_factor=FWHM_FACTOR):
-    """Primary-beam FWHM in arcsec.
-
-    Parameters
-    ----------
-    freq_hz : float or array_like
-        Observing frequency in Hz.
-    dish_diameter : float
-        Antenna diameter in metres.
-    fwhm_factor : float
-        FWHM in units of lambda / D.
-    """
-    return fwhm_factor * (C / np.asarray(freq_hz, dtype=float)) / dish_diameter / ARCSEC
+    return fwhm_factor * C / (freq_hz * dish_diameter * ARCSEC)
 
 
-def primary_beam(offset_arcsec, freq_hz, dish_diameter, fwhm_factor=FWHM_FACTOR):
-    """Primary-beam attenuation in [0, 1] at an angular offset from the pointing centre.
-
-    An Airy pattern ``(2 J1(x) / x)**2`` whose half-power point lies at half the FWHM.
-
-    Parameters
-    ----------
-    offset_arcsec : float or array_like
-        Distance from the pointing centre in arcsec; broadcasts against ``freq_hz``.
-    freq_hz : float or array_like
-        Observing frequency in Hz.
-    dish_diameter : float
-        Antenna diameter in metres.
-    fwhm_factor : float
-        FWHM in units of lambda / D.
-    """
+def primary_beam(offset_arcsec, freq_hz, dish_diameter, fwhm_factor=FWHM_FACTOR, xp=np):
+    """Primary-beam attenuation in [0, 1] at an angular offset from the pointing centre."""
     fwhm = primary_beam_fwhm(freq_hz, dish_diameter, fwhm_factor)
-    return _airy(2 * X_HALF * np.asarray(offset_arcsec, dtype=float) / fwhm)
+    return _airy(2 * X_HALF * xp.asarray(offset_arcsec, dtype=float) / fwhm, xp)
 
 
 def primary_beam_radius(level, freq_hz, dish_diameter, fwhm_factor=FWHM_FACTOR):
-    """Offset in arcsec at which the main lobe falls to ``level`` (``0 < level <= 1``).
-
-    Parameters
-    ----------
-    level : float
-        Attenuation to solve for.
-    freq_hz : float or array_like
-        Observing frequency in Hz.
-    dish_diameter : float
-        Antenna diameter in metres.
-    fwhm_factor : float
-        FWHM in units of lambda / D.
-    """
+    """Offset in arcsec at which the main lobe falls to ``level`` (``0 < level <= 1``)."""
     if not 0 < level <= 1:
         raise ValueError(f"level must be in (0, 1], got {level}")
     x = 0.0 if level == 1 else brentq(lambda x: _airy(x) - level, 0.0, _X_NULL)
@@ -120,7 +87,7 @@ def getstatwtweights(vis: str, seed: int = 0) -> None:
             white_noise = np.nanstd(0.5 * (uvreal[pos] - uvreal[neg]))
             noise = rng.normal(white_noise, white_noise / np.sqrt(uvwght.size), size=uvwght.shape)
             wgts = 1 / noise**2
-            rec["weight"][0] = wgts / 4  # TODO: should be /2; kept for continuity with existing mocks
+            rec["weight"][0] = wgts / 4
             rec["weight"][1] = wgts / 4
             ms.putdata(rec)
             ms.reset()

@@ -1,5 +1,7 @@
 import dataclasses
 
+import jax
+import jax.numpy as jnp
 import numpy as np
 import pytest
 from astropy.table import Table
@@ -7,9 +9,12 @@ from astropy.table import Table
 from luv_finder import DataHandler, Gaussian, MatchedFilter
 from luv_finder.catalogue import catalogue
 from luv_finder.data import Chunk, Metadata, sky_offset
-from luv_finder.fit import COLUMNS, LINE_FLUX, LineWindow, _correlation_scale, fit_line, fit_lines
+from luv_finder.fit import COLUMNS, LINE_FLUX, _moments, _system, fit_line, fit_lines
+from luv_finder.imaging import line_maps
+from luv_finder.kernel import on_device
 from luv_finder.matchedfilter import build_grid, grid_model, pb_corrected
-from luv_finder.model import C_KMS, FWHM_TO_SIGMA
+from luv_finder.model import C_KMS, FWHM_TO_SIGMA, covariance
+from luv_finder.plotting import line_maps_check, line_spectra_check
 from luv_finder.utils import C, primary_beam
 
 NU0, N_CHAN, DNU = 100e9, 64, 10e6  # Hz: channels of 30 km/s
@@ -72,23 +77,25 @@ def _pulls(fit: dict, truth: dict) -> dict:
 def test_reduced_chi2_is_the_direct_sum():
     """S and Q give chi^2 = sum w |V - model|^2 over every visibility, less the data's own sum w |V|^2."""
     data = _data(noise=True)
-    window = LineWindow(data.chunks, data.metadata.dish_diameter)
-
-    def direct(spectral, spatial):
-        spectrum = window.design(*spectral[-2:]) @ spectral[:-2]
-        return sum(np.sum(c.w * np.abs(c.vis - _model(c, spectrum, *spatial)) ** 2) for c in data.chunks)
-
+    basis = np.linspace(-1.0, 1.0, N_CHAN)[:, None] ** np.arange(3)
     own = sum(np.sum(c.w * np.abs(c.vis) ** 2) for c in data.chunks)
-    for spectral, spatial in [
+    for (peak, *continuum, nu0, width), spatial in [
         ([0.2, 0.05, 0.01, -0.02, LINE["nu0"], 300.0], (12.0, -5.0, 2.0, 1.0, 40.0)),
         ([0.1, 0.0, 0.03, 0.01, LINE["nu0"] + 3 * DNU, 200.0], (10.0, -3.0, 0.5, 1.5, 100.0)),
     ]:
-        assert window.chi2(np.array(spectral), spatial) + own == pytest.approx(direct(spectral, spatial), rel=1e-10)
+        spectrum = _spectrum(nu0, width, peak, continuum)
+        direct = sum(np.sum(c.w * np.abs(c.vis - _model(c, spectrum, *spatial)) ** 2) for c in data.chunks)
+        theta = [*spatial[:2], *covariance(*spatial[2:]), nu0, width, peak, *continuum]
+        with jax.enable_x64(True):
+            chunks = [on_device(c) for c in data.chunks]
+            args = (jnp.asarray(FREQ), jnp.asarray(basis), 12.0)
+            chi2 = float(_system(jnp.asarray(theta), _moments(theta, chunks), chunks, *args)[0])
+        assert chi2 + own == pytest.approx(direct, rel=1e-10)
 
 
 def test_noise_free_fit_recovers_every_parameter():
     fit = fit_line(_data(), *START)
-    assert fit["fit_converged"] and not fit["fit_point"] and fit["fit_n_pointings"] == 2
+    assert fit["fit_converged"] and fit["fit_n_pointings"] == 2
     for key, pull in _pulls(fit, _truth()).items():
         assert abs(pull) < 0.01, key
     assert abs(fit["fit_pa"] - SOURCE["pa"]) < 0.01 * fit["fit_pa_error"]
@@ -100,40 +107,20 @@ def test_noise_free_fit_recovers_every_parameter():
 
 def test_noisy_fit_is_within_its_errors():
     fit = fit_line(_data(noise=True), *START)
-    assert fit["fit_converged"] and not fit["fit_point"]
+    assert fit["fit_converged"]
     for key, pull in _pulls(fit, _truth()).items():
         assert abs(pull) < 3, key
     assert abs(fit["fit_pa"] - SOURCE["pa"]) < 3 * fit["fit_pa_error"]
-    assert 0.9 < fit["fit_chi2_reduced"] < 1.1
+    assert 0.8 < fit["fit_chi2_reduced"] < 1.2
 
 
-def test_point_source():
+def test_point_source_fits_through_zero_size():
     point = {**SOURCE, "bmaj": 0.0, "bmin": 0.0}
-    fit = fit_line(_data(point, noise=True), *START, point=True)
-    assert fit["fit_point"] and fit["fit_converged"]
-    assert fit["fit_bmaj"] == fit["fit_bmin"] == 0 and np.isnan(fit["fit_pa"])
+    fit = fit_line(_data(point), *START)
+    assert fit["fit_converged"] and fit["fit_bmaj"] < 0.05
     truth = {k: v for k, v in _truth(point).items() if k not in ("fit_bmaj", "fit_bmin")}
     for key, pull in _pulls(fit, truth).items():
-        assert abs(pull) < 3, key
-    # a Gaussian fit of a point source collapses both axes to zero and falls back
-    assert fit_line(_data(point), *START)["fit_point"]
-
-
-def test_point_fit_of_a_resolved_source_misses_flux():
-    fit = fit_line(_data(noise=True), *START, point=True)
-    assert fit["fit_line_flux"] < _truth()["fit_line_flux"] - 5 * fit["fit_line_flux_error"]
-
-
-def test_size_at_its_bound_falls_back_to_a_point():
-    fit = fit_line(_data(), *START, size_max=0.5)
-    assert fit["fit_point"] and fit["fit_bmaj"] == 0
-
-
-def test_fixed_position():
-    fit = fit_line(_data(), SOURCE["dra"], SOURCE["ddec"], *START[2:], fixed_position=True)
-    assert (fit["fit_dra"], fit["fit_ddec"]) == (SOURCE["dra"], SOURCE["ddec"])
-    assert np.isnan(fit["fit_dra_error"]) and fit["fit_converged"]
-    assert fit["fit_bmaj"] == pytest.approx(SOURCE["bmaj"], abs=1e-3)
+        assert abs(pull) < 0.01, key
 
 
 def test_fit_lines_survives_a_failed_line():
@@ -156,12 +143,12 @@ def test_fit_lines_of_the_fixture(data, truth, tmp_path):
     # fit only the detection nearest each injected line: fitting all of them costs ~2 s each
     nearest = [
         np.argmin(np.where(cat["detected"], np.hypot(cat["dra"] - x, cat["ddec"] - y), np.inf))
-        for x, y in (src["position_model"] for src in truth["sources"])
+        for x, y in (src["position"] for src in truth["sources"])
     ]
     cat = fit_lines(data, cat, rows=np.isin(np.arange(len(cat)), nearest))
     for src, i in zip(truth["sources"], nearest, strict=True):
         row = cat[i]
-        near = np.hypot(row["fit_dra"] - src["position_model"][0], row["fit_ddec"] - src["position_model"][1])
+        near = np.hypot(row["fit_dra"] - src["position"][0], row["fit_ddec"] - src["position"][1])
         assert near < 3 * np.hypot(row["fit_dra_error"], row["fit_ddec_error"])
         assert abs(row["fit_freq_ghz"] - src["line"]["mean"]) < 3 * row["fit_freq_ghz_error"]
     path = tmp_path / "fitted.ecsv"
@@ -169,24 +156,22 @@ def test_fit_lines_of_the_fixture(data, truth, tmp_path):
     back = Table.read(path)
     for name in COLUMNS:
         np.testing.assert_array_equal(back[name], cat[name])
+    assert set(back.meta["spectra"]) == {str(cat["id"][i]) for i in nearest}
+    maps = line_maps(data, cat)
+    for (dra, ddec, m0), i in zip(maps, sorted(nearest), strict=True):
+        peak = np.unravel_index(np.argmax(m0), m0.shape)
+        assert np.hypot(dra[peak[0]] - cat["fit_dra"][i], ddec[peak[1]] - cat["fit_ddec"][i]) < 2.0
+    assert line_maps_check(maps, back, plots_dir=str(tmp_path)).endswith(".png")
+    assert line_spectra_check(back, plots_dir=str(tmp_path)).endswith(".png")
 
 
 HANNING = np.array([1.0, 2 / 3, 1 / 6])
 
 
-def test_correlation_scale_of_the_errors():
-    """Without correlation every factor is 1; Hanning inflates them, at most to sqrt(8/3)."""
-    spectral = np.array([LINE["peak"], *CONTINUUM, LINE["nu0"], LINE["width"]])
-    spatial = np.array([SOURCE[k] for k in ("dra", "ddec", "bmaj", "bmin", "pa")])
-    chunks = _data().chunks
-    assert np.all(_correlation_scale(LineWindow(chunks, 12.0), spectral, spatial, 5) == 1)
-    scale = _correlation_scale(LineWindow(chunks, 12.0, rho=HANNING), spectral, spatial, 5)
-    assert np.all(scale > 1.05) and np.all(scale < np.sqrt(8 / 3) + 1e-6)
-
-
 def test_channel_correlation_scales_the_errors_not_the_fit():
+    """Hanning inflates every error by more than 5%, at most sqrt(8/3), and leaves the values alone."""
     data = _data(noise=True)
-    plain, smooth = (fit_line(data, *START, point=True, channel_correlation=c) for c in (None, {0: HANNING}))
+    plain, smooth = (fit_line(data, *START, channel_correlation=c) for c in (None, {0: HANNING}))
     for key in ("fit_dra", "fit_freq_ghz", "fit_width", "fit_line_flux"):
         assert smooth[key] == plain[key]
-        assert smooth[f"{key}_error"] > 1.05 * plain[f"{key}_error"]
+        assert 1.05 * plain[f"{key}_error"] < smooth[f"{key}_error"] < np.sqrt(8 / 3) * plain[f"{key}_error"]

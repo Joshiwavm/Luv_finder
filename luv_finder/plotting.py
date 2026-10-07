@@ -15,6 +15,8 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 import numpy as np  # noqa: E402
 
+from .model import C_KMS  # noqa: E402
+
 
 def _save(fig, plots_dir: str, name: str) -> str:
     os.makedirs(plots_dir, exist_ok=True)
@@ -306,7 +308,7 @@ def amp_phase_check(data, positions, plots_dir="plots", name="amp_phase", line_g
 def dirty_maps_check(dra, ddec, moment8, continuum, sigma, plots_dir="plots", name="dirty_maps", marks=None):
     """Moment-8 (S/N), continuum (mJy/beam), and the moment-8 with continuum contours.
 
-    Takes the output of :func:`luv_finder.matchedfilter.dirty_maps` on the ``dra x ddec`` grid.
+    Takes the output of :func:`luv_finder.imaging.dirty_maps` on the ``dra x ddec`` grid.
     Contours are at -3 (dashed) and 3, 5, 10, 20, 50 times the continuum noise ``sigma``, a scalar
     or a per-pixel map shaped like ``continuum`` (a mosaic's noise varies across the field).
     NaN pixels, outside every primary beam, are left blank. The colour scales are robust to a few
@@ -405,7 +407,7 @@ def _templates(result):
 def response_shape_check(nc, result, peaks=(), plots_dir="plots", name="response_shape"):
     """The null correlation rho of the response against what bright lines actually look like.
 
-    ``nc`` is a :class:`~luv_finder.catalogue.NoiseCorrelation` measured on ``result``,
+    ``nc`` is a :class:`~luv_finder.catalogue.ResponseCorrelation` measured on ``result``,
     ``peaks`` a sequence of ``(i, j, t, k)`` indices into ``result.snr``. Top row: rho over position
     lags for the first template with its half-power ellipse and rho = 0 contour; rho over channel
     lags per template (solid) against the white-channel analytic ``exp(-k^2 / 4 s^2)`` of a Gaussian
@@ -589,3 +591,51 @@ def contact_sheet(plots_dir: str, title: str = "Luv_finder diagnostics") -> str:
     with open(path, "w") as fh:
         fh.write(html)
     return path
+
+
+def _panels(n, height, ncol=5):
+    nrow = int(np.ceil(n / ncol))
+    fig, axes = plt.subplots(nrow, ncol, figsize=(3.4 * ncol, height * nrow), squeeze=False)
+    for ax in axes.flat[n:]:
+        ax.axis("off")
+    return fig, axes.flat
+
+
+def line_maps_check(maps, cat, plots_dir="plots", name="line_maps"):
+    """Moment-0 map of every fitted line (:func:`luv_finder.imaging.line_maps`), the fitted position marked."""
+    rows = cat[np.isfinite(cat["fit_dra"])]
+    fig, axes = _panels(len(rows), 2.9)
+    for ax, row, (dra, ddec, m0) in zip(axes, rows, maps, strict=False):
+        half = np.diff(dra[:2])[0] / 2
+        extent = (dra[0] - half, dra[-1] + half, ddec[0] - half, ddec[-1] + half)
+        im = ax.imshow(m0.T, origin="lower", extent=extent, cmap="magma")
+        ax.plot(row["fit_dra"], row["fit_ddec"], "+", c="C0", ms=12, mew=1.5)
+        fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04, label="Jy/beam km/s")
+        _sky_axes(ax)
+        ax.set_title(f"#{row['id']}  {row['fit_freq_ghz']:.3f} GHz", fontsize=10)
+    return _save(fig, plots_dir, name)
+
+
+def line_spectra_check(cat, span=3.0, plots_dir="plots", name="line_spectra"):
+    """Each fitted line's spectrum and best fit within ``span`` FWHM of its centre, both over the fitted peak."""
+    rows = [r for r in cat if str(r["id"]) in cat.meta.get("spectra", {})]
+    fig, axes = _panels(len(rows), 3.2)
+    for ax, row in zip(axes, rows, strict=False):
+        sp = {k: np.asarray(v) for k, v in cat.meta["spectra"][str(row["id"])].items()}
+        near = np.abs(sp["freq_ghz"] / row["fit_freq_ghz"] - 1) * C_KMS <= span * row["fit_width"]
+        f, peak = sp["freq_ghz"][near], row["fit_peak"]
+        ax.fill_between(
+            f,
+            (sp["flux"] - sp["error"])[near] / peak,
+            (sp["flux"] + sp["error"])[near] / peak,
+            step="mid",
+            color="0.8",
+            lw=0,
+        )
+        ax.step(f, sp["flux"][near] / peak, where="mid", c="k", lw=1)
+        ax.plot(f, sp["model"][near] / peak, c="C3", lw=1.5)
+        ax.axhline(0, c="0.5", lw=0.5)
+        ax.set_title(f"#{row['id']}  S/N {row['snr']:.1f}", fontsize=10)
+        ax.set_xlabel("frequency [GHz]")
+        ax.set_ylabel("flux / fitted peak")
+    return _save(fig, plots_dir, name)

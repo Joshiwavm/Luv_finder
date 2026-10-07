@@ -17,14 +17,8 @@ from astropy.modeling import models
 from . import utils
 from ._casa import tasks, tools
 
-# Rough 12 m-array anchor (50 uJy in 27 min) used only to pick a starting flux.
-# It is wrong for other arrays, so ``calibrate_snr`` measures the achieved S/N
-# from the simulated data and corrects it.
 _REF_RMS_JY = 0.05e-3
 _REF_MIN = 27.0
-
-#: Antenna configurations are resolved from CASA's own data directory, so the
-#: repository does not vendor .cfg files. Cycle 13 needs casarundata >= 2026.02.19.
 SIMMOS = "alma/simmos"
 
 
@@ -48,8 +42,7 @@ def resolve_antenna_config(name: str) -> str:
 def source_from_grid(grid: dict | str, source: dict) -> dict:
     """``source`` with position, size and line width taken from a targeted grid.
 
-    ``grid`` is a grid YAML (or its dict) with one value per key. It is written in model
-    convention, so ``dra`` flips sign for the image-convention mock position.
+    ``grid`` is a grid YAML (or its dict) with one value per key.
     """
     if not isinstance(grid, dict):
         with open(grid) as f:
@@ -59,7 +52,7 @@ def source_from_grid(grid: dict | str, source: dict) -> dict:
         raise ValueError(f"a mock source needs one value per grid key, got several for {multi}")
     return {
         **source,
-        "position": [-grid["dra"], grid["ddec"]],
+        "position": [grid["dra"], grid["ddec"]],
         "axis_min": grid["bmin"],
         "axis_maj": grid["bmaj"],
         "pa": grid.get("pa", 0.0),
@@ -77,7 +70,7 @@ class MockObservation:
     sensitivity : str or float, per-channel rms in Jy (ignored if integration_time given)
     integration_time : str with units, e.g. "8min"
     sources : list of dict
-        ``position`` (dra, ddec) arcsec; optional ``axis_maj``/``axis_min``, the Gaussian
+        ``position`` (dra, ddec) arcsec east and north; optional ``axis_maj``/``axis_min``, the Gaussian
         sigma in arcsec (the model's ``bmaj``/``bmin``, default one cell), and ``pa``, the
         major axis' position angle in degrees east of north (default 0);
         ``line`` {width km/s, mean GHz, snr}; ``continuum`` {snr}.
@@ -183,7 +176,7 @@ class MockObservation:
         cell = u.Quantity(self.cell).to(u.arcsec).value
         dra, ddec = source.get("position", (0.0, 0.0))
         pos_y = ny / 2 + ddec / cell
-        pos_x = nx / 2 + dra / cell
+        pos_x = nx / 2 - dra / cell
         sig_min = source.get("axis_min", cell) / cell
         sig_maj = source.get("axis_maj", cell) / cell
         return pos_y, pos_x, sig_maj, sig_min
@@ -339,9 +332,8 @@ class MockObservation:
 
         Uses the noiseless visibilities as the signal and the noisy weights as the
         noise model, so this is the expected S/N rather than one noisy draw. The
-        template is the source itself, sqrt(sum_jk w Re[V']^2), which a filter
-        weighting by the source envelope attains; for a point source it equals
-        the channel-averaged S/N.
+        template is the source itself, sqrt(sum_jk w Re[V']^2), which the
+        filter attains; for a point source it equals the channel-averaged S/N.
         """
         from .data import DataHandler
 
@@ -352,9 +344,8 @@ class MockObservation:
             if "line" not in src:
                 continue
             dra, ddec = src.get("position", (0.0, 0.0))
-            # model convention flips the sign of dra relative to the image
             snr2 = sum(
-                np.sum(n.w * (c.vis * c.phase(-dra, ddec)).real ** 2)
+                np.sum(n.w * (c.vis * c.phase(dra, ddec)).real ** 2)
                 for c, n in zip(clean.chunks, noisy.chunks, strict=True)
             )
             out.append(float(np.sqrt(snr2)))

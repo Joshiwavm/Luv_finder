@@ -39,17 +39,7 @@ def pair_weight(a, b) -> np.ndarray:
 
 
 def channel_correlation(chunks: Iterable[Chunk], max_lag: int = 8, significance: float = 5.0) -> np.ndarray:
-    """Noise correlation between channels ``(1, rho_1, ..., rho_L)``, measured on the jackknife.
-
-    The jackknife of each chunk (one spectral window, any number of pointings) is pure noise; its
-    whitened visibilities ``X / sqrt(w)`` are correlated at lags 1, 2, ... over every pair of
-    unflagged channels, real and imaginary parts pooled. Lags are kept up to the first one
-    consistent with zero within ``significance`` sigma, so independent channels give ``(1,)``.
-    ALMA's default Hanning response gives (1, 2/3, 1/6); online channel averaging or regridding
-    give whatever they leave, which is the point of measuring instead of assuming. Signal that
-    does not cancel between paired integrations is smooth in frequency and would read as
-    correlation; on noiseless mocks, pass the noisy data's measurement instead.
-    """
+    """Noise correlation between channels ``(1, rho_1, ..., rho_L)``, measured on the jackknife."""
     num, norm_a, norm_b, n = (np.zeros(max_lag + 1) for _ in range(4))
     for chunk in chunks:
         jk = chunk.jackknife()
@@ -73,11 +63,7 @@ def channel_correlation(chunks: Iterable[Chunk], max_lag: int = 8, significance:
 
 
 def stokes_i(data: np.ndarray, weight: np.ndarray, flag: np.ndarray):
-    """Average the parallel hands ``[0, -1]`` of MS columns into (vis, w_row, flag).
-
-    ``data`` and ``flag`` are ``(n_corr, n_chan, n_row)``, ``weight`` is the per-row ``WEIGHT``
-    column ``(n_corr, n_row)``. A channel is flagged if either hand is.
-    """
+    """Average the parallel hands ``[0, -1]`` of MS columns into (vis, w_row, flag)."""
     return 0.5 * (data[0] + data[-1]), pair_weight(weight[0], weight[-1]), flag[0] | flag[-1]
 
 
@@ -90,11 +76,7 @@ def sky_offset(direction, ref) -> np.ndarray:
 
 
 def sky_direction(offset, ref) -> np.ndarray:
-    """(RA, Dec) in rad of the (east, north) ``offset`` in arcsec from ``ref``, the inverse of :func:`sky_offset`.
-
-    The offset is the direction cosines (l, m) of the orthographic (SIN) projection at ``ref``, in
-    arcsec; RA comes back in [0, 2 pi).
-    """
+    """(RA, Dec) in rad of the (east, north) ``offset`` in arcsec from ``ref``, the inverse of :func:`sky_offset`."""
     (l, m), (ra0, dec0) = np.asarray(offset, dtype=float) * ARCSEC, ref
     n = np.sqrt(1 - l**2 - m**2)
     dec = np.arcsin(m * np.cos(dec0) + n * np.sin(dec0))

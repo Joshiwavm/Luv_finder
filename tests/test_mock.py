@@ -1,9 +1,8 @@
 """End-to-end CASA test: the committed smoke preset, simulated and then searched.
 
 This is the one test that exercises simobserve/tclean, so it doubles as the check
-that a mock preset and its matching grid preset agree -- including the sign flip
-between image and model conventions for dra, and that a declared ``snr`` really
-is the achieved matched-filter S/N.
+that a mock preset and its matching grid preset agree, and that a declared ``snr``
+really is the achieved matched-filter S/N.
 """
 
 from pathlib import Path
@@ -80,8 +79,7 @@ def test_grid_preset_recovers_the_line(smoke):
     peak_ghz = mf.frequencies()[np.argmax(mf.response[mf.best_index])]
     assert abs(peak_ghz - src["line"]["mean"]) < 0.05
 
-    # the grid preset is written in model convention, which flips the sign of dra
-    assert mf.best_params["src_00_dra"] == pytest.approx(-src["position"][0])
+    assert mf.best_params["src_00_dra"] == pytest.approx(src["position"][0])
     assert mf.best_params["src_00_ddec"] == pytest.approx(src["position"][1])
     # response is in S/N units, so the peak should be near the declared value
     assert mf.response[mf.best_index].max() > 0.6 * src["line"]["snr"]
