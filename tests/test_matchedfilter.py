@@ -7,7 +7,7 @@ from astropy.table import Table
 
 from luv_finder import DataHandler, Gaussian, MatchedFilter, Model
 from luv_finder.cli.find_lines import main as find_lines
-from luv_finder.data import C, Chunk, Metadata
+from luv_finder.data import C, ChannelNoise, Chunk, Metadata
 from luv_finder.fit import COLUMNS as FIT_COLUMNS
 from luv_finder.kernel import default_cores
 from luv_finder.matchedfilter import (
@@ -23,14 +23,14 @@ from luv_finder.utils import primary_beam, primary_beam_radius
 C_KMS = 299792.458
 
 
-def _finder(data, continuum_order=2, channel_correlation=None, **grid):
+def _finder(data, continuum_order=2, channel_noise=None, **grid):
     g = Gaussian()
     g.grid = {"bmin": 0.0, "bmaj": 0.0, "width": 300.0, **grid}
     m = Model()
     m.addcomponent(g)
     # synthetic rows share one baseline at random uv, so their jackknife keeps the sky: give the
-    # (independent) channel correlation instead of measuring it
-    return MatchedFilter(data, m, continuum_order=continuum_order, channel_correlation=channel_correlation)
+    # channel noise instead of measuring it
+    return MatchedFilter(data, m, continuum_order=continuum_order, channel_noise=channel_noise)
 
 
 def _chunk(nchan, nvis, seed=0, field=0, spw=0, offset=(0.0, 0.0), freq0=40e9):
@@ -43,6 +43,10 @@ def _chunk(nchan, nvis, seed=0, field=0, spw=0, offset=(0.0, 0.0), freq0=40e9):
         field, spw, np.asarray(offset), freq, u, v, np.arange(nvis, dtype=float), np.zeros(nvis, dtype=int),
         empty.astype(complex), np.ones(nvis), empty.astype(bool),
     )  # fmt: skip
+
+
+#: Channel width of :func:`_chunk` at 40 GHz, Hz.
+CHANNEL = 40e9 * 100 / C_KMS
 
 
 def _metadata(chunk):
@@ -98,8 +102,9 @@ def test_matches_the_direct_sum():
     """Scan recurrence and position GEMM reproduce the channel-by-channel sum, also over 960 channels."""
     r = np.random.default_rng(3)
     chunks = []
-    for spw, nchan in ((0, 30), (1, 960)):
-        chunk = _chunk(nchan, 200, seed=spw, spw=spw, offset=(4.0, -2.0), freq0=40e9 + spw * 2e9)
+    for spw, nchan, shift in ((0, 30, 0), (1, 960, 500)):
+        chunk = _chunk(nchan, 200, seed=spw, spw=spw, offset=(4.0, -2.0))
+        chunk = dataclasses.replace(chunk, freq=chunk.freq + shift * CHANNEL)
         flag = r.random(chunk.flag.shape) < 0.1
         flag[:3] = True
         w_row = r.uniform(0.5, 2.0, chunk.u.size)
@@ -219,7 +224,8 @@ def test_continuum_fit_keeps_noise_at_unit_variance_at_every_lag():
     r = np.random.default_rng(11)
     chunks = []
     for spw in range(4):
-        chunk = _chunk(40, 2000, seed=spw, spw=spw, freq0=40e9 + spw * 2e9)
+        chunk = _chunk(40, 2000, seed=spw, spw=spw)
+        chunk = dataclasses.replace(chunk, freq=chunk.freq + 50 * spw * CHANNEL)
         flag = np.zeros(chunk.flag.shape, dtype=bool)
         flag[[0, 17, 18]] = True
         w_row = r.uniform(0.2, 5.0, chunk.u.size)
@@ -285,10 +291,11 @@ def test_flagged_channel_gives_a_finite_response():
     assert mf.response.max() == pytest.approx(10.0, abs=1e-3)
 
 
-def test_windows_are_searched_separately_in_frequency_order():
-    """Each window gets its own templates; the spectra join in frequency order."""
-    high = _synthetic(40, snr=10.0, freq0=41e9).chunks[0]
-    low = dataclasses.replace(_synthetic(30, snr=0.0, freq0=39e9).chunks[0], spw=1)
+def test_windows_join_in_frequency_order():
+    """Windows apart in frequency fill their own centres of the one lattice, in frequency order."""
+    high = _synthetic(40, snr=10.0).chunks[0]
+    low = _synthetic(30, snr=0.0).chunks[0]
+    low = dataclasses.replace(low, spw=1, freq=low.freq - 60 * CHANNEL)
     data = DataHandler(chunks=[high, low], metadata=_metadata(high))
     mf = _finder(data, continuum_order=None, dra=0.0, ddec=0.0)
     mf.run()
@@ -466,7 +473,7 @@ def _assert_same(a, b):
 def _search_by_hand(path, field, continuum_order=2):
     """One field searched step by step as ``search_pointings`` does: ``(data, filter)`` after ``run``."""
     data = DataHandler.from_npz(path, [field])
-    mf = _finder(data, continuum_order=continuum_order, **build_grid(data, {**SOURCES_GRID, "pb_limit": 0.2}))
+    mf = _finder(data, continuum_order, "measure", **build_grid(data, {**SOURCES_GRID, "pb_limit": 0.2}))
     mf.run(jackknife=True)
     return data, mf
 
@@ -568,27 +575,67 @@ def test_correlated_channels_keep_unit_variance(continuum_order):
     """Hanning noise inflates the S/N of broad templates unless the measured correlation is used."""
     data, axis = _hanning_noise(), np.linspace(-20.0, 20.0, 9)
     spread = {}
-    for corr in (None, "measure"):
-        mf = _finder(data, continuum_order=continuum_order, channel_correlation=corr, dra=axis, ddec=axis,
+    for noise in (None, "measure"):
+        mf = _finder(data, continuum_order=continuum_order, channel_noise=noise, dra=axis, ddec=axis,
                      width=[200.0, 400.0])  # fmt: skip
         mf.run()
-        spread[corr] = np.nanstd(mf.result.snr, axis=(0, 1, 3))
+        spread[noise] = np.nanstd(mf.result.snr, axis=(0, 1, 3))
     assert np.all(spread[None] > 1.3)
     assert spread["measure"] == pytest.approx(1.0, abs=0.04)
-    assert mf.correlation[0] == pytest.approx((1.0, 2 / 3, 1 / 6), abs=0.02)
+    assert mf.noise[0].rho == pytest.approx((1.0, 2 / 3, 1 / 6), abs=0.02)
 
 
 def test_flux_does_not_depend_on_the_channel_correlation():
     """The correlation changes the S/N and the error, not the best-fit flux density."""
     data = _synthetic(50, snr=10.0)
-    hanning = {0: np.array([1.0, 2 / 3, 1 / 6])}
-    plain, smooth = (_finder(data, channel_correlation=c, dra=0.0, ddec=0.0) for c in (None, hanning))
+    hanning = {0: ChannelNoise(np.ones(50), np.array([1.0, 2 / 3, 1 / 6]))}
+    plain, smooth = (_finder(data, channel_noise=c, dra=0.0, ddec=0.0) for c in (None, hanning))
     plain.run()
     smooth.run()
     np.testing.assert_allclose(smooth.result.flux, plain.result.flux, rtol=1e-9)
     assert np.all(smooth.result.error > plain.result.error)
 
 
-def test_unknown_channel_correlation_is_rejected(data):
-    with pytest.raises(ValueError, match="channel_correlation"):
-        MatchedFilter(data, Model(), channel_correlation="hanning")
+def test_unknown_channel_noise_is_rejected(data):
+    with pytest.raises(ValueError, match="channel_noise"):
+        MatchedFilter(data, Model(), channel_noise="hanning")
+
+
+def test_noisy_channels_are_weighted_down():
+    """Noise at twice the weights in three channels spreads their S/N by 2, unless the measured noise is used."""
+    r = np.random.default_rng(5)
+    chunk = _chunk(40, 4000, seed=5)
+    sigma = np.ones((40, 1))
+    sigma[10:13] = 2.0
+    noise = sigma * (r.normal(size=chunk.X.shape) + 1j * r.normal(size=chunk.X.shape))
+    data = DataHandler(chunks=[dataclasses.replace(chunk, X=noise)], metadata=_metadata(chunk))
+    axis = np.arange(-235.0, 236.0, 10.0)
+    for channel_noise, expected in ((None, 2.0), ("measure", 1.0)):
+        mf = _finder(data, continuum_order=None, channel_noise=channel_noise, dra=axis, ddec=axis, width=100.0)
+        mf.run()
+        assert mf.result.snr[..., 11].std() == pytest.approx(expected, rel=0.1)
+    assert mf.noise[0].scale[10:13] == pytest.approx(4.0, rel=0.1)
+
+
+def test_overlapping_windows_add_in_inverse_variance():
+    """Two windows ten channels apart over one line give sqrt(S_a^2 + S_b^2); half a channel off, the true flux."""
+    first = _chunk(50, 400, seed=0)
+    src = Gaussian(nu_center=first.freq[25], width=300.0)
+
+    def window(shift, seed):
+        c = dataclasses.replace(_chunk(50, 400, seed=seed, spw=1), freq=first.freq + shift * CHANNEL)
+        return dataclasses.replace(c, X=src.profile(c))
+
+    def search(*chunks):
+        mf = _finder(DataHandler(chunks=list(chunks), metadata=_metadata(first)), continuum_order=None, dra=0.0,
+                     ddec=0.0)  # fmt: skip
+        mf.run()
+        return mf, int(np.argmin(np.abs(mf.freqs - first.freq[25])))
+
+    a = dataclasses.replace(first, X=src.profile(first))
+    (both, k), (alone_a, ka), (alone_b, kb) = search(a, window(10, 1)), search(a), search(window(10, 1))
+    assert both.freqs.size == 60
+    assert both.response[0, k] == pytest.approx(np.hypot(alone_a.response[0, ka], alone_b.response[0, kb]), rel=1e-9)
+    half, k = search(a, window(10.5, 1))
+    assert half.freqs.size == 60
+    assert half.result.flux[0, 0, 0, k] == pytest.approx(src.spectrum(first.freq[25]), rel=1e-6)

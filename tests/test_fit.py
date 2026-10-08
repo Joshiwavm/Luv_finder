@@ -8,7 +8,7 @@ from astropy.table import Table
 
 from luv_finder import DataHandler, Gaussian, MatchedFilter
 from luv_finder.catalogue import catalogue
-from luv_finder.data import Chunk, Metadata, sky_offset
+from luv_finder.data import ChannelNoise, Chunk, Metadata, sky_offset
 from luv_finder.fit import COLUMNS, LINE_FLUX, _moments, _system, fit_line, fit_lines
 from luv_finder.imaging import line_maps
 from luv_finder.kernel import on_device
@@ -89,12 +89,12 @@ def test_reduced_chi2_is_the_direct_sum():
         with jax.enable_x64(True):
             chunks = [on_device(c) for c in data.chunks]
             args = (jnp.asarray(FREQ), jnp.asarray(basis), 12.0)
-            chi2 = float(_system(jnp.asarray(theta), _moments(theta, chunks), chunks, *args)[0])
+            chi2 = float(_system(jnp.asarray(theta), _moments(theta, chunks, jnp.ones(N_CHAN)), chunks, *args)[0])
         assert chi2 + own == pytest.approx(direct, rel=1e-10)
 
 
 def test_noise_free_fit_recovers_every_parameter():
-    fit = fit_line(_data(), *START)
+    fit = fit_line(_data(), *START, channel_noise=None)
     assert fit["fit_converged"] and fit["fit_n_pointings"] == 2
     for key, pull in _pulls(fit, _truth()).items():
         assert abs(pull) < 0.01, key
@@ -106,7 +106,7 @@ def test_noise_free_fit_recovers_every_parameter():
 
 
 def test_noisy_fit_is_within_its_errors():
-    fit = fit_line(_data(noise=True), *START)
+    fit = fit_line(_data(noise=True), *START, channel_noise=None)
     assert fit["fit_converged"]
     for key, pull in _pulls(fit, _truth()).items():
         assert abs(pull) < 3, key
@@ -116,7 +116,7 @@ def test_noisy_fit_is_within_its_errors():
 
 def test_point_source_fits_through_zero_size():
     point = {**SOURCE, "bmaj": 0.0, "bmin": 0.0}
-    fit = fit_line(_data(point), *START)
+    fit = fit_line(_data(point), *START, channel_noise=None)
     assert fit["fit_converged"] and fit["fit_bmaj"] < 0.05
     truth = {k: v for k, v in _truth(point).items() if k not in ("fit_bmaj", "fit_bmin")}
     for key, pull in _pulls(fit, truth).items():
@@ -128,7 +128,7 @@ def test_fit_lines_survives_a_failed_line():
         {"dra": [START[0], 0.0], "ddec": [START[1], 0.0], "freq_ghz": [START[2], 50.0], "width": [200.0, 200.0]}
     )
     with pytest.warns(UserWarning, match="row 1"):
-        fitted = fit_lines(_data(noise=True), cat)
+        fitted = fit_lines(_data(noise=True), cat, channel_noise=None)
     assert set(COLUMNS) <= set(fitted.colnames) and fitted["fit_line_flux"].unit == "Jy km / s"
     assert fitted["fit_converged"].tolist() == [True, False]
     assert np.isfinite(fitted["fit_line_flux"][0]) and np.isnan(fitted["fit_line_flux"][1])
@@ -171,7 +171,18 @@ HANNING = np.array([1.0, 2 / 3, 1 / 6])
 def test_channel_correlation_scales_the_errors_not_the_fit():
     """Hanning inflates every error by more than 5%, at most sqrt(8/3), and leaves the values alone."""
     data = _data(noise=True)
-    plain, smooth = (fit_line(data, *START, channel_correlation=c) for c in (None, {0: HANNING}))
+    hanning = {0: ChannelNoise(np.ones(N_CHAN), HANNING)}
+    plain, smooth = (fit_line(data, *START, channel_noise=c) for c in (None, hanning))
     for key in ("fit_dra", "fit_freq_ghz", "fit_width", "fit_line_flux"):
         assert smooth[key] == plain[key]
         assert 1.05 * plain[f"{key}_error"] < smooth[f"{key}_error"] < np.sqrt(8 / 3) * plain[f"{key}_error"]
+
+
+def test_channel_noise_weights_the_fit():
+    """Four times the noise power in every channel doubles every error and leaves a noiseless fit where it was."""
+    data = _data()
+    noisy = {0: ChannelNoise(np.full(N_CHAN, 4.0), np.ones(1))}
+    plain, scaled = (fit_line(data, *START, channel_noise=c) for c in (None, noisy))
+    for key in ("fit_dra", "fit_freq_ghz", "fit_width", "fit_line_flux"):
+        assert abs(scaled[key] - plain[key]) < 1e-3 * plain[f"{key}_error"]
+        assert scaled[f"{key}_error"] == pytest.approx(2 * plain[f"{key}_error"], rel=1e-3)

@@ -10,7 +10,7 @@ from luv_finder.data import (
     CHUNK_ARRAYS,
     Chunk,
     Metadata,
-    channel_correlation,
+    channel_noise,
     fields_in,
     load,
     pair_weight,
@@ -212,20 +212,30 @@ def _noise_chunk(n_chan=32, n_row=20000, smooth=True, spw=0, seed=0):
     return dataclasses.replace(chunk, X=noise)
 
 
-def test_channel_correlation_of_hanning_noise():
-    rho = channel_correlation([_noise_chunk()])
-    assert rho.size == 3 and rho == pytest.approx(HANNING, abs=0.01)
+def test_channel_noise_of_hanning_noise():
+    """Hanning-smoothed unit noise has 3/8 of the power its weights say, correlated 2/3 and 1/6 at lags 1 and 2."""
+    noise = channel_noise([_noise_chunk()])
+    assert noise.scale == pytest.approx(np.full(32, 0.375), rel=0.05)
+    assert noise.rho.size == 3 and noise.rho == pytest.approx(HANNING, abs=0.01)
 
 
-@pytest.mark.parametrize(
-    "chunk", [_noise_chunk(smooth=False), _chunk(np.arange(100), np.zeros(100, dtype=int), values=np.ones(100))]
-)
-def test_channel_correlation_of_independent_or_no_noise(chunk):
-    """White noise has no significant lag, and a noiseless (constant) signal leaves nothing to measure."""
-    assert channel_correlation([chunk]).tolist() == [1.0]
+def test_channel_noise_finds_the_noisy_channels():
+    """Channels with twice the noise the weights say have a scale of 4, the others 1; white noise has no lag."""
+    chunk = _noise_chunk(smooth=False)
+    X = chunk.X.copy()
+    X[5:8] *= 2
+    noise = channel_noise([dataclasses.replace(chunk, X=X)])
+    expected = np.ones(32)
+    expected[5:8] = 4.0
+    assert noise.scale == pytest.approx(expected, rel=0.05) and noise.rho.tolist() == [1.0]
 
 
-def test_channel_correlation_per_spectral_window():
+def test_channel_noise_needs_noise():
+    with pytest.raises(ValueError, match="no noise"):
+        channel_noise([_chunk(np.arange(100), np.zeros(100, dtype=int), values=np.ones(100))])
+
+
+def test_channel_noise_per_spectral_window():
     data = DataHandler(chunks=[_noise_chunk(spw=0), _noise_chunk(smooth=False, spw=1, seed=1)], metadata=None)
-    rho = data.channel_correlation()
-    assert sorted(rho) == [0, 1] and rho[0].size == 3 and rho[1].tolist() == [1.0]
+    noise = data.channel_noise()
+    assert sorted(noise) == [0, 1] and noise[0].rho.size == 3 and noise[1].rho.tolist() == [1.0]

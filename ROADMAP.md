@@ -143,12 +143,33 @@ Open:
   those, so this compares that simple image-plane method with the full fit; the
   moment-0 maps (`imaging.line_maps`) show which lines are extended, where a
   spectrum misses flux.
-- **Windows that overlap in frequency.** ASPECS 3mm observes 96.2-102.9 GHz
-  twice, in spws of two tunings with offset channel grids. The spws are searched
-  apart and their catalogues merged (`merge_catalogues`), so a line there is found
-  twice; the run marks the fainter one a duplicate. Combining the two needs one
-  channel grid (`mstransform` regridding in alma-data-prep, or the filter on
-  a common grid).
+- **Atmospheric lines.** Atmospheric lines make some channels noisier than a
+  weight per spectral window says: ozone at 1.2 mm (231.3, 235.7, 237.1, 239.1 GHz
+  and more above 240 GHz, up to 1.8x the noise in ASPECS) and the 118.75 GHz O2 wing
+  at the top of Band 3 (1.2x). With `statwt chanbin="spw"` the S/N there is
+  overestimated in the data and the jackknife alike: in the first ASPECS 1.2 mm run
+  the jackknife reached S/N 6.8 in those windows against 5.5 elsewhere, and nothing
+  passed the fidelity cut. Done: `channel_noise` measures each channel's noise power
+  over the weights on the jackknife (the expected dirty-map variance ratio) and the
+  filter and the fit divide each channel's weights by it. Open: the excess changes
+  with elevation and water vapour, so one scale per channel over a whole pointing
+  averages execution blocks of different opacity; a scale per execution block or
+  scan, or per-channel weights in the data (`WEIGHT_SPECTRUM`), would follow it;
+  line cores that stay unreliable could be flagged.
+- **Data noisier than its jackknife at 1.2 mm.** In 17 of the 32 ASPECS 1.2 mm
+  windows the data have more than 1.15x as many S/N groups as the jackknife (up to
+  1.6x), and the negated data match the data, not the jackknife. Noise correlated
+  between consecutive integrations would cancel in the jackknife; check per
+  execution block and against a jackknife that pairs integrations further apart.
+- **Fit across overlapping windows.** Windows that overlap in frequency are combined
+  in the search, but `fit_line` uses one window per pointing, so a line in the
+  ASPECS 3 mm double-tuned range is fitted with one tuning's data.
+- **Channel response.** The template is a Gaussian sampled at the channel centres;
+  Hanning smoothing and channel averaging broaden a line a few channels wide, and
+  windows with different correlator setups then see slightly different peaks.
+- **Fidelity per template width.** ASPECS computes the fidelity per kernel width:
+  narrow templates have more independent trials than broad ones at the same S/N.
+  The catalogue pools all templates.
 - **A fit that absorbs its neighbours.** The candidate at 85.857 GHz, 16-31 MHz
   from two detected lines, is no longer detected (fidelity 0.43), but when it was
   its fit ran to a 1818 km/s line 101 MHz off the peak (chi^2_red 3.5, 10.8

@@ -81,11 +81,14 @@ the null, so the peak height is the line's signal-to-noise ratio. It does not
 depend on the template amplitude, which cancels in the kernel normalisation, so
 ``total_flux`` is not a search axis and passing it in a grid raises an error.
 
-Column ``i`` of the response is a line template centred exactly on channel ``i``.
-Each column is normalised over the channels its template covers, so the variance
-stays one at the window edges and next to flagged channels, and a line near an
-edge is reported at the S/N of its observed part. Rows follow ``grid_params``:
-the product of the ``dra, ddec, bmin, bmaj, pa, width`` axes, in that order.
+Column ``i`` of the response is a line template centred on frequency ``i`` of one lattice
+(``MatchedFilter.freqs``): the finest channel width, from the lowest channel, through every
+window, so a single window's columns are its channels. Each window fits the templates that
+fall in it, normalised over the channels each covers, so the variance stays one at the window
+edges and next to flagged channels, and a line near an edge is reported at the S/N of its
+observed part. Windows that overlap in frequency, such as two tunings over one range, add by
+inverse variance at every shared centre, as pointings do in position. Rows follow
+``grid_params``: the product of the ``dra, ddec, bmin, bmaj, pa, width`` axes, in that order.
 
 At every trial position each line template is fitted jointly with a continuum: a polynomial in
 frequency (degree 2 by default, ``continuum_order=`` or ``luv-find --continuum-order``; ``none``
@@ -110,12 +113,13 @@ Catalogue
 combined mosaic, on a uniform position lattice) into an astropy table of line candidates; the
 jackknife, which has the data's noise and no sky, is the reference throughout:
 
-1. the S/N is the filter's. ALMA's Hanning spectral response correlates neighbouring channels
-   (2/3 and 1/6); the search measures that correlation on the jackknife per spectral window
-   (:func:`~luv_finder.data.channel_correlation`) and normalises every template by its exact
-   variance, so the S/N has unit variance under the null
-   (:func:`~luv_finder.catalogue.jackknife_spread` checks it). Data averaged in frequency, with
-   less correlation, are measured the same way;
+1. the S/N is the filter's. The search measures the noise of every channel on the jackknife per
+   spectral window (:func:`~luv_finder.data.channel_noise`): its power over the weights, which
+   is not one where an atmospheric line makes some channels noisier than a per-window weight
+   says, and the correlation between channels that ALMA's Hanning response leaves (2/3 and 1/6).
+   Each channel's weights are divided by its power and every template is normalised by its
+   exact variance, so the S/N has unit variance under the null
+   (:func:`~luv_finder.catalogue.jackknife_spread` checks it);
 2. the correlation function of the jackknife response is measured; it is also the expected shape
    of a matched line's response (Vio & Andreani 2021), so its half-power ellipsoid in position and
    frequency is what one source occupies;

@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import dataclasses
 import os
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from functools import partial
 from itertools import product
@@ -25,7 +25,7 @@ import jax.numpy as jnp
 import numpy as np
 from tqdm import tqdm
 
-from .data import Chunk, DataHandler, fields_in, load
+from .data import ChannelNoise, Chunk, DataHandler, fields_in, load
 from .kernel import _blocks, limit_cores
 from .model import C_KMS, FWHM_TO_SIGMA, Gaussian, Model, covariance
 from .utils import ARCSEC, primary_beam, primary_beam_radius
@@ -35,10 +35,10 @@ GRID_KEYS = ("dra", "ddec", *TEMPLATE_KEYS)
 
 
 @partial(jax.jit, static_argnames="order")
-def _spectral(sig, weight, freq, widths, rho, order=None):
-    """S/N ``(n_shape, n_width, n_dra, n_ddec, n_chan)`` and peak error ``(n_shape, n_width, n_chan)``."""
-    spread = freq[None, :, None] * widths[:, None, None] * FWHM_TO_SIGMA / C_KMS
-    profile = jnp.exp(-0.5 * ((freq[None, None, :] - freq[None, :, None]) / spread) ** 2)
+def _spectral(sig, weight, freq, centres, widths, rho, order=None):
+    """S/N ``(n_shape, n_width, n_dra, n_ddec, n_centre)`` and peak error ``(n_shape, n_width, n_centre)``."""
+    spread = centres[None, :, None] * widths[:, None, None] * FWHM_TO_SIGMA / C_KMS
+    profile = jnp.exp(-0.5 * ((freq[None, None, :] - centres[None, :, None]) / spread) ** 2)
     num = jnp.einsum("wim,msab->swabi", profile, sig)
     var = jnp.einsum("wim,ms->swi", profile**2, weight)
     h = jnp.broadcast_to(profile, (weight.shape[1], *profile.shape))
@@ -63,6 +63,17 @@ def _spectral(sig, weight, freq, widths, rho, order=None):
     var_c = jnp.where(covered, var_c, 1.0)
     error = jnp.where(covered, jnp.sqrt(var_c) / jnp.where(covered, var, 1.0), jnp.nan)
     return num * jnp.where(covered, 1 / jnp.sqrt(var_c), 0.0)[:, :, None, None, :], error
+
+
+def _centres(chunks: Sequence[Chunk]) -> np.ndarray:
+    """Trial line frequencies: a lattice at the finest channel width from the lowest channel, through every window."""
+    low = min(c.freq[0] for c in chunks)
+    step = min((np.diff(c.freq).min() for c in chunks if c.freq.size > 1), default=1.0)
+    k = [
+        np.arange(np.ceil((c.freq[0] - low) / step - 1e-6), np.floor((c.freq[-1] - low) / step + 1e-6) + 1)
+        for c in chunks
+    ]
+    return low + step * np.unique(np.concatenate(k))
 
 
 def _one_field(data: DataHandler) -> None:
@@ -246,23 +257,24 @@ def combine_pointings(results: Iterable[SearchResult]) -> SearchResult:
 
 
 class MatchedFilter(_Grid):
-    """S/N of one field over the ``Model.grid`` axes; ``channel_correlation``: "measure", None or ``{spw: rho}``."""
+    """S/N of one field over the ``Model.grid`` axes; ``channel_noise``: "measure", None or ``{spw: ChannelNoise}``."""
 
     def __init__(
         self,
         data: DataHandler,
         mod: Model,
         continuum_order: int | None = 2,
-        channel_correlation: str | dict | None = "measure",
+        channel_noise: str | dict | None = "measure",
     ):
-        if isinstance(channel_correlation, str) and channel_correlation != "measure":
-            raise ValueError(f'channel_correlation must be "measure", None or a dict, got {channel_correlation!r}')
+        if isinstance(channel_noise, str) and channel_noise != "measure":
+            raise ValueError(f'channel_noise must be "measure", None or a dict, got {channel_noise!r}')
         _one_field(data)
         self.data = data
         self.continuum_order = continuum_order
-        self.channel_correlation = channel_correlation
-        self.correlation: dict[int, np.ndarray] = {}
+        self.channel_noise = channel_noise
+        self.noise: dict[int, ChannelNoise] = {}
         self.axes = self._grid_axes(mod)
+        self.freqs = _centres(data.chunks)
         self.result: SearchResult | None = None
 
     @staticmethod
@@ -279,11 +291,6 @@ class MatchedFilter(_Grid):
         return {k: np.atleast_1d(grid.get(k, own[k])).astype(float).tolist() for k in GRID_KEYS}
 
     @property
-    def freqs(self) -> np.ndarray:
-        """Channel frequencies in Hz."""
-        return self.data.freqs
-
-    @property
     def response(self) -> np.ndarray | None:
         return None if self.result is None else self.result.response
 
@@ -294,10 +301,7 @@ class MatchedFilter(_Grid):
     def run(self, jackknife: bool = False, cores: int | None = None) -> None:
         """Fill ``result`` and, with ``jackknife``, ``result.jackknife`` on the same grid, on ``cores`` cores."""
         limit_cores(cores)
-        if self.channel_correlation == "measure":
-            self.correlation = self.data.channel_correlation()
-        else:
-            self.correlation = {k: np.asarray(v, dtype=float) for k, v in (self.channel_correlation or {}).items()}
+        self.noise = self.data.channel_noise() if self.channel_noise == "measure" else dict(self.channel_noise or {})
         self.result = self._search(self.data)
         if jackknife:
             self.result.jackknife = self._search(self.data.jackknife())
@@ -306,23 +310,39 @@ class MatchedFilter(_Grid):
         axes = {k: np.asarray(v) for k, v in self.axes.items()}
         bmin, bmaj, pa = (np.asarray(s) for s in zip(*product(axes["bmin"], axes["bmaj"], axes["pa"]), strict=True))
         cov = covariance(bmaj * ARCSEC, bmin * ARCSEC, pa)
+        # windows that overlap in frequency add by inverse variance, (n_shape, n_width[, n_dra, n_ddec], n_centre)
+        w = np.zeros((bmin.size, len(axes["width"]), self.freqs.size))
+        wflux = np.zeros((*w.shape[:2], len(axes["dra"]), len(axes["ddec"]), self.freqs.size))
+        tol = 1e-3 * np.diff(self.freqs).min() if self.freqs.size > 1 else 1.0
         with jax.enable_x64(True):
-            windows = [self._window(c, axes, cov) for c in tqdm(data.chunks, desc="Windows", leave=False)]
-        snr, error = zip(*windows, strict=True)
-        # (n_shape, n_width, n_dra, n_ddec, n_chan) and (n_shape, n_width, n_chan)
-        snr, error = np.concatenate(snr, axis=-1), np.concatenate(error, axis=-1)
+            for c in tqdm(data.chunks, desc="Windows", leave=False):
+                at = np.flatnonzero((self.freqs > c.freq[0] - tol) & (self.freqs < c.freq[-1] + tol))
+                snr, error = self._window(c, axes, cov, self.freqs[at])
+                inverse = np.nan_to_num(error**-2.0)
+                w[..., at] += inverse
+                wflux[..., at] += inverse[:, :, None, None] * snr * np.nan_to_num(error)[:, :, None, None]
+        error = np.where(w > 0, 1 / np.sqrt(np.where(w > 0, w, 1.0)), np.nan)
+        snr = wflux * np.nan_to_num(error)[:, :, None, None]
         snr = snr.transpose(2, 3, 0, 1, 4).reshape(*snr.shape[2:4], -1, snr.shape[-1])
         error = np.broadcast_to(error.reshape(-1, error.shape[-1]), snr.shape)
         coverage = np.broadcast_to(1.0, (*snr.shape[:2], snr.shape[-1]))
-        return SearchResult(dict(self.axes), data.freqs, snr, snr * error, error, coverage)
+        return SearchResult(dict(self.axes), self.freqs, snr, snr * error, error, coverage)
 
-    def _window(self, chunk: Chunk, axes: dict, cov: tuple) -> tuple:
-        """S/N and error of one window."""
+    def _window(self, chunk: Chunk, axes: dict, cov: tuple, centres: np.ndarray) -> tuple:
+        """S/N and error of one window at ``centres``, its weights over the channels' measured noise."""
         snr = []
-        widths, freq = jnp.asarray(axes["width"]), jnp.asarray(chunk.freq)
-        rho = jnp.asarray(self.correlation.get(chunk.spw, np.ones(1)))
-        for n, collapsed in _blocks(chunk, axes["dra"], axes["ddec"], cov):
-            block, error = _spectral(*collapsed, freq, widths, rho, order=self.continuum_order)
+        scale, rho = self.noise.get(chunk.spw, (np.ones(chunk.freq.size), np.ones(1)))
+        scale, freq, centres = jnp.asarray(scale), jnp.asarray(chunk.freq), jnp.asarray(centres)
+        for n, (sig, weight) in _blocks(chunk, axes["dra"], axes["ddec"], cov):
+            block, error = _spectral(
+                sig / scale[:, None, None, None],
+                weight / scale[:, None],
+                freq,
+                centres,
+                jnp.asarray(axes["width"]),
+                jnp.asarray(rho),
+                order=self.continuum_order,
+            )
             snr.append(np.asarray(block)[:, :, :n])
         return np.concatenate(snr, axis=2), np.asarray(error)
 

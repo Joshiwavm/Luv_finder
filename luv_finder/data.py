@@ -18,6 +18,7 @@ import dataclasses
 import zipfile
 from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
+from typing import NamedTuple
 
 import numpy as np
 
@@ -38,11 +39,21 @@ def pair_weight(a, b) -> np.ndarray:
     return np.divide(4 * a * b, s, out=np.zeros(np.broadcast(a, b).shape), where=s > 0)
 
 
-def channel_correlation(chunks: Iterable[Chunk], max_lag: int = 8, significance: float = 5.0) -> np.ndarray:
-    """Noise correlation between channels ``(1, rho_1, ..., rho_L)``, measured on the jackknife."""
+class ChannelNoise(NamedTuple):
+    """Noise of each channel over its weights, ``scale`` (1 where they hold), and between channels, ``rho``."""
+
+    scale: np.ndarray
+    rho: np.ndarray
+
+
+def channel_noise(chunks: Iterable[Chunk], max_lag: int = 8, significance: float = 5.0) -> ChannelNoise:
+    """On the jackknife: noise power per channel over the weights, ``sum |X|^2 / 2 sum w``, and ``(1, rho_1, ...)``."""
     num, norm_a, norm_b, n = (np.zeros(max_lag + 1) for _ in range(4))
+    power = weight = 0.0
     for chunk in chunks:
         jk = chunk.jackknife()
+        power = power + np.sum(np.abs(jk.X) ** 2, axis=1)
+        weight = weight + 2 * jk.w.sum(axis=1)
         z = np.where(jk.flag, 0.0, jk.X / np.sqrt(jk.w_row))
         for lag in range(1, min(max_lag, z.shape[0] - 1) + 1):
             a, b = z[:-lag], z[lag:]
@@ -51,15 +62,17 @@ def channel_correlation(chunks: Iterable[Chunk], max_lag: int = 8, significance:
             norm_a[lag] += np.sum(np.abs(a) ** 2, where=ok)
             norm_b[lag] += np.sum(np.abs(b) ** 2, where=ok)
             n[lag] += 2 * ok.sum()
+    if not np.any(power):
+        raise ValueError("the jackknife holds no noise to measure; pass channel_noise=None or a noisy dataset's")
     rho = [1.0]
     for lag in range(1, max_lag + 1):
-        if norm_a[lag] * norm_b[lag] == 0:  # no noise to measure, as in noiseless mocks
+        if norm_a[lag] * norm_b[lag] == 0:
             break
         r = num[lag] / np.sqrt(norm_a[lag] * norm_b[lag])
         if abs(r) * np.sqrt(n[lag]) < significance:
             break
         rho.append(float(r))
-    return np.array(rho)
+    return ChannelNoise(np.divide(power, weight, out=np.ones_like(power), where=weight > 0), np.array(rho))
 
 
 def stokes_i(data: np.ndarray, weight: np.ndarray, flag: np.ndarray):
@@ -367,10 +380,10 @@ class DataHandler:
         """Signal-free noise realisation of every chunk (see :meth:`Chunk.jackknife`)."""
         return DataHandler(chunks=[c.jackknife() for c in self.chunks], metadata=self.metadata)
 
-    def channel_correlation(self, **kwargs) -> dict[int, np.ndarray]:
-        """:func:`channel_correlation` per spectral window, pooled over its fields: ``{spw: rho}``."""
+    def channel_noise(self, **kwargs) -> dict[int, ChannelNoise]:
+        """:func:`channel_noise` per spectral window, pooled over its fields: ``{spw: ChannelNoise}``."""
         spws = sorted({c.spw for c in self.chunks})
-        return {s: channel_correlation((c for c in self.chunks if c.spw == s), **kwargs) for s in spws}
+        return {s: channel_noise((c for c in self.chunks if c.spw == s), **kwargs) for s in spws}
 
     def spectrum(self, dra: float = 0.0, ddec: float = 0.0, model=None) -> np.ndarray:
         """Weighted mean visibility per channel, phase-shifted to (dra, ddec) arcsec.
