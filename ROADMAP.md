@@ -156,11 +156,13 @@ Open:
   averages execution blocks of different opacity; a scale per execution block or
   scan, or per-channel weights in the data (`WEIGHT_SPECTRUM`), would follow it;
   line cores that stay unreliable could be flagged.
-- **Data noisier than its jackknife at 1.2 mm.** In 17 of the 32 ASPECS 1.2 mm
-  windows the data have more than 1.15x as many S/N groups as the jackknife (up to
-  1.6x), and the negated data match the data, not the jackknife. Noise correlated
-  between consecutive integrations would cancel in the jackknife; check per
-  execution block and against a jackknife that pairs integrations further apart.
+- **Jackknife of sparsely sampled fields.** A mosaic field seen once per visit
+  (ASPECS 1.2 mm: 9-14 integrations per window, days to months apart) pairs fewer
+  rows than one tracked for hours: the per-baseline pairing keeps 67-74% of them
+  (98% at 3 mm), down from 33-42% when integrations were paired by their index in
+  time. Partners far apart in hour angle cancel the sky less well; the continuum
+  fit removes leaked continuum, but a bright line could leak. Check the leakage on
+  a mock observed the same way.
 - **Fit across overlapping windows.** Windows that overlap in frequency are combined
   in the search, but `fit_line` uses one window per pointing, so a line in the
   ASPECS 3 mm double-tuned range is fitted with one tuning's data.
