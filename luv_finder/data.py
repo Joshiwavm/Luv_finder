@@ -157,22 +157,24 @@ class Chunk:
         return np.exp(-2j * np.pi * np.outer(self.freq, delay))
 
     def jackknife(self) -> Chunk:
-        """A signal-free noise realisation: consecutive integrations differenced and halved.
+        """A signal-free noise realisation: consecutive integrations of every baseline differenced and halved.
 
-        Integrations are paired in time order, (0, 1), (2, 3), ..., and each row is matched to
-        the row of the same baseline in its partner, so rows missing on either side are skipped
-        instead of misaligning the pairs. A signal constant over a pair cancels; the noise stays,
-        with weight ``pair_weight`` (2w for equal weights).
+        Each baseline's integrations are paired in time order, its first with its second, third
+        with fourth, ..., whatever the other baselines do, so a mosaic field seen once per visit
+        (or a baseline missing from some integrations) still pairs nearly every row; an odd last
+        integration is left out. A signal constant over a pair cancels; the noise stays, with
+        weight ``pair_weight`` (2w for equal weights).
 
         The split is by integration, never random: a random sign flip of individual
         visibilities destroys the baseline structure and does not give the observation's
         white-noise level.
         """
-        t = np.unique(self.time, return_inverse=True)[1]
-        key = t // 2 * (self.baseline.max() + 1) + self.baseline
-        first = t % 2 == 0
-        _, ia, ib = np.intersect1d(key[first], key[~first], return_indices=True)
-        a, b = np.flatnonzero(first)[ia], np.flatnonzero(~first)[ib]
+        order = np.lexsort((self.time, self.baseline))
+        same = self.baseline[order][1:] == self.baseline[order][:-1]
+        start = np.flatnonzero(np.r_[True, ~same])
+        rank = np.arange(order.size) - start[np.cumsum(np.r_[True, ~same]) - 1]
+        pick = np.flatnonzero((rank % 2 == 0)[:-1] & same)
+        a, b = order[pick], order[pick + 1]
 
         w_row = pair_weight(self.w_row[a], self.w_row[b])
         # column indexing returns Fortran-ordered arrays; keep chunks row-major

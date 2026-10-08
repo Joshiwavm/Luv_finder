@@ -186,6 +186,14 @@ def test_jackknife_splits_by_integration_not_randomly():
     assert np.allclose(jacked.w_row, 2.0)
 
 
+def test_jackknife_pairs_each_baseline_in_time_order():
+    """A mosaic field seen at different times per baseline: every baseline pairs its own integrations."""
+    times = [0, 5, 9, 1, 2, 2.5]
+    baselines = [0, 0, 0, 1, 1, 2]  # baseline 0 at 0, 5, 9; baseline 1 at 1, 2; baseline 2 once
+    jacked = _chunk(times, baselines, values=np.array(times, dtype=float)).jackknife()
+    assert sorted(zip(jacked.baseline, jacked.vis[0], strict=True)) == [(0, -2.5), (1, -0.5)]
+
+
 def test_jackknife_pairs_rows_by_baseline():
     """Rows missing or reordered in one integration do not misalign the pairs."""
     times = [0, 0, 0, 0, 1, 1, 1]
