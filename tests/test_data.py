@@ -252,44 +252,53 @@ def test_channel_noise_per_spectral_window():
     assert sorted(noise) == [0, 1] and noise[0].rho.size == 3 and noise[1].rho.tolist() == [1.0]
 
 
-def _two_blocks(seed=0):
-    """Two execution blocks of one baseline, 30 s integrations; noise 2x the weights in block 1, channels 0-1."""
+def _two_scans(seed=0):
+    """Two scans of one baseline, 30 s integrations; noise 2x the weights in scan 1, channels 0-1."""
     rng = np.random.default_rng(seed)
     n = 40000
     chunk = _chunk(np.arange(n) * 30.0, np.zeros(n, dtype=int), n_chan=4)
-    session = (np.arange(n) >= n // 2).astype(int)
+    scan = (np.arange(n) >= n // 2).astype(int)
     sigma = np.ones((4, n))
-    sigma[:2, session == 1] = 2.0
+    sigma[:2, scan == 1] = 2.0
     noise = sigma * (rng.standard_normal((4, n)) + 1j * rng.standard_normal((4, n)))
-    return dataclasses.replace(chunk, session=session, X=noise)
+    return dataclasses.replace(chunk, scan=scan, X=noise)
 
 
-def test_weight_scale_per_block_and_channel():
-    """The noise power over the weights, measured per execution block and channel; the robust check agrees."""
-    ws = weight_scale([_two_blocks()])
+def test_weight_scale_per_scan_and_channel():
+    """The noise power over the weights, measured per scan and channel; the robust check agrees."""
+    ws = weight_scale([_two_scans()])
     expected = np.ones((2, 4))
     expected[1, :2] = 4.0
-    assert ws.sessions.tolist() == [0, 1]
+    assert ws.scans.tolist() == [0, 1]
     assert ws.scale == pytest.approx(expected, rel=0.05)
     assert ws.check == pytest.approx(ws.scale, rel=0.05)
+    assert ws.error == pytest.approx(np.full((2, 4), 1.04 / 100), rel=0.01)
 
 
 def test_reweighted_weights_match_the_noise():
-    chunk = reweighted([_two_blocks()])[0]
+    chunk = reweighted([_two_scans()])[0]
     assert chunk.w.dtype == np.float32
-    assert np.allclose(chunk.vis, _two_blocks().X, rtol=1e-6)
+    assert np.allclose(chunk.vis, _two_scans().X, rtol=1e-6)
     assert channel_noise([chunk]).scale == pytest.approx(np.ones(4), rel=0.05)
 
 
 def test_weight_scale_pairs_integrations_close_in_time_across_fields():
     """A mosaic field seen once per visit pairs with the next field's integration of the same baseline."""
-    a = dataclasses.replace(_two_blocks(), field=0, session=np.zeros(40000, dtype=int))
-    rows = {k: getattr(a, k) for k in ("u", "v", "time", "baseline", "session")}
+    a = dataclasses.replace(_two_scans(), field=0, scan=np.zeros(40000, dtype=int))
+    rows = {k: getattr(a, k) for k in ("u", "v", "time", "baseline", "scan")}
     fields = [
         dataclasses.replace(a, field=f, X=a.X[:, f::2], w=a.w[:, f::2], **{k: v[f::2] for k, v in rows.items()})
         for f in (0, 1)
     ]
     assert weight_scale(fields).scale == pytest.approx(weight_scale([a]).scale, rel=1e-12)
+
+
+def test_weight_scale_measures_a_scan_of_one_integration():
+    """Its integration pairs with a neighbouring scan's, and that pair counts in both scans."""
+    chunk = _two_scans()
+    scan = np.repeat([0, 1, 2], [20001, 1, 19998])
+    ws = weight_scale([dataclasses.replace(chunk, scan=scan)])
+    assert ws.scans.tolist() == [0, 1, 2] and np.all(ws.scale[1] > 0)
 
 
 def test_weight_scale_needs_close_integrations():

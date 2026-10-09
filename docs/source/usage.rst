@@ -64,13 +64,14 @@ Data layout
 :class:`~luv_finder.data.DataHandler` holds one :class:`~luv_finder.data.Chunk` per
 (field, spectral window): the weighted visibilities ``X = w * V`` and the weight of every
 visibility ``w`` (0 where flagged) as ``(n_chan, n_row)`` arrays, and ``u``, ``v``, time,
-baseline and execution block once per row and frequency once per channel. The weight starts
+baseline and scan once per row and frequency once per channel. The weight starts
 from the measurement set's ``WEIGHT_SPECTRUM`` (or ``WEIGHT``) column, Stokes I of the parallel
-hands, and is then measured: for every spectral window, execution block and channel, the
+hands, and is then measured: for every spectral window, scan and channel, the
 noise of differences of a baseline's integrations at most 450 s apart (the next integration,
 or in a mosaic the next visit, whatever the field) over the noise the weights predict
-(:func:`~luv_finder.data.weight_scale`). The weights are divided by it, so channels on an
-atmospheric line and blocks in worse weather carry the weight they deserve. Autocorrelations
+(:func:`~luv_finder.data.weight_scale`; a pair spanning two scans counts in both). The weights
+are divided by it, so channels on an atmospheric line and scans in worse weather carry the
+weight they deserve. Autocorrelations
 and flagged rows are dropped on reading.
 
 Positions (``dra``, ``ddec``) are arcsec east and north of one reference direction per

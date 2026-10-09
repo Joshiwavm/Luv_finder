@@ -3,8 +3,8 @@
 Visibilities are held per (field, spectral window) in a :class:`Chunk`: the weighted
 visibilities ``X = w * V`` and the weight of every visibility ``w`` (0 where flagged) as
 ``(n_chan, n_row)`` arrays, and what is constant along an axis (``u``, ``v``, time, baseline and
-execution block per row, frequency per channel) once. The weights are corrected on reading, per
-execution block and channel, by the noise measured in the data (:func:`reweighted`).
+scan per row, frequency per channel) once. The weights are corrected on reading, per scan and
+channel, by the noise measured in the data (:func:`reweighted`).
 
 Positions are offsets in one sky frame per dataset: arcsec east and north of
 :attr:`Metadata.ref`, the model's (dra, ddec) convention. Each chunk carries its field's phase
@@ -30,7 +30,7 @@ from ._casa import tools
 from .utils import ARCSEC, C, primary_beam_fwhm
 
 #: Arrays stored per chunk in an NPZ, under ``{field}_{spw}_{name}``.
-CHUNK_ARRAYS = ("offset", "freq", "u", "v", "time", "baseline", "session", "X", "w")
+CHUNK_ARRAYS = ("offset", "freq", "u", "v", "time", "baseline", "scan", "X", "w")
 
 #: Target size of one block of rows read from a measurement set, in visibility-channels.
 READ_BLOCK = 25_000_000
@@ -64,21 +64,30 @@ def _vis(X: np.ndarray, w: np.ndarray) -> np.ndarray:
 
 
 class WeightScale(NamedTuple):
-    """Noise power over the weights per execution block and channel, ``scale``, and its robust ``check``."""
+    """Noise power over the weights per scan and channel, ``scale``, its robust ``check`` and that one's ``error``."""
 
-    sessions: np.ndarray
+    scans: np.ndarray
     scale: np.ndarray
     check: np.ndarray
+    error: np.ndarray
+
+    def deviation(self) -> np.ndarray:
+        """``check / scale - 1`` in units of its counting error: about N(0, 1) for Gaussian noise."""
+        return (self.check / self.scale - 1) / self.error
 
 
 def weight_scale(chunks: Sequence[Chunk]) -> WeightScale:
-    """``sum w z^2 / 2 sum w`` per (block, channel) over a window's integrations of a baseline <= ``MAX_GAP`` apart."""
-    time, baseline, session = (np.concatenate([getattr(c, k) for c in chunks]) for k in ("time", "baseline", "session"))
+    """``sum w z^2 / 2 sum w`` per (scan, channel) over a window's integrations of a baseline <= ``MAX_GAP`` apart.
+
+    A pair that spans two scans counts in both, so a scan of one integration is measured too.
+    """
+    time, baseline, scan = (np.concatenate([getattr(c, k) for c in chunks]) for k in ("time", "baseline", "scan"))
     a, b = _pairs(time, baseline, MAX_GAP)
-    sessions = np.unique(session)
-    of_pair, of_row = np.searchsorted(sessions, session[a]), np.searchsorted(sessions, session)
+    scans = np.unique(scan)
+    of_a, of_b, of_row = (np.searchsorted(scans, s) for s in (scan[a], scan[b], scan))
     n_chan = chunks[0].freq.size
-    scale, check = np.ones((sessions.size, n_chan)), np.full((sessions.size, n_chan), np.nan)
+    scale, check = np.ones((scans.size, n_chan)), np.full((scans.size, n_chan), np.nan)
+    error = np.full((scans.size, n_chan), np.nan)
     for lo in range(0, n_chan, CHANNEL_BLOCK):
         sl = slice(lo, lo + CHANNEL_BLOCK)
         X, w = (np.concatenate([getattr(c, k)[sl] for c in chunks], axis=1) for k in ("X", "w"))
@@ -86,13 +95,14 @@ def weight_scale(chunks: Sequence[Chunk]) -> WeightScale:
         both = (wa > 0) & (wb > 0)
         wp = np.divide(wa * wb, wa + wb, out=np.zeros_like(wa), where=both)
         z2 = np.abs(_vis(X[:, a], wa) - _vis(X[:, b], wb)) ** 2 * wp
-        for k in range(sessions.size):
-            m = of_pair == k
+        for k in range(scans.size):
+            m = (of_a == k) | (of_b == k)
             num, den = np.sum(wp[:, m] * z2[:, m], axis=1), 2 * np.sum(wp[:, m], axis=1)
             data = np.sum(w[:, of_row == k], axis=1) > 0
             if np.any(data & (den == 0)):
                 raise ValueError(
-                    f"spw {chunks[0].spw}, execution block {sessions[k]}: no two integrations of a baseline within "
+                    f"spw {chunks[0].spw}, scan {scans[k] & 0xFFFFFFFF} of execution block {scans[k] >> 32}: no two "
+                    f"integrations of a baseline within "
                     f"{MAX_GAP:.0f} s to measure its weights; flag it or raise MAX_GAP"
                 )
             if np.any((den > 0) & (num == 0)):
@@ -101,7 +111,10 @@ def weight_scale(chunks: Sequence[Chunk]) -> WeightScale:
                 )
             scale[k, sl] = np.where(den > 0, num / np.where(den > 0, den, 1.0), 1.0)
             check[k, sl] = [_robust(z[o]) for z, o in zip(z2[:, m], both[:, m], strict=True)]
-    return WeightScale(sessions, scale, check)
+            n, w1, w2 = both[:, m].sum(axis=1), np.sum(wp[:, m], axis=1), np.sum(wp[:, m] ** 2, axis=1)
+            # the median's variance 1 / ln(2)^2 / n, the weighted mean's, less twice their covariance 1 / n
+            error[k, sl] = np.sqrt((1 / np.log(2) ** 2 - 2) / n + w2 / w1**2, where=n > 0, out=error[k, sl])
+    return WeightScale(scans, scale, check, error)
 
 
 def _robust(z2: np.ndarray) -> float:
@@ -110,20 +123,23 @@ def _robust(z2: np.ndarray) -> float:
 
 
 def reweighted(chunks: Sequence[Chunk]) -> list[Chunk]:
-    """The chunks of one window with their weights divided by :func:`weight_scale`, per execution block and channel."""
+    """The chunks of one window with their weights divided by :func:`weight_scale`, per scan and channel."""
     ws = weight_scale(chunks)
-    deviation = np.nanmax(np.abs(ws.check / ws.scale - 1))
+    deviation = np.nanmax(np.abs(ws.deviation()))
     print(
-        f"spw {chunks[0].spw}: noise over the weights per execution block, median "
-        f"{np.round(np.median(ws.scale, axis=1), 3).tolist()}, range {ws.scale.min():.2f}-{ws.scale.max():.2f}; "
-        f"robust check within {deviation:.1%}",
+        f"spw {chunks[0].spw}: noise over the weights in {ws.scans.size} scans, median per scan "
+        f"{np.median(ws.scale, axis=1).min():.3f}-{np.median(ws.scale, axis=1).max():.3f}, "
+        f"range {ws.scale.min():.2f}-{ws.scale.max():.2f}; "
+        f"robust check within {deviation:.1f} sigma",
         flush=True,
     )
-    if deviation > 0.05:
-        warnings.warn(f"spw {chunks[0].spw}: the weighted and robust noise differ by {deviation:.0%}", stacklevel=2)
+    if deviation > 5:
+        warnings.warn(
+            f"spw {chunks[0].spw}: the weighted and robust noise differ by {deviation:.1f} sigma", stacklevel=2
+        )
     out = []
     for c in chunks:
-        factor = 1 / ws.scale[np.searchsorted(ws.sessions, c.session)].T
+        factor = 1 / ws.scale[np.searchsorted(ws.scans, c.scan)].T
         out.append(dataclasses.replace(c, X=c.X * factor, w=(c.w * factor).astype(np.float32)))
     return out
 
@@ -201,7 +217,7 @@ class Chunk:
     u, v : (n_row,) m
     time : (n_row,) s
     baseline : (n_row,) int, identifies the antenna pair
-    session : (n_row,) int, the execution block (``OBSERVATION_ID``)
+    scan : (n_row,) int64, the scan, ``OBSERVATION_ID << 32 | SCAN_NUMBER``
     X : (n_chan, n_row) complex, weighted visibilities
     w : (n_chan, n_row) float32, inverse variance of each visibility, 0 where flagged
     """
@@ -214,7 +230,7 @@ class Chunk:
     v: np.ndarray
     time: np.ndarray
     baseline: np.ndarray
-    session: np.ndarray
+    scan: np.ndarray
     X: np.ndarray
     w: np.ndarray
 
@@ -269,7 +285,7 @@ class Chunk:
             v=0.5 * (self.v[a] + self.v[b]),
             time=0.5 * (self.time[a] + self.time[b]),
             baseline=self.baseline[a],
-            session=self.session[a],
+            scan=self.scan[a],
             X=np.ascontiguousarray(w * diff),
             w=w.astype(np.float32),
         )
@@ -402,7 +418,7 @@ def _read_chunk(sel, field, spw, offset, freq, n_ant, spectrum) -> Chunk | None:
                 "v": uvw[1],
                 "time": col("TIME")[keep],
                 "baseline": (col("ANTENNA1") * n_ant + col("ANTENNA2"))[keep],
-                "session": col("OBSERVATION_ID")[keep],
+                "scan": (col("OBSERVATION_ID").astype(np.int64) << 32 | col("SCAN_NUMBER"))[keep],
                 "X": vis[np.ix_(order, keep)] * w,
                 "w": w.astype(np.float32),
             }

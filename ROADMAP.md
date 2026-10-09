@@ -149,10 +149,12 @@ Open:
   `statwt chanbin="spw"` the S/N there is overestimated in the data and the jackknife
   alike; in ASPECS 1.2 mm the excess is 1.5-3.4x in power and changes by a factor of
   two between execution blocks. Done: the weights are measured on reading per
-  (execution block, channel) from integrations of a baseline <= 450 s apart, any
-  field (`weight_scale`, 99% of the rows paired at 1.2 mm), and divided by it. Open:
-  a block whose weather changes within it is averaged over the block; a scale per scan
-  would follow faster changes, and line cores that stay unreliable could be flagged.
+  (scan, channel) from integrations of a baseline <= 450 s apart, any field
+  (`weight_scale`, 99% of the rows paired at 1.2 mm), and divided by it. Per scan,
+  because the 237.15 GHz ozone core also changes between the scans of a block, by
+  +-8% in power in 3 of 8 blocks (chi^2/dof 2.4-7.4 at the line peak; clean channels
+  1.0). With the weights as read, false peaks gathered on the ozone lines (3-12x
+  the chance rate at S/N >= 5); corrected per channel, they no longer do.
 - **Jackknife of sparsely sampled fields.** A mosaic field seen once per visit
   (ASPECS 1.2 mm: 9-14 integrations per window, days to months apart) pairs fewer
   rows than one tracked for hours: the per-baseline pairing keeps 67-74% of them
