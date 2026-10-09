@@ -8,6 +8,7 @@ plots with the same styling.
 from __future__ import annotations
 
 import os
+import warnings
 
 import matplotlib
 
@@ -512,12 +513,13 @@ def reliability_check(cat, plots_dir="plots", name="reliability"):
     data curve. Middle: the likelihood ratio N_data / N_jackknife at every data group, a lower
     limit (caret) where no jackknife group is as bright, against the threshold ``k`` and the
     lowest S/N above it. Right: the binned fidelity ``1 - N_jackknife / N_data`` with its erf fit
-    and the S/N where that reaches ``fidelity_min``. The fit and the thresholds are left out where
-    they are NaN.
+    and the S/N where that reaches ``fidelity_min``, and the same against the negated data (as
+    ASPECS measures it) for comparison. The fits and the thresholds are left out where they are NaN.
     """
     from matplotlib.ticker import LogFormatter
+    from scipy import special
 
-    from .catalogue import fidelity_curve, likelihood
+    from .catalogue import fidelity, fidelity_curve, likelihood
 
     meta = cat.meta
     floor, k, fidelity_min = meta["floor"], meta["k"], meta["fidelity_min"]
@@ -552,6 +554,16 @@ def reliability_check(cat, plots_dir="plots", name="reliability"):
         fid.plot(
             x, fidelity_curve(x, centre, sigma), c="C1", label=rf"erf fit, C = {centre:.2f}, $\sigma$ = {sigma:.2f}"
         )
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        _, (c_neg, s_neg), bins_neg = fidelity(data, negative, floor)
+    fid.plot(bins_neg["snr"], bins_neg["fidelity"], "s", mfc="none", c="0.45", ms=4,
+             label="binned, against the negated data")  # fmt: skip
+    if np.isfinite([c_neg, s_neg]).all():
+        x = np.linspace(*xlim, 200)
+        at = c_neg + s_neg * special.erfinv(2 * fidelity_min - 1)
+        fid.plot(x, fidelity_curve(x, c_neg, s_neg), c="0.45", ls="--",
+                 label=f"erf fit against the negated data; {fidelity_min:g} at S/N {at:.2f}")  # fmt: skip
     fid.axhline(fidelity_min, c="C3", ls="--", lw=1, label=f"fidelity_min = {fidelity_min:g}")
     fid.set_ylim(-0.05, 1.05)
     fid.set_ylabel(r"Fidelity 1 $-$ N$_{jackknife}$ / N$_{data}$")
@@ -571,6 +583,53 @@ def reliability_check(cat, plots_dir="plots", name="reliability"):
         ax.legend(fontsize=8)
     fid.legend(fontsize=8, loc="lower right", framealpha=0.9)
     fig.suptitle(f"{detected.size} of {len(data)} data groups detected")
+    return _save(fig, plots_dir, name)
+
+
+def weights_check(chunks, labels, plots_dir="plots", name="weights", n_points=200_000, seed=0):
+    """Do the weights predict the scatter? Re V at the phase centre per channel, its spread and ``<1/w>^1/2``.
+
+    One panel per chunk (one field and window, e.g. with the measurement set's weights and reweighted), each
+    with a random ``n_points`` of the visibilities, the measured spread (median and robust sigma per channel)
+    and the spread the weights predict; below, the measured over the predicted spread per channel, from
+    ``Re V sqrt(w)``, which is 1 where the weights hold. The sky is in V too, which is fine for a faint field.
+    """
+    from scipy import stats
+
+    rng = np.random.default_rng(seed)
+    fig, axes = plt.subplots(
+        len(chunks) + 1, 1, figsize=(11, 3.1 * len(chunks) + 2.6), sharex=True,
+        gridspec_kw={"height_ratios": [3] * len(chunks) + [2]},
+    )  # fmt: skip
+    for ax, c, label in zip(axes[:-1], chunks, labels, strict=True):
+        ghz, re, ok = c.freq / 1e9, c.vis.real, c.w > 0
+        chan, row = np.nonzero(ok)
+        pick = rng.choice(chan.size, min(n_points, chan.size), replace=False)
+        ax.plot(ghz[chan[pick]], 1e3 * re[chan[pick], row[pick]], ",", c="0.6", rasterized=True,
+                label=f"visibilities ({pick.size} of {chan.size} shown)")  # fmt: skip
+        centre = np.array([np.median(r[o]) if o.any() else np.nan for r, o in zip(re, ok, strict=True)])
+        spread = np.array([stats.median_abs_deviation(r[o], scale="normal") if o.any() else np.nan
+                           for r, o in zip(re, ok, strict=True)])  # fmt: skip
+        predicted = np.sqrt([np.mean(1 / w[o]) if o.any() else np.nan for w, o in zip(c.w, ok, strict=True)])
+        ax.fill_between(ghz, 1e3 * (centre - spread), 1e3 * (centre + spread), color="C0", alpha=0.35,
+                        label="measured spread: median ± 1σ per channel")  # fmt: skip
+        predicts = r"spread the weights predict: $\pm\langle 1/w\rangle^{1/2}$"
+        for sign, text in ((1, predicts), (-1, None)):
+            ax.plot(ghz, 1e3 * sign * predicted, "--", c="C1", label=text)
+        z = np.where(ok, re * np.sqrt(c.w), np.nan)
+        ratio = np.array([stats.median_abs_deviation(r[np.isfinite(r)], scale="normal") if np.isfinite(r).any()
+                          else np.nan for r in z])  # fmt: skip
+        overall = stats.median_abs_deviation(z[np.isfinite(z)], scale="normal")
+        ax.text(0.01, 0.04, f"measured / predicted σ = {overall:.2f}", transform=ax.transAxes, fontsize=9,
+                bbox=dict(fc="white", ec="0.7"))  # fmt: skip
+        ax.set_ylim(-5e3 * np.nanmedian(predicted), 5e3 * np.nanmedian(predicted))
+        ax.set_ylabel("Re V at phase centre [mJy]")
+        ax.set_title(f"{label}: field {c.field}, spw {c.spw}", fontsize=10)
+        ax.legend(fontsize=8, loc="upper right", markerscale=20)
+        axes[-1].plot(ghz, ratio, lw=1, label=label)
+    axes[-1].axhline(1, c="0.4", lw=0.8)
+    axes[-1].set(xlabel="channel frequency [GHz]", ylabel="measured / predicted σ")
+    axes[-1].legend(fontsize=8)
     return _save(fig, plots_dir, name)
 
 

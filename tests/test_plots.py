@@ -11,7 +11,8 @@ from types import SimpleNamespace
 import numpy as np
 
 from luv_finder import Gaussian, MatchedFilter, Model
-from luv_finder.plotting import response_check, spectrum_check
+from luv_finder.data import reweighted
+from luv_finder.plotting import response_check, spectrum_check, weights_check
 
 
 def test_spectrum_per_source(data, truth, plots):
@@ -270,3 +271,10 @@ def test_reliability_figure(plots):
     for name, cat in (("normal", normal), ("nan_fit", nan_fit), ("nothing", nothing), ("empty", empty)):
         path = reliability_check(cat, plots_dir=str(plots), name=f"reliability_{name}")
         assert Path(path).is_file()
+
+
+def test_weights_figure(data, plots):
+    """The scatter of the visibilities against the spread their weights predict, as read and reweighted."""
+    (chunk,) = data.chunks
+    path = weights_check([chunk, reweighted([chunk])[0]], ["as stored", "reweighted"], plots_dir=str(plots))
+    assert path.endswith(".png")
