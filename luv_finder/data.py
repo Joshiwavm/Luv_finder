@@ -112,8 +112,9 @@ def weight_scale(chunks: Sequence[Chunk]) -> WeightScale:
             scale[k, sl] = np.where(den > 0, num / np.where(den > 0, den, 1.0), 1.0)
             check[k, sl] = [_robust(z[o]) for z, o in zip(z2[:, m], both[:, m], strict=True)]
             n, w1, w2 = both[:, m].sum(axis=1), np.sum(wp[:, m], axis=1), np.sum(wp[:, m] ** 2, axis=1)
+            ok = n > 0
             # the median's variance 1 / ln(2)^2 / n, the weighted mean's, less twice their covariance 1 / n
-            error[k, sl] = np.sqrt((1 / np.log(2) ** 2 - 2) / n + w2 / w1**2, where=n > 0, out=error[k, sl])
+            error[k, sl][ok] = np.sqrt((1 / np.log(2) ** 2 - 2) / n[ok] + w2[ok] / w1[ok] ** 2)
     return WeightScale(scans, scale, check, error)
 
 

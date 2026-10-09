@@ -1,4 +1,5 @@
 import dataclasses
+import warnings
 
 import numpy as np
 import pytest
@@ -299,6 +300,17 @@ def test_weight_scale_measures_a_scan_of_one_integration():
     scan = np.repeat([0, 1, 2], [20001, 1, 19998])
     ws = weight_scale([dataclasses.replace(chunk, scan=scan)])
     assert ws.scans.tolist() == [0, 1, 2] and np.all(ws.scale[1] > 0)
+
+
+def test_weight_scale_of_a_channel_flagged_throughout():
+    """Nothing to measure there: scale 1, no error, and no warning on the way."""
+    chunk = _two_scans()
+    w = chunk.w.copy()
+    w[3] = 0
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        ws = weight_scale([dataclasses.replace(chunk, X=chunk.X * w, w=w)])
+    assert np.all(ws.scale[:, 3] == 1) and np.isnan(ws.error[:, 3]).all()
 
 
 def test_weight_scale_needs_close_integrations():
