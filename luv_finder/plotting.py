@@ -587,17 +587,40 @@ def reliability_check(cat, plots_dir="plots", name="reliability"):
     return _save(fig, plots_dir, name)
 
 
-def weights_check(chunks, labels, plots_dir="plots", name="weights", n_points=200_000, seed=0):
+def _whitened(chunks):
+    """``Re V sqrt(w)`` per channel over ``chunks`` of one window, unflagged: unit variance where the weights hold."""
+    zs = [np.where(c.w > 0, c.vis.real * np.sqrt(c.w), np.nan) for c in chunks]
+    return [x[np.isfinite(x)] for x in np.concatenate(zs, axis=1)]
+
+
+def _noise_ratio(z):
+    """Robust sigma per channel of whitened samples ``z`` and its counting error, ``1.166 / sqrt(N)`` for a MAD."""
+    from scipy import stats
+
+    sigma = np.array([stats.median_abs_deviation(x, scale="normal") if x.size else np.nan for x in z])
+    return sigma, 1.166 / np.sqrt(np.maximum([x.size for x in z], 1))
+
+
+def _ratio_line(ax, ghz, z, label, **style):
+    ratio, error = _noise_ratio(z)
+    (line,) = ax.plot(ghz, ratio, lw=1, label=label, **style)
+    ax.fill_between(ghz, 1 - error, 1 + error, color=line.get_color(), alpha=0.2, lw=0)
+    return ratio
+
+
+def weights_check(chunks, labels, plots_dir="plots", name="weights", n_points=200_000, seed=0, pooled=()):
     """Do the weights predict the scatter? Re V at the phase centre per channel, its spread and ``<1/w>^1/2``.
 
     One panel per chunk (one field and window, e.g. with the measurement set's weights and reweighted), each
     with a random ``n_points`` of the visibilities, the measured spread (median and robust sigma per channel)
     and the spread the weights predict; below, the measured over the predicted spread per channel, from
     ``Re V sqrt(w)``, which is 1 where the weights hold. The sky is in V too, which is fine for a faint field.
+    The ratio scatters by ``1.166 / sqrt(N)`` per channel (shaded), so one field ripples; ``pooled``, the
+    window's chunks of every field, tests the reweighting, which is fitted per scan over them all.
     """
     from scipy import stats
 
-    rng = np.random.default_rng(seed)
+    rng, ratios = np.random.default_rng(seed), []
     fig, axes = plt.subplots(
         len(chunks) + 1, 1, figsize=(11, 3.1 * len(chunks) + 2.6), sharex=True,
         gridspec_kw={"height_ratios": [3] * len(chunks) + [2]},
@@ -617,17 +640,22 @@ def weights_check(chunks, labels, plots_dir="plots", name="weights", n_points=20
         predicts = r"spread the weights predict: $\pm\langle 1/w\rangle^{1/2}$"
         for sign, text in ((1, predicts), (-1, None)):
             ax.plot(ghz, 1e3 * sign * predicted, "--", c="C1", label=text)
-        z = np.where(ok, re * np.sqrt(c.w), np.nan)
-        ratio = np.array([stats.median_abs_deviation(r[np.isfinite(r)], scale="normal") if np.isfinite(r).any()
-                          else np.nan for r in z])  # fmt: skip
-        overall = stats.median_abs_deviation(z[np.isfinite(z)], scale="normal")
+        z = _whitened([c])
+        overall = stats.median_abs_deviation(np.concatenate(z), scale="normal")
         ax.text(0.01, 0.04, f"measured / predicted σ = {overall:.2f}", transform=ax.transAxes, fontsize=9,
                 bbox=dict(fc="white", ec="0.7"))  # fmt: skip
         ax.set_ylim(-5e3 * np.nanmedian(predicted), 5e3 * np.nanmedian(predicted))
         ax.set_ylabel("Re V at phase centre [mJy]")
         ax.set_title(f"{label}: field {c.field}, spw {c.spw}", fontsize=10)
         ax.legend(fontsize=8, loc="upper right", markerscale=20)
-        axes[-1].plot(ghz, ratio, lw=1, label=label)
+        ratios.append(_ratio_line(axes[-1], ghz, z, label))
+    if len(pooled):
+        ratios.append(
+            _ratio_line(axes[-1], pooled[0].freq / 1e9, _whitened(pooled), f"all {len(pooled)} fields", c="k")
+        )
+    every = np.concatenate(ratios)
+    lo, hi = np.nanmin(every), np.nanmax(every)
+    axes[-1].set_ylim(lo - 0.1 * (hi - lo), hi + 0.1 * (hi - lo))  # edge channels' bands would set the scale
     axes[-1].axhline(1, c="0.4", lw=0.8)
     axes[-1].set(xlabel="channel frequency [GHz]", ylabel="measured / predicted σ")
     axes[-1].legend(fontsize=8)

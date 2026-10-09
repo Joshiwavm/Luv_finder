@@ -265,7 +265,8 @@ def test_reliability_figure(plots):
 
 
 def test_weights_figure(data, plots):
-    """The scatter of the visibilities against the spread their weights predict, as read and reweighted."""
+    """The scatter of the visibilities against the spread their weights predict, as read, reweighted and pooled."""
     (chunk,) = data.chunks
-    path = weights_check([chunk, reweighted([chunk])[0]], ["as stored", "reweighted"], plots_dir=str(plots))
+    fixed = reweighted([chunk])
+    path = weights_check([chunk, fixed[0]], ["as stored", "reweighted"], plots_dir=str(plots), pooled=fixed * 2)
     assert path.endswith(".png")
