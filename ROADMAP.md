@@ -168,7 +168,11 @@ Open:
   ASPECS 3 mm double-tuned range is fitted with one tuning's data.
 - **Channel response.** The template is a Gaussian sampled at the channel centres;
   Hanning smoothing and channel averaging broaden a line a few channels wide, and
-  windows with different correlator setups then see slightly different peaks.
+  windows with different correlator setups then see slightly different peaks. The
+  fit has the same gap: a line two channels wide (ASPECS 3mm.08, 50 km/s) can
+  collapse below one channel, to a width of 4 km/s with an unbounded error. A lower
+  bound on the width near the channel width, or the channel response in the model,
+  would stop it.
 - **Fidelity per template width.** ASPECS computes the fidelity per kernel width:
   narrow templates have more independent trials than broad ones at the same S/N.
   The catalogue pools all templates.
