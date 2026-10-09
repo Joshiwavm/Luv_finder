@@ -14,7 +14,7 @@ from .model import envelope
 from .utils import ARCSEC, BLOCK_BYTES, C
 
 #: The :class:`~luv_finder.data.Chunk` arrays :func:`_collapse` reads, in its argument order.
-COLLAPSE_ARRAYS = ("u", "v", "X", "w_row", "flag", "freq")
+COLLAPSE_ARRAYS = ("u", "v", "X", "w", "freq")
 
 
 def default_cores() -> int:
@@ -28,7 +28,7 @@ def limit_cores(cores: int | None = None) -> None:
 
 
 @jax.jit
-def _collapse(u, v, X, w_row, flag, freq, dfreq, dra, ddec, cov):
+def _collapse(u, v, X, w, freq, dfreq, dra, ddec, cov):
     """Scan the channels: ``sig (n_chan, n_shape, n_dra, n_ddec)`` and ``W (n_chan, n_shape)``."""
     k0 = -2j * jnp.pi * freq[0] / C * ARCSEC
     dk = -2j * jnp.pi * dfreq / C * ARCSEC
@@ -38,13 +38,12 @@ def _collapse(u, v, X, w_row, flag, freq, dfreq, dra, ddec, cov):
 
     def channel(phases, inputs):
         pu, pv = phases
-        nu, x, f = inputs
-        w = jnp.where(f, 0.0, w_row)
+        nu, x, wc = inputs
         shape = envelope(u * nu / C, v * nu / C, cov, xp=jnp)
         sig = ((pu[None] * (shape * x)[:, None, :]) @ pv.T).real
-        return (pu * du, pv * dv), (sig, shape**2 @ w)
+        return (pu * du, pv * dv), (sig, shape**2 @ wc)
 
-    return jax.lax.scan(channel, (pu, pv), (freq, X, flag))[1]
+    return jax.lax.scan(channel, (pu, pv), (freq, X, w))[1]
 
 
 def _blocks(chunk: Chunk, dra, ddec, cov: tuple):
@@ -77,15 +76,15 @@ WEIGHT_POWERS = tuple((i, d - i) for d in range(5) for i in range(d, -1, -1))
 
 
 @jax.jit
-def _moments(u, v, X, w_row, flag, freq, dra, ddec, cov):
+def _moments(u, v, X, w, freq, dra, ddec, cov):
     """Per channel ``sum E X e^{-i phi} u^i v^j`` and ``sum w E^2 u^i v^j``, u and v in cycles per arcsec."""
 
     def channel(_, inputs):
-        nu, x, f = inputs
+        nu, x, wc = inputs
         uw, vw = u * nu / C * ARCSEC, v * nu / C * ARCSEC
         shape = envelope(uw, vw, cov, xp=jnp)
         data = shape * x * jnp.exp(-2j * jnp.pi * (uw * dra + vw * ddec))
-        weight = jnp.where(f, 0.0, w_row) * shape**2
+        weight = wc * shape**2
         up, vp = [jnp.ones_like(uw)], [jnp.ones_like(vw)]
         for _ in range(4):
             up.append(up[-1] * uw)
@@ -95,7 +94,7 @@ def _moments(u, v, X, w_row, flag, freq, dra, ddec, cov):
             jnp.stack([weight @ (up[i] * vp[j]) for i, j in WEIGHT_POWERS]),
         )
 
-    return jax.lax.scan(channel, None, (freq, X, flag))[1]
+    return jax.lax.scan(channel, None, (freq, X, w))[1]
 
 
 def point_moments(chunk: Chunk, dra: float, ddec: float, cov) -> tuple:

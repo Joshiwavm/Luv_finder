@@ -329,20 +329,12 @@ class MatchedFilter(_Grid):
         return SearchResult(dict(self.axes), self.freqs, snr, snr * error, error, coverage)
 
     def _window(self, chunk: Chunk, axes: dict, cov: tuple, centres: np.ndarray) -> tuple:
-        """S/N and error of one window at ``centres``, its weights over the channels' measured noise."""
+        """S/N and error of one window at ``centres``."""
         snr = []
-        scale, rho = self.noise.get(chunk.spw, (np.ones(chunk.freq.size), np.ones(1)))
-        scale, freq, centres = jnp.asarray(scale), jnp.asarray(chunk.freq), jnp.asarray(centres)
-        for n, (sig, weight) in _blocks(chunk, axes["dra"], axes["ddec"], cov):
-            block, error = _spectral(
-                sig / scale[:, None, None, None],
-                weight / scale[:, None],
-                freq,
-                centres,
-                jnp.asarray(axes["width"]),
-                jnp.asarray(rho),
-                order=self.continuum_order,
-            )
+        rho = jnp.asarray(self.noise[chunk.spw].rho if chunk.spw in self.noise else np.ones(1))
+        freq, centres, widths = jnp.asarray(chunk.freq), jnp.asarray(centres), jnp.asarray(axes["width"])
+        for n, collapsed in _blocks(chunk, axes["dra"], axes["ddec"], cov):
+            block, error = _spectral(*collapsed, freq, centres, widths, rho, order=self.continuum_order)
             snr.append(np.asarray(block)[:, :, :n])
         return np.concatenate(snr, axis=2), np.asarray(error)
 

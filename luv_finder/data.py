@@ -1,8 +1,10 @@
 """Measurement-set I/O and visibility-domain operations.
 
 Visibilities are held per (field, spectral window) in a :class:`Chunk`: the weighted
-visibilities ``X = w * V`` and their flags as ``(n_chan, n_row)`` arrays, and everything that
-is constant along an axis (``u``, ``v``, time and weight per row, frequency per channel) once.
+visibilities ``X = w * V`` and the weight of every visibility ``w`` (0 where flagged) as
+``(n_chan, n_row)`` arrays, and what is constant along an axis (``u``, ``v``, time, baseline and
+execution block per row, frequency per channel) once. The weights are corrected on reading, per
+execution block and channel, by the noise measured in the data (:func:`reweighted`).
 
 Positions are offsets in one sky frame per dataset: arcsec east and north of
 :attr:`Metadata.ref`, the model's (dra, ddec) convention. Each chunk carries its field's phase
@@ -15,9 +17,11 @@ the NPZ path (:meth:`DataHandler.from_npz`) works in an environment without CASA
 from __future__ import annotations
 
 import dataclasses
+import warnings
 import zipfile
-from collections.abc import Iterable, Iterator
+from collections.abc import Iterable, Iterator, Sequence
 from dataclasses import dataclass
+from itertools import groupby
 from typing import NamedTuple
 
 import numpy as np
@@ -26,10 +30,16 @@ from ._casa import tools
 from .utils import ARCSEC, C, primary_beam_fwhm
 
 #: Arrays stored per chunk in an NPZ, under ``{field}_{spw}_{name}``.
-CHUNK_ARRAYS = ("offset", "freq", "u", "v", "time", "baseline", "X", "w_row", "flag")
+CHUNK_ARRAYS = ("offset", "freq", "u", "v", "time", "baseline", "session", "X", "w")
 
 #: Target size of one block of rows read from a measurement set, in visibility-channels.
 READ_BLOCK = 25_000_000
+
+#: Largest time between two integrations of a baseline that measure the weights' noise together, s.
+MAX_GAP = 450.0
+
+#: Channels handled at once when the weights are measured.
+CHANNEL_BLOCK = 16
 
 
 def pair_weight(a, b) -> np.ndarray:
@@ -37,6 +47,85 @@ def pair_weight(a, b) -> np.ndarray:
     a, b = np.asarray(a, dtype=float), np.asarray(b, dtype=float)
     s = a + b
     return np.divide(4 * a * b, s, out=np.zeros(np.broadcast(a, b).shape), where=s > 0)
+
+
+def _pairs(time: np.ndarray, baseline: np.ndarray, max_gap: float = np.inf) -> tuple[np.ndarray, np.ndarray]:
+    """Disjoint pairs of consecutive integrations of each baseline, at most ``max_gap`` s apart, in time order."""
+    order = np.lexsort((time, baseline))
+    linked = (baseline[order][1:] == baseline[order][:-1]) & (np.diff(time[order]) <= max_gap)
+    start = np.flatnonzero(np.r_[True, ~linked])
+    rank = np.arange(order.size) - start[np.cumsum(np.r_[True, ~linked]) - 1]
+    pick = np.flatnonzero((rank % 2 == 0)[:-1] & linked)
+    return order[pick], order[pick + 1]
+
+
+def _vis(X: np.ndarray, w: np.ndarray) -> np.ndarray:
+    return np.divide(X, w, out=np.zeros_like(X), where=w > 0)
+
+
+class WeightScale(NamedTuple):
+    """Noise power over the weights per execution block and channel, ``scale``, and its robust ``check``."""
+
+    sessions: np.ndarray
+    scale: np.ndarray
+    check: np.ndarray
+
+
+def weight_scale(chunks: Sequence[Chunk]) -> WeightScale:
+    """``sum w z^2 / 2 sum w`` per (block, channel) over a window's integrations of a baseline <= ``MAX_GAP`` apart."""
+    time, baseline, session = (np.concatenate([getattr(c, k) for c in chunks]) for k in ("time", "baseline", "session"))
+    a, b = _pairs(time, baseline, MAX_GAP)
+    sessions = np.unique(session)
+    of_pair, of_row = np.searchsorted(sessions, session[a]), np.searchsorted(sessions, session)
+    n_chan = chunks[0].freq.size
+    scale, check = np.ones((sessions.size, n_chan)), np.full((sessions.size, n_chan), np.nan)
+    for lo in range(0, n_chan, CHANNEL_BLOCK):
+        sl = slice(lo, lo + CHANNEL_BLOCK)
+        X, w = (np.concatenate([getattr(c, k)[sl] for c in chunks], axis=1) for k in ("X", "w"))
+        wa, wb = w[:, a].astype(float), w[:, b].astype(float)
+        both = (wa > 0) & (wb > 0)
+        wp = np.divide(wa * wb, wa + wb, out=np.zeros_like(wa), where=both)
+        z2 = np.abs(_vis(X[:, a], wa) - _vis(X[:, b], wb)) ** 2 * wp
+        for k in range(sessions.size):
+            m = of_pair == k
+            num, den = np.sum(wp[:, m] * z2[:, m], axis=1), 2 * np.sum(wp[:, m], axis=1)
+            data = np.sum(w[:, of_row == k], axis=1) > 0
+            if np.any(data & (den == 0)):
+                raise ValueError(
+                    f"spw {chunks[0].spw}, execution block {sessions[k]}: no two integrations of a baseline within "
+                    f"{MAX_GAP:.0f} s to measure its weights; flag it or raise MAX_GAP"
+                )
+            if np.any((den > 0) & (num == 0)):
+                raise ValueError(
+                    f"spw {chunks[0].spw} holds no noise to measure; read noiseless data with reweight=False"
+                )
+            scale[k, sl] = np.where(den > 0, num / np.where(den > 0, den, 1.0), 1.0)
+            check[k, sl] = [_robust(z[o]) for z, o in zip(z2[:, m], both[:, m], strict=True)]
+    return WeightScale(sessions, scale, check)
+
+
+def _robust(z2: np.ndarray) -> float:
+    """The noise power from the median of ``z^2``, ``median / 2 ln 2``, which outliers barely move."""
+    return float(np.median(z2) / (2 * np.log(2))) if z2.size else np.nan
+
+
+def reweighted(chunks: Sequence[Chunk]) -> list[Chunk]:
+    """The chunks of one window with their weights divided by :func:`weight_scale`, per execution block and channel."""
+    ws = weight_scale(chunks)
+    deviation = np.nanmax(np.abs(ws.check / ws.scale - 1))
+    print(
+        f"spw {chunks[0].spw}: noise over the weights per execution block, median "
+        f"{np.round(np.median(ws.scale, axis=1), 3).tolist()}, range {ws.scale.min():.2f}-{ws.scale.max():.2f}; "
+        f"robust check within {deviation:.1%}",
+        flush=True,
+    )
+    if deviation > 0.05:
+        warnings.warn(f"spw {chunks[0].spw}: the weighted and robust noise differ by {deviation:.0%}", stacklevel=2)
+    out = []
+    for c in chunks:
+        factor = 1 / ws.scale[np.searchsorted(ws.sessions, c.session)].T
+        out.append(dataclasses.replace(c, X=c.X * factor, w=(c.w * factor).astype(np.float32)))
+    return out
 
 
 class ChannelNoise(NamedTuple):
@@ -54,10 +143,10 @@ def channel_noise(chunks: Iterable[Chunk], max_lag: int = 8, significance: float
         jk = chunk.jackknife()
         power = power + np.sum(np.abs(jk.X) ** 2, axis=1)
         weight = weight + 2 * jk.w.sum(axis=1)
-        z = np.where(jk.flag, 0.0, jk.X / np.sqrt(jk.w_row))
+        z = np.divide(jk.X, np.sqrt(jk.w), out=np.zeros_like(jk.X), where=jk.w > 0)
         for lag in range(1, min(max_lag, z.shape[0] - 1) + 1):
             a, b = z[:-lag], z[lag:]
-            ok = ~(jk.flag[:-lag] | jk.flag[lag:])
+            ok = (jk.w[:-lag] > 0) & (jk.w[lag:] > 0)
             num[lag] += np.sum((a * b.conj()).real, where=ok)
             norm_a[lag] += np.sum(np.abs(a) ** 2, where=ok)
             norm_b[lag] += np.sum(np.abs(b) ** 2, where=ok)
@@ -76,8 +165,9 @@ def channel_noise(chunks: Iterable[Chunk], max_lag: int = 8, significance: float
 
 
 def stokes_i(data: np.ndarray, weight: np.ndarray, flag: np.ndarray):
-    """Average the parallel hands ``[0, -1]`` of MS columns into (vis, w_row, flag)."""
-    return 0.5 * (data[0] + data[-1]), pair_weight(weight[0], weight[-1]), flag[0] | flag[-1]
+    """Average the parallel hands ``[0, -1]`` into (vis, w); ``weight`` per row or per channel, ``w`` 0 if flagged."""
+    w = pair_weight(weight[0], weight[-1])
+    return 0.5 * (data[0] + data[-1]), np.where(flag[0] | flag[-1], 0.0, np.broadcast_to(w, data.shape[1:]))
 
 
 def sky_offset(direction, ref) -> np.ndarray:
@@ -101,8 +191,8 @@ def sky_direction(offset, ref) -> np.ndarray:
 class Chunk:
     """Visibilities of one (field, spectral window), channel-major.
 
-    ``X = w * V`` is zero where flagged, so a weighted sum over visibilities is a plain sum over
-    ``X``. Every row has some unflagged channel and ``w_row > 0``.
+    ``X = w * V`` is zero where ``w`` is (flagged), so a weighted sum over visibilities is a plain
+    sum over ``X``. Every row has some channel with ``w > 0``.
 
     Attributes
     ----------
@@ -111,9 +201,9 @@ class Chunk:
     u, v : (n_row,) m
     time : (n_row,) s
     baseline : (n_row,) int, identifies the antenna pair
+    session : (n_row,) int, the execution block (``OBSERVATION_ID``)
     X : (n_chan, n_row) complex, weighted visibilities
-    w_row : (n_row,) inverse variance of one visibility
-    flag : (n_chan, n_row) bool
+    w : (n_chan, n_row) float32, inverse variance of each visibility, 0 where flagged
     """
 
     field: int
@@ -124,19 +214,18 @@ class Chunk:
     v: np.ndarray
     time: np.ndarray
     baseline: np.ndarray
+    session: np.ndarray
     X: np.ndarray
-    w_row: np.ndarray
-    flag: np.ndarray
+    w: np.ndarray
 
     @property
-    def w(self) -> np.ndarray:
-        """Weight of every visibility, 0 where flagged."""
-        return np.where(self.flag, 0.0, self.w_row)
+    def flag(self) -> np.ndarray:
+        return self.w == 0
 
     @property
     def vis(self) -> np.ndarray:
         """Visibilities in Jy, 0 where flagged."""
-        return self.X / self.w_row
+        return _vis(self.X, self.w)
 
     @property
     def nbytes(self) -> int:
@@ -144,7 +233,7 @@ class Chunk:
 
     def channels(self, sl: slice) -> Chunk:
         """The channels ``sl`` as a chunk of views, for bounded-memory loops over channel blocks."""
-        return dataclasses.replace(self, freq=self.freq[sl], X=self.X[sl], flag=self.flag[sl])
+        return dataclasses.replace(self, freq=self.freq[sl], X=self.X[sl], w=self.w[sl])
 
     def uv_waves(self) -> tuple[np.ndarray, np.ndarray]:
         """``u`` and ``v`` in wavelengths, ``(n_chan, n_row)``."""
@@ -169,26 +258,20 @@ class Chunk:
         visibilities destroys the baseline structure and does not give the observation's
         white-noise level.
         """
-        order = np.lexsort((self.time, self.baseline))
-        same = self.baseline[order][1:] == self.baseline[order][:-1]
-        start = np.flatnonzero(np.r_[True, ~same])
-        rank = np.arange(order.size) - start[np.cumsum(np.r_[True, ~same]) - 1]
-        pick = np.flatnonzero((rank % 2 == 0)[:-1] & same)
-        a, b = order[pick], order[pick + 1]
-
-        w_row = pair_weight(self.w_row[a], self.w_row[b])
+        a, b = _pairs(self.time, self.baseline)
+        wa, wb = self.w[:, a], self.w[:, b]
         # column indexing returns Fortran-ordered arrays; keep chunks row-major
-        flag = np.ascontiguousarray(self.flag[:, a] | self.flag[:, b])
-        diff = 0.5 * (self.X[:, a] / self.w_row[a] - self.X[:, b] / self.w_row[b])
+        w = np.ascontiguousarray(pair_weight(wa, wb))
+        diff = 0.5 * (_vis(self.X[:, a], wa) - _vis(self.X[:, b], wb))
         return dataclasses.replace(
             self,
             u=0.5 * (self.u[a] + self.u[b]),
             v=0.5 * (self.v[a] + self.v[b]),
             time=0.5 * (self.time[a] + self.time[b]),
             baseline=self.baseline[a],
-            X=np.where(flag, 0.0, w_row * diff),
-            w_row=w_row,
-            flag=flag,
+            session=self.session[a],
+            X=np.ascontiguousarray(w * diff),
+            w=w.astype(np.float32),
         )
 
 
@@ -253,11 +336,13 @@ def _phase_centre(msmd, field) -> tuple[float, float]:
     return centre["m0"]["value"], centre["m1"]["value"]
 
 
-def iter_chunks(msfile: str, ref, fields=None, spws=None) -> Iterator[Chunk]:
-    """Read target visibilities one (field, spw) at a time, offsets measured from ``ref``.
+def iter_chunks(msfile: str, ref, fields=None, spws=None, reweight: bool = True) -> Iterator[Chunk]:
+    """Read target visibilities one spw at a time over all ``fields``, weights corrected, offsets from ``ref``.
 
-    Autocorrelations, flagged rows and rows with no unflagged channel are dropped. Rows are read
-    in blocks, so the peak memory is about twice the largest chunk.
+    Autocorrelations, flagged rows and rows with no unflagged channel are dropped. Every window's
+    weights are divided by the noise measured in it (:func:`reweighted`), so the peak memory is
+    about twice one window over all its fields; ``reweight=False`` keeps the measurement set's
+    weights, for a noiseless simulation, which has no noise to measure.
     """
     all_fields, all_spws = target_selection(msfile)
     msmd = tools().msmetadata()
@@ -265,33 +350,40 @@ def iter_chunks(msfile: str, ref, fields=None, spws=None) -> Iterator[Chunk]:
     n_ant = msmd.nantennas()
     plan = [
         (
-            int(f),
             int(s),
+            int(f),
             sky_offset(_phase_centre(msmd, f), ref),
             msmd.chanfreqs(int(s)),
             msmd.datadescids(spw=int(s))[0],
         )
-        for f in (all_fields if fields is None else fields)
         for s in (all_spws if spws is None else spws)
+        for f in (all_fields if fields is None else fields)
     ]
     msmd.close()
 
     tb = tools().table()
     tb.open(msfile)
+    spectrum = "WEIGHT_SPECTRUM" in tb.colnames()
     try:
-        for field, spw, offset, freq, ddid in plan:
-            sel = tb.query(f"FIELD_ID == {field} AND DATA_DESC_ID == {ddid} AND ANTENNA1 != ANTENNA2 AND NOT FLAG_ROW")
-            try:
-                chunk = _read_chunk(sel, field, spw, offset, freq, n_ant)
-            finally:
-                sel.close()
-            if chunk is not None:
-                yield chunk
+        for _, window in groupby(plan, key=lambda p: p[0]):
+            chunks = []
+            for spw, field, offset, freq, ddid in window:
+                sel = tb.query(
+                    f"FIELD_ID == {field} AND DATA_DESC_ID == {ddid} AND ANTENNA1 != ANTENNA2 AND NOT FLAG_ROW"
+                )
+                try:
+                    chunk = _read_chunk(sel, field, spw, offset, freq, n_ant, spectrum)
+                finally:
+                    sel.close()
+                if chunk is not None:
+                    chunks.append(chunk)
+            if chunks:
+                yield from reweighted(chunks) if reweight else chunks
     finally:
         tb.close()
 
 
-def _read_chunk(sel, field, spw, offset, freq, n_ant) -> Chunk | None:
+def _read_chunk(sel, field, spw, offset, freq, n_ant, spectrum) -> Chunk | None:
     order = np.argsort(freq)
     step = max(1, READ_BLOCK // len(freq))
     parts = []
@@ -300,9 +392,9 @@ def _read_chunk(sel, field, spw, offset, freq, n_ant) -> Chunk | None:
         def col(name, start=start):
             return sel.getcol(name, start, step)
 
-        vis, w_row, flag = stokes_i(col("DATA"), col("WEIGHT"), col("FLAG"))
-        keep = (w_row > 0) & ~flag.all(axis=0)
-        flag = flag[np.ix_(order, keep)]
+        vis, w = stokes_i(col("DATA"), col("WEIGHT_SPECTRUM" if spectrum else "WEIGHT"), col("FLAG"))
+        keep = w.any(axis=0)
+        w = w[np.ix_(order, keep)]
         uvw = col("UVW")[:, keep]
         parts.append(
             {
@@ -310,9 +402,9 @@ def _read_chunk(sel, field, spw, offset, freq, n_ant) -> Chunk | None:
                 "v": uvw[1],
                 "time": col("TIME")[keep],
                 "baseline": (col("ANTENNA1") * n_ant + col("ANTENNA2"))[keep],
-                "X": np.where(flag, 0.0, vis[np.ix_(order, keep)] * w_row[keep]),
-                "w_row": w_row[keep],
-                "flag": flag,
+                "session": col("OBSERVATION_ID")[keep],
+                "X": vis[np.ix_(order, keep)] * w,
+                "w": w.astype(np.float32),
             }
         )
     if not sum(len(p["u"]) for p in parts):
@@ -345,7 +437,8 @@ class DataHandler:
     Parameters
     ----------
     msfile : str, optional
-        Measurement set to read; ``fields``/``spws`` select a subset of its target data.
+        Measurement set to read; ``fields``/``spws`` select a subset of its target data, and
+        ``reweight=False`` keeps its weights (a noiseless simulation; see :func:`iter_chunks`).
     chunks, metadata : optional
         Ready-made data, e.g. from :meth:`from_npz` or a test.
     """
@@ -357,10 +450,11 @@ class DataHandler:
         metadata: Metadata | None = None,
         fields=None,
         spws=None,
+        reweight: bool = True,
     ):
         if msfile is not None:
             metadata = Metadata.from_ms(msfile)
-            chunks = list(iter_chunks(msfile, metadata.ref, fields, spws))
+            chunks = list(iter_chunks(msfile, metadata.ref, fields, spws, reweight))
         self.msfile = msfile
         self.metadata = metadata
         self.chunks = sorted(chunks, key=lambda c: (c.field, c.freq[0]))

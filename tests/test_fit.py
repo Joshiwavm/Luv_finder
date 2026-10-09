@@ -50,7 +50,20 @@ def _data(source=SOURCE, noise=False, seed=0, n_row=3000) -> DataHandler:
         w_row = rng.uniform(0.5, 2.0, n_row)
         flag = rng.random((N_CHAN, n_row)) < 0.05
         rows = np.arange(n_row)
-        chunk = Chunk(field, 0, np.asarray(offset), FREQ, u, v, rows * 1.0, rows, np.zeros(flag.shape), w_row, flag)
+        w = np.where(flag, 0.0, w_row).astype(np.float32)
+        chunk = Chunk(
+            field,
+            0,
+            np.asarray(offset),
+            FREQ,
+            u,
+            v,
+            rows * 1.0,
+            rows,
+            np.zeros(n_row, dtype=int),
+            np.zeros(flag.shape),
+            w,
+        )
         vis = _model(chunk, spectrum, **source)
         if noise:
             vis = vis + (rng.standard_normal(vis.shape) + 1j * rng.standard_normal(vis.shape)) / np.sqrt(w_row)
@@ -89,7 +102,7 @@ def test_reduced_chi2_is_the_direct_sum():
         with jax.enable_x64(True):
             chunks = [on_device(c) for c in data.chunks]
             args = (jnp.asarray(FREQ), jnp.asarray(basis), 12.0)
-            chi2 = float(_system(jnp.asarray(theta), _moments(theta, chunks, jnp.ones(N_CHAN)), chunks, *args)[0])
+            chi2 = float(_system(jnp.asarray(theta), _moments(theta, chunks), chunks, *args)[0])
         assert chi2 + own == pytest.approx(direct, rel=1e-10)
 
 
@@ -178,11 +191,13 @@ def test_channel_correlation_scales_the_errors_not_the_fit():
         assert 1.05 * plain[f"{key}_error"] < smooth[f"{key}_error"] < np.sqrt(8 / 3) * plain[f"{key}_error"]
 
 
-def test_channel_noise_weights_the_fit():
-    """Four times the noise power in every channel doubles every error and leaves a noiseless fit where it was."""
+def test_the_fit_uses_the_visibility_weights():
+    """A quarter of the weight on every visibility doubles every error and leaves a noiseless fit where it was."""
     data = _data()
-    noisy = {0: ChannelNoise(np.full(N_CHAN, 4.0), np.ones(1))}
-    plain, scaled = (fit_line(data, *START, channel_noise=c) for c in (None, noisy))
+    quarter = DataHandler(
+        chunks=[dataclasses.replace(c, X=c.X / 4, w=c.w / 4) for c in data.chunks], metadata=data.metadata
+    )
+    plain, scaled = (fit_line(d, *START, channel_noise=None) for d in (data, quarter))
     for key in ("fit_dra", "fit_freq_ghz", "fit_width", "fit_line_flux"):
         assert abs(scaled[key] - plain[key]) < 1e-3 * plain[f"{key}_error"]
         assert scaled[f"{key}_error"] == pytest.approx(2 * plain[f"{key}_error"], rel=1e-3)

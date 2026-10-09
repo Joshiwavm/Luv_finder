@@ -105,9 +105,9 @@ def _normal(a, da, data, weight):
     return chi2, 2 * (model - cross).real, 2 * jtj.real
 
 
-def _moments(theta, chunks, power) -> list:
-    """Every pointing's moments at the position and shape of ``theta``, weights over the channels' noise ``power``."""
-    return [tuple(m / power[:, None] for m in point_moments(c, theta[0], theta[1], tuple(theta[2:5]))) for c in chunks]
+def _moments(theta, chunks) -> list:
+    """Every pointing's moments at the position and shape of ``theta``: the one pass over the visibilities."""
+    return [point_moments(c, theta[0], theta[1], tuple(theta[2:5])) for c in chunks]
 
 
 def _system(theta, moments, chunks, freq, basis, dish):
@@ -198,11 +198,11 @@ def fit_line(
     chunks = _window_chunks(data, dra, ddec, freq_ghz * 1e9, pb_limit)
     noise = measure_noise(chunks) if channel_noise == "measure" else (channel_noise or {}).get(chunks[0].spw)
     dish, freq = data.metadata.dish_diameter, np.asarray(chunks[0].freq, dtype=float)
-    power, rho = (np.ones(freq.size), None) if noise is None else noise
+    rho = None if noise is None else noise.rho
     n_continuum = 0 if continuum_order is None else continuum_order + 1
 
     with jax.enable_x64(True):
-        chunks, power = [on_device(c) for c in chunks], jnp.asarray(power)
+        chunks = [on_device(c) for c in chunks]
         spectral = (jnp.asarray(freq), jnp.linspace(-1.0, 1.0, freq.size)[:, None] ** jnp.arange(n_continuum))
 
         def system(theta, moments):
@@ -242,7 +242,7 @@ def fit_line(
         def profiled(theta):
             """One pass at theta's position and shape, the spectrum fitted exactly on its moments."""
             same = np.array_equal(theta[SPATIAL], best["theta"][SPATIAL])
-            moments = best["moments"] if same else _moments(theta, chunks, power)
+            moments = best["moments"] if same else _moments(theta, chunks)
             theta, ok = solve(
                 np.concatenate([theta[SPATIAL], best["theta"][SPECTRAL]]),
                 SPECTRAL,
@@ -254,7 +254,7 @@ def fit_line(
 
         # start: the peak and continuum, linear in the model, by one Newton step from zero
         theta0 = np.array([dra, ddec, *covariance(bmaj, bmin, pa), freq_ghz * 1e9, width, 0.0, *np.zeros(n_continuum)])
-        moments = _moments(theta0, chunks, power)
+        moments = _moments(theta0, chunks)
         _, grad, hess, _, _ = system(theta0, moments)
         theta0[7:] -= np.linalg.solve(hess[7:, 7:], grad[7:])
         scale = 1 / np.sqrt(np.diag(system(theta0, moments)[2]) / 2)

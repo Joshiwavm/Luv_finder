@@ -35,7 +35,9 @@ def test_dirty_cube_is_the_exact_dft():
         flag = r.random(chunk.flag.shape) < 0.1
         flag[3] = True
         vis = r.normal(size=flag.shape) + 1j * r.normal(size=flag.shape)
-        chunks.append(dataclasses.replace(chunk, X=np.where(flag, 0, vis), flag=flag))
+        chunks.append(
+            dataclasses.replace(chunk, X=np.where(flag, 0, vis), w=np.where(flag, 0.0, chunk.w).astype(np.float32))
+        )
     data = DataHandler(chunks=chunks, metadata=_metadata(chunks[0]))
     dra, ddec = [-3.0, 0.0, 3.0, 6.0], [1.0, 3.5, 6.0]
     c = dirty_cube(data, dra, ddec)

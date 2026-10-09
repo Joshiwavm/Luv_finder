@@ -62,11 +62,16 @@ Data layout
 -----------
 
 :class:`~luv_finder.data.DataHandler` holds one :class:`~luv_finder.data.Chunk` per
-(field, spectral window): the weighted visibilities ``X = w * V`` and their flags as
-``(n_chan, n_row)`` arrays, and ``u``, ``v``, time and weight once per row and frequency
-once per channel. The weight is the measurement set's ``WEIGHT`` column (Stokes I of the
-parallel hands); flags zero it per channel. Autocorrelations and flagged rows are dropped
-on reading.
+(field, spectral window): the weighted visibilities ``X = w * V`` and the weight of every
+visibility ``w`` (0 where flagged) as ``(n_chan, n_row)`` arrays, and ``u``, ``v``, time,
+baseline and execution block once per row and frequency once per channel. The weight starts
+from the measurement set's ``WEIGHT_SPECTRUM`` (or ``WEIGHT``) column, Stokes I of the parallel
+hands, and is then measured: for every spectral window, execution block and channel, the
+noise of differences of a baseline's integrations at most 450 s apart (the next integration,
+or in a mosaic the next visit, whatever the field) over the noise the weights predict
+(:func:`~luv_finder.data.weight_scale`). The weights are divided by it, so channels on an
+atmospheric line and blocks in worse weather carry the weight they deserve. Autocorrelations
+and flagged rows are dropped on reading.
 
 Positions (``dra``, ``ddec``) are arcsec east and north of one reference direction per
 dataset, the phase centre of its first target field. Every chunk knows its own field's
@@ -113,12 +118,10 @@ Catalogue
 combined mosaic, on a uniform position lattice) into an astropy table of line candidates; the
 jackknife, which has the data's noise and no sky, is the reference throughout:
 
-1. the S/N is the filter's. The search measures the noise of every channel on the jackknife per
-   spectral window (:func:`~luv_finder.data.channel_noise`): its power over the weights, which
-   is not one where an atmospheric line makes some channels noisier than a per-window weight
-   says, and the correlation between channels that ALMA's Hanning response leaves (2/3 and 1/6).
-   Each channel's weights are divided by its power and every template is normalised by its
-   exact variance, so the S/N has unit variance under the null
+1. the S/N is the filter's. With the weights measured on reading, the search measures the
+   correlation between channels that ALMA's Hanning response leaves (2/3 and 1/6) on the
+   jackknife per spectral window (:func:`~luv_finder.data.channel_noise`) and normalises every
+   template by its exact variance, so the S/N has unit variance under the null
    (:func:`~luv_finder.catalogue.jackknife_spread` checks it);
 2. the correlation function of the jackknife response is measured; it is also the expected shape
    of a matched line's response (Vio & Andreani 2021), so its half-power ellipsoid in position and

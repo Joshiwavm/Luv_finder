@@ -14,9 +14,11 @@ from luv_finder.data import (
     fields_in,
     load,
     pair_weight,
+    reweighted,
     sky_direction,
     sky_offset,
     stokes_i,
+    weight_scale,
 )
 from luv_finder.utils import X_HALF, C, primary_beam, primary_beam_fwhm, primary_beam_radius
 
@@ -34,9 +36,9 @@ def _chunk(times, baselines, values=None, n_chan=3, field=0, spw=0, freq0=40e9):
         np.ones(times.size),
         times,
         np.asarray(baselines),
+        np.zeros(times.size, dtype=int),
         vis.copy(),
-        np.ones(times.size),
-        np.zeros(vis.shape, dtype=bool),
+        np.ones(vis.shape, dtype=np.float32),
     )
 
 
@@ -153,18 +155,19 @@ def test_stokes_i_combines_hands_and_flags():
     weight = np.array([[1.0, 1.0, 0.0], [3.0, 1.0, 1.0]])
     flag = np.zeros((2, 2, 3), dtype=bool)
     flag[1, 0, 1] = True  # one hand of channel 0, row 1
-    vis, w_row, flagged = stokes_i(data, weight, flag)
+    vis, w = stokes_i(data, weight, flag)
     assert np.allclose(vis, 2.0)
-    assert np.allclose(w_row, [3.0, 2.0, 0.0])  # 4 w_a w_b / (w_a + w_b); 0 when a hand has no weight
-    assert flagged.tolist() == [[False, True, False], [False, False, False]]
+    # 4 w_a w_b / (w_a + w_b) per row; 0 when a hand has no weight or is flagged
+    assert np.allclose(w, [[3.0, 0.0, 0.0], [3.0, 2.0, 0.0]])
+    spectrum = np.broadcast_to(weight[:, None, :], (2, 2, 3))
+    assert np.allclose(stokes_i(data, spectrum, flag)[1], w)
 
 
 def test_spectrum_is_the_weighted_mean():
     chunk = _chunk([0, 0, 1], [0, 1, 0])
-    flag = np.zeros_like(chunk.flag)
-    flag[1, 0] = True
-    w_row = np.array([1.0, 2.0, 3.0])
-    chunk = dataclasses.replace(chunk, X=np.where(flag, 0.0, w_row) * (2.0 + 1.0j), w_row=w_row, flag=flag)
+    w = np.broadcast_to(np.array([1.0, 2.0, 3.0], dtype=np.float32), chunk.w.shape).copy()
+    w[1, 0] = 0.0
+    chunk = dataclasses.replace(chunk, X=w * (2.0 + 1.0j), w=w)
     assert np.allclose(DataHandler(chunks=[chunk]).spectrum(), 2.0 + 1.0j)
 
 
@@ -183,7 +186,7 @@ def test_jackknife_splits_by_integration_not_randomly():
     jacked = _chunk(np.repeat(np.arange(nt), nb), np.tile(np.arange(nb), nt)).jackknife()
     # pairs (0,1), (2,3), (4,5) -> 0.5 * (even - odd) = -0.5 everywhere, with weight 2
     assert np.allclose(jacked.vis, -0.5)
-    assert np.allclose(jacked.w_row, 2.0)
+    assert np.allclose(jacked.w, 2.0)
 
 
 def test_jackknife_pairs_each_baseline_in_time_order():
@@ -247,3 +250,49 @@ def test_channel_noise_per_spectral_window():
     data = DataHandler(chunks=[_noise_chunk(spw=0), _noise_chunk(smooth=False, spw=1, seed=1)], metadata=None)
     noise = data.channel_noise()
     assert sorted(noise) == [0, 1] and noise[0].rho.size == 3 and noise[1].rho.tolist() == [1.0]
+
+
+def _two_blocks(seed=0):
+    """Two execution blocks of one baseline, 30 s integrations; noise 2x the weights in block 1, channels 0-1."""
+    rng = np.random.default_rng(seed)
+    n = 40000
+    chunk = _chunk(np.arange(n) * 30.0, np.zeros(n, dtype=int), n_chan=4)
+    session = (np.arange(n) >= n // 2).astype(int)
+    sigma = np.ones((4, n))
+    sigma[:2, session == 1] = 2.0
+    noise = sigma * (rng.standard_normal((4, n)) + 1j * rng.standard_normal((4, n)))
+    return dataclasses.replace(chunk, session=session, X=noise)
+
+
+def test_weight_scale_per_block_and_channel():
+    """The noise power over the weights, measured per execution block and channel; the robust check agrees."""
+    ws = weight_scale([_two_blocks()])
+    expected = np.ones((2, 4))
+    expected[1, :2] = 4.0
+    assert ws.sessions.tolist() == [0, 1]
+    assert ws.scale == pytest.approx(expected, rel=0.05)
+    assert ws.check == pytest.approx(ws.scale, rel=0.05)
+
+
+def test_reweighted_weights_match_the_noise():
+    chunk = reweighted([_two_blocks()])[0]
+    assert chunk.w.dtype == np.float32
+    assert np.allclose(chunk.vis, _two_blocks().X, rtol=1e-6)
+    assert channel_noise([chunk]).scale == pytest.approx(np.ones(4), rel=0.05)
+
+
+def test_weight_scale_pairs_integrations_close_in_time_across_fields():
+    """A mosaic field seen once per visit pairs with the next field's integration of the same baseline."""
+    a = dataclasses.replace(_two_blocks(), field=0, session=np.zeros(40000, dtype=int))
+    rows = {k: getattr(a, k) for k in ("u", "v", "time", "baseline", "session")}
+    fields = [
+        dataclasses.replace(a, field=f, X=a.X[:, f::2], w=a.w[:, f::2], **{k: v[f::2] for k, v in rows.items()})
+        for f in (0, 1)
+    ]
+    assert weight_scale(fields).scale == pytest.approx(weight_scale([a]).scale, rel=1e-12)
+
+
+def test_weight_scale_needs_close_integrations():
+    far = _chunk(np.arange(10) * 1000.0, np.zeros(10, dtype=int))
+    with pytest.raises(ValueError, match="within 450 s"):
+        weight_scale([far])

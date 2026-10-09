@@ -145,17 +145,14 @@ Open:
   spectrum misses flux.
 - **Atmospheric lines.** Atmospheric lines make some channels noisier than a
   weight per spectral window says: ozone at 1.2 mm (231.3, 235.7, 237.1, 239.1 GHz
-  and more above 240 GHz, up to 1.8x the noise in ASPECS) and the 118.75 GHz O2 wing
-  at the top of Band 3 (1.2x). With `statwt chanbin="spw"` the S/N there is
-  overestimated in the data and the jackknife alike: in the first ASPECS 1.2 mm run
-  the jackknife reached S/N 6.8 in those windows against 5.5 elsewhere, and nothing
-  passed the fidelity cut. Done: `channel_noise` measures each channel's noise power
-  over the weights on the jackknife (the expected dirty-map variance ratio) and the
-  filter and the fit divide each channel's weights by it. Open: the excess changes
-  with elevation and water vapour, so one scale per channel over a whole pointing
-  averages execution blocks of different opacity; a scale per execution block or
-  scan, or per-channel weights in the data (`WEIGHT_SPECTRUM`), would follow it;
-  line cores that stay unreliable could be flagged.
+  and more above 240 GHz) and the 118.75 GHz O2 wing at the top of Band 3. With
+  `statwt chanbin="spw"` the S/N there is overestimated in the data and the jackknife
+  alike; in ASPECS 1.2 mm the excess is 1.5-3.4x in power and changes by a factor of
+  two between execution blocks. Done: the weights are measured on reading per
+  (execution block, channel) from integrations of a baseline <= 450 s apart, any
+  field (`weight_scale`, 99% of the rows paired at 1.2 mm), and divided by it. Open:
+  a block whose weather changes within it is averaged over the block; a scale per scan
+  would follow faster changes, and line cores that stay unreliable could be flagged.
 - **Jackknife of sparsely sampled fields.** A mosaic field seen once per visit
   (ASPECS 1.2 mm: 9-14 integrations per window, days to months apart) pairs fewer
   rows than one tracked for hours: the per-baseline pairing keeps 67-74% of them

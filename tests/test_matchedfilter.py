@@ -7,7 +7,7 @@ from astropy.table import Table
 
 from luv_finder import DataHandler, Gaussian, MatchedFilter, Model
 from luv_finder.cli.find_lines import main as find_lines
-from luv_finder.data import C, ChannelNoise, Chunk, Metadata
+from luv_finder.data import C, ChannelNoise, Chunk, Metadata, reweighted
 from luv_finder.fit import COLUMNS as FIT_COLUMNS
 from luv_finder.kernel import default_cores
 from luv_finder.matchedfilter import (
@@ -41,8 +41,13 @@ def _chunk(nchan, nvis, seed=0, field=0, spw=0, offset=(0.0, 0.0), freq0=40e9):
     empty = np.zeros((nchan, nvis))
     return Chunk(
         field, spw, np.asarray(offset), freq, u, v, np.arange(nvis, dtype=float), np.zeros(nvis, dtype=int),
-        empty.astype(complex), np.ones(nvis), empty.astype(bool),
+        np.zeros(nvis, dtype=int), empty.astype(complex), np.ones((nchan, nvis), dtype=np.float32),
     )  # fmt: skip
+
+
+def _weights(w, flag):
+    """Per-visibility weights from row (or visibility) weights, 0 where flagged."""
+    return np.where(flag, 0.0, w).astype(np.float32)
 
 
 #: Channel width of :func:`_chunk` at 40 GHz, Hz.
@@ -109,7 +114,7 @@ def test_matches_the_direct_sum():
         flag[:3] = True
         w_row = r.uniform(0.5, 2.0, chunk.u.size)
         vis = r.normal(size=flag.shape) + 1j * r.normal(size=flag.shape)
-        chunks.append(dataclasses.replace(chunk, X=np.where(flag, 0, w_row * vis), w_row=w_row, flag=flag))
+        chunks.append(dataclasses.replace(chunk, X=np.where(flag, 0, w_row * vis), w=_weights(w_row, flag)))
     data = DataHandler(chunks=chunks, metadata=_metadata(chunks[0]))
     grid = {
         "dra": [-3.0, 0.0, 5.0],
@@ -146,7 +151,7 @@ def test_noise_has_unit_variance_at_every_channel():
     w_row = r.uniform(0.2, 5.0, chunk.u.size)
     noise = (r.normal(size=flag.shape) + 1j * r.normal(size=flag.shape)) / np.sqrt(w_row)
     data = DataHandler(
-        chunks=[dataclasses.replace(chunk, X=np.where(flag, 0, w_row * noise), w_row=w_row, flag=flag)],
+        chunks=[dataclasses.replace(chunk, X=np.where(flag, 0, w_row * noise), w=_weights(w_row, flag))],
         metadata=_metadata(chunk),
     )
     axis = np.linspace(-60, 60, 16)
@@ -230,7 +235,7 @@ def test_continuum_fit_keeps_noise_at_unit_variance_at_every_lag():
         flag[[0, 17, 18]] = True
         w_row = r.uniform(0.2, 5.0, chunk.u.size)
         noise = (r.normal(size=flag.shape) + 1j * r.normal(size=flag.shape)) / np.sqrt(w_row)
-        chunks.append(dataclasses.replace(chunk, X=np.where(flag, 0, w_row * noise), w_row=w_row, flag=flag))
+        chunks.append(dataclasses.replace(chunk, X=np.where(flag, 0, w_row * noise), w=_weights(w_row, flag)))
     data = DataHandler(chunks=chunks, metadata=_metadata(chunks[0]))
     axis = np.arange(-235.0, 236.0, 10.0)
     mf = _finder(data, dra=axis, ddec=axis)
@@ -284,7 +289,7 @@ def test_flagged_channel_gives_a_finite_response():
     (chunk,) = data.chunks
     flag = chunk.flag.copy()
     flag[10] = True  # away from the line, so the peak is unchanged
-    data.chunks = [dataclasses.replace(chunk, X=np.where(flag, 0, chunk.X), flag=flag)]
+    data.chunks = [dataclasses.replace(chunk, X=np.where(flag, 0, chunk.X), w=_weights(chunk.w, flag))]
     mf = _finder(data, continuum_order=None, dra=0.0, ddec=0.0)
     mf.run()
     assert np.all(np.isfinite(mf.response))
@@ -601,20 +606,20 @@ def test_unknown_channel_noise_is_rejected(data):
         MatchedFilter(data, Model(), channel_noise="hanning")
 
 
-def test_noisy_channels_are_weighted_down():
-    """Noise at twice the weights in three channels spreads their S/N by 2, unless the measured noise is used."""
+def test_noisy_channels_are_weighted_down_once_reweighted():
+    """Noise at twice the weights in three channels spreads their S/N by 2 until the weights are measured."""
     r = np.random.default_rng(5)
     chunk = _chunk(40, 4000, seed=5)
     sigma = np.ones((40, 1))
     sigma[10:13] = 2.0
     noise = sigma * (r.normal(size=chunk.X.shape) + 1j * r.normal(size=chunk.X.shape))
-    data = DataHandler(chunks=[dataclasses.replace(chunk, X=noise)], metadata=_metadata(chunk))
+    chunk = dataclasses.replace(chunk, X=noise)
     axis = np.arange(-235.0, 236.0, 10.0)
-    for channel_noise, expected in ((None, 2.0), ("measure", 1.0)):
-        mf = _finder(data, continuum_order=None, channel_noise=channel_noise, dra=axis, ddec=axis, width=100.0)
+    for chunks, expected in (([chunk], 2.0), (reweighted([chunk]), 1.0)):
+        data = DataHandler(chunks=chunks, metadata=_metadata(chunk))
+        mf = _finder(data, continuum_order=None, dra=axis, ddec=axis, width=100.0)
         mf.run()
         assert mf.result.snr[..., 11].std() == pytest.approx(expected, rel=0.1)
-    assert mf.noise[0].scale[10:13] == pytest.approx(4.0, rel=0.1)
 
 
 def test_overlapping_windows_add_in_inverse_variance():

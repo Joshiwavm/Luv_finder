@@ -59,6 +59,7 @@ def test_major_axis_lies_at_the_position_angle(pa, resolved):
     u, v = np.array(list(baselines.values())).T * C / 40e9
     n = len(u)
     empty = np.zeros((1, n))
-    chunk = Chunk(0, 0, np.zeros(2), np.array([40e9]), u, v, empty[0], np.arange(n), empty + 0j, np.ones(n), empty > 0)
+    chunk = Chunk(0, 0, np.zeros(2), np.array([40e9]), u, v, empty[0], np.arange(n), np.zeros(n, dtype=int), empty + 0j,
+                  np.ones((1, n), dtype=np.float32))  # fmt: skip
     env = dict(zip(baselines, Gaussian(bmaj=3.0, bmin=0.5, pa=pa).envelope(chunk)[0], strict=True))
     assert min(env, key=env.get) == resolved

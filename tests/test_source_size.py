@@ -43,7 +43,7 @@ def _mock_npz(name: str) -> tuple[Path, Path]:
         mock.run_all()
         NPZ_DIR.mkdir(parents=True, exist_ok=True)
         DataHandler(mock.ms_noisy).to_npz(str(noisy))
-        DataHandler(mock.ms_noiseless).to_npz(str(clean))
+        DataHandler(mock.ms_noiseless, reweight=False).to_npz(str(clean))
     return noisy, clean
 
 
