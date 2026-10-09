@@ -159,7 +159,10 @@ Open:
   (98% at 3 mm), down from 33-42% when integrations were paired by their index in
   time. Partners far apart in hour angle cancel the sky less well; the continuum
   fit removes leaked continuum, but a bright line could leak. Check the leakage on
-  a mock observed the same way.
+  a mock observed the same way. At 1.2 mm the data hold 4-9% more groups than the
+  jackknife at S/N 4-5.5, while the negated data match the data: a pair sits at the
+  mean of its partners' uv, which differ when they are months apart. Compare with a
+  jackknife that keeps one partner's uv.
 - **Fit across overlapping windows.** Windows that overlap in frequency are combined
   in the search, but `fit_line` uses one window per pointing, so a line in the
   ASPECS 3 mm double-tuned range is fitted with one tuning's data.
@@ -172,7 +175,10 @@ Open:
   would stop it.
 - **Fidelity per template width.** ASPECS computes the fidelity per kernel width:
   narrow templates have more independent trials than broad ones at the same S/N.
-  The catalogue pools all templates.
+  The catalogue pools all templates. Its noise is a Gaussian tail fitted to the
+  jackknife groups, as ASPECS fits its negatives; an erf fitted to the binned
+  fidelity failed at 1.2 mm, where the jackknife deficit near the floor (above)
+  held the low bins at 0.05 and set the threshold at S/N 7.9 instead of 6.7.
 - **A fit that absorbs its neighbours.** The candidate at 85.857 GHz, 16-31 MHz
   from two detected lines, is no longer detected (fidelity 0.43), but when it was
   its fit ran to a 1818 km/s line 101 MHz off the peak (chi^2_red 3.5, 10.8

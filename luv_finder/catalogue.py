@@ -222,12 +222,15 @@ def likelihood(snr_data, snr_noise) -> tuple[np.ndarray, np.ndarray]:
     return n_data / np.maximum(n_noise, 1), n_noise == 0
 
 
-def fidelity_curve(snr, centre, sigma):
-    return 0.5 * special.erf((snr - centre) / sigma) + 0.5
-
-
 def fidelity(snr_data, snr_noise, floor: float, step: float = 0.25) -> tuple[np.ndarray, tuple, dict]:
-    """Fidelity ``1 - N_noise / N_data`` per S/N bin, fitted, at every data S/N (Walter et al. 2016)."""
+    """Fidelity ``1 - N_noise / N_data`` per S/N bin, ``N_noise`` from a Gaussian tail fitted to ``snr_noise``.
+
+    The noise groups above ``floor`` are fitted, unbinned, with ``N(>= s) = A erfc(s / sqrt(2) sigma)``
+    (González-López et al. 2019), so the fidelity at high S/N comes from the tail and not from a few
+    sparse bins, and an excess of data over noise near the floor leaves it alone. Every data group gets
+    its bin's fidelity. Returns those, ``(A, sigma)`` and the bins: the binned counts, their fidelity
+    with its error and the ``model`` fidelity.
+    """
     snr_data, snr_noise = np.asarray(snr_data, dtype=float), np.asarray(snr_noise, dtype=float)
     top = max(snr_data.max(initial=floor), snr_noise.max(initial=floor))
     edges = floor + step * np.arange(int((top - floor) / step) + 2)
@@ -241,28 +244,21 @@ def fidelity(snr_data, snr_noise, floor: float, step: float = 0.25) -> tuple[np.
         "fidelity": np.clip(1 - n / d, 0, 1),
         "error": np.sqrt(np.maximum(n, 1) + n**2 / d) / d,
     }
-    fit = (np.nan, np.nan)
-    if use.sum() < 3:
-        warnings.warn(f"only {use.sum()} S/N bins hold data groups, too few to fit the fidelity", stacklevel=2)
-        return np.full(snr_data.shape, np.nan), fit, bins
-    p0 = (bins["snr"][np.argmin(np.abs(bins["fidelity"] - 0.5))], 1.0)
-    try:
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore", optimize.OptimizeWarning)
-            fit = tuple(
-                optimize.curve_fit(
-                    fidelity_curve,
-                    bins["snr"],
-                    bins["fidelity"],
-                    p0=p0,
-                    sigma=bins["error"],
-                    absolute_sigma=True,
-                    bounds=([-np.inf, 1e-3], np.inf),
-                )[0]
-            )
-    except (RuntimeError, ValueError) as err:
-        warnings.warn(f"the fidelity fit failed: {err}", stacklevel=2)
-    return fidelity_curve(snr_data, *fit), fit, bins
+    noise = snr_noise[snr_noise >= floor]
+    if noise.size < 3:
+        warnings.warn(f"only {noise.size} noise groups above S/N {floor:g}, too few to fit the noise", stacklevel=2)
+        bins["model"] = np.full(d.shape, np.nan)
+        return np.full(snr_data.shape, np.nan), (np.nan, np.nan), bins
+
+    def nll(sigma):
+        return np.sum(noise**2) / (2 * sigma**2) + noise.size * (np.log(sigma) + special.log_ndtr(-floor / sigma))
+
+    sigma = optimize.minimize_scalar(nll, bounds=(0.1, 10.0), method="bounded").x
+    above = noise.size * np.exp(special.log_ndtr(-edges / sigma) - special.log_ndtr(-floor / sigma))
+    model = np.clip(1 - (above[:-1] - above[1:]) / np.maximum(n_data, 1), 0, 1)
+    bins["model"] = model[use]
+    amplitude = noise.size / special.erfc(floor / (np.sqrt(2) * sigma))
+    return model[np.searchsorted(edges, snr_data, side="right") - 1], (amplitude, sigma), bins
 
 
 #: Units of the :func:`catalogue` columns.
@@ -321,8 +317,8 @@ def catalogue(result: SearchResult, ref=None, floor: float = 4.0, k: float = 3.0
         brightest maximum, ``coverage``, ``n_peaks``, ``likelihood``, ``likelihood_lower_limit``,
         ``fidelity`` and ``detected``. ``meta`` holds the ``jackknife_spread``, the noise
         correlation's ``hwhm_major``, ``hwhm_minor``, ``pa``, ``spectral_hwhm`` and ``sidelobe``,
-        the thresholds, the fidelity fit (``fidelity_centre``, ``fidelity_sigma``), the lowest
-        data S/N with ``Lambda >= k`` (``snr_likelihood``) and where the fitted fidelity reaches
+        the thresholds, the jackknife's noise tail (``noise_amplitude``, ``noise_sigma``), the
+        lowest data S/N with ``Lambda >= k`` (``snr_likelihood``) and with a fidelity of at least
         ``fidelity_min`` (``snr_fidelity``), NaN if none, the S/N of every group of the data, the
         jackknife and the negated data (``snr_data``, ``snr_jackknife``, ``snr_negative``) and the
         binned fidelity (``fidelity_bins``), all as lists and floats.
@@ -361,13 +357,13 @@ def catalogue(result: SearchResult, ref=None, floor: float = 4.0, k: float = 3.0
 def _reliability(snr: dict, floor: float, k: float, fidelity_min: float) -> tuple[dict, dict]:
     """Likelihood ratio, fidelity and detection of the data groups against the jackknife's, as columns and meta."""
     ratio, lower = likelihood(snr["data"], snr["jackknife"])
-    fid, (centre, sigma), bins = fidelity(snr["data"], snr["jackknife"], floor)
+    fid, (amplitude, sigma), bins = fidelity(snr["data"], snr["jackknife"], floor)
     detected = ((ratio >= k) | lower) & ((fid >= fidelity_min) | np.isnan(fid))
     columns = {"likelihood": ratio, "likelihood_lower_limit": lower, "fidelity": fid, "detected": detected}
     meta = {"floor": float(floor), "k": float(k), "fidelity_min": float(fidelity_min)}
-    meta |= {"fidelity_centre": float(centre), "fidelity_sigma": float(sigma)}
-    meta["snr_likelihood"] = float(snr["data"][ratio >= k].min()) if np.any(ratio >= k) else np.nan
-    meta["snr_fidelity"] = float(centre + sigma * special.erfinv(2 * fidelity_min - 1))
+    meta |= {"noise_amplitude": float(amplitude), "noise_sigma": float(sigma)}
+    for key, passed in (("snr_likelihood", ratio >= k), ("snr_fidelity", fid >= fidelity_min)):
+        meta[key] = float(snr["data"][passed].min()) if passed.any() else np.nan
     meta |= {f"snr_{name}": values.tolist() for name, values in snr.items()}
     meta["fidelity_bins"] = {key: values.tolist() for key, values in bins.items()}
     return columns, meta

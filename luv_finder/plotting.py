@@ -510,16 +510,17 @@ def reliability_check(cat, plots_dir="plots", name="reliability"):
     ``cat`` is the output of :func:`luv_finder.catalogue.catalogue` (its ``meta`` holds what is
     plotted, so a subset of its rows works too). Left: cumulative group counts N(>= S/N) of the
     data, the jackknife and the negated data (a diagnostic only), with the detected rows on the
-    data curve. Middle: the likelihood ratio N_data / N_jackknife at every data group, a lower
-    limit (caret) where no jackknife group is as bright, against the threshold ``k`` and the
-    lowest S/N above it. Right: the binned fidelity ``1 - N_jackknife / N_data`` with its erf fit
-    and the S/N where that reaches ``fidelity_min``, and the same against the negated data (as
-    ASPECS measures it) for comparison. The fits and the thresholds are left out where they are NaN.
+    data curve, and the Gaussian tail fitted to the jackknife's. Middle: the likelihood ratio
+    N_data / N_jackknife at every data group, a lower limit (caret) where no jackknife group is as
+    bright, against the threshold ``k`` and the lowest S/N above it. Right: the binned fidelity
+    ``1 - N_jackknife / N_data``, the fidelity from the jackknife's tail and the lowest S/N reaching
+    ``fidelity_min``, and both against the negated data (as ASPECS measures it) for comparison. The
+    tails and the thresholds are left out where they are NaN.
     """
     from matplotlib.ticker import LogFormatter
     from scipy import special
 
-    from .catalogue import fidelity, fidelity_curve, likelihood
+    from .catalogue import fidelity, likelihood
 
     meta = cat.meta
     floor, k, fidelity_min = meta["floor"], meta["k"], meta["fidelity_min"]
@@ -534,6 +535,11 @@ def reliability_check(cat, plots_dir="plots", name="reliability"):
         shown = n > 0
         counts.step(np.r_[floor, values][shown], n[shown], where="pre", label=f"{label} ({len(values)})", **style)
     counts.plot(detected, _count_above(data, detected), "o", c="C3", ms=6, label=f"detected ({detected.size})")
+    amplitude, sigma = meta["noise_amplitude"], meta["noise_sigma"]
+    if np.isfinite([amplitude, sigma]).all():
+        x = np.linspace(*xlim, 200)
+        counts.plot(x, amplitude * special.erfc(x / (np.sqrt(2) * sigma)), c="C1",
+                    label=rf"jackknife tail, $\sigma$ = {sigma:.3f}")  # fmt: skip
     counts.set_ylim(bottom=0.7)
     counts.set_ylabel(r"Groups with S/N $\geq$ abscissa")
 
@@ -548,22 +554,17 @@ def reliability_check(cat, plots_dir="plots", name="reliability"):
     fid.errorbar(
         bins["snr"], bins["fidelity"], bins["error"], fmt="o", c="k", ecolor="0.6", ms=4, capsize=2, label="binned"
     )
-    centre, sigma = meta["fidelity_centre"], meta["fidelity_sigma"]
-    if np.isfinite([centre, sigma]).all():
-        x = np.linspace(*xlim, 200)
-        fid.plot(
-            x, fidelity_curve(x, centre, sigma), c="C1", label=rf"erf fit, C = {centre:.2f}, $\sigma$ = {sigma:.2f}"
-        )
+    fid.plot(bins["snr"], bins["model"], ".-", c="C1", label="from the jackknife's tail")
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        _, (c_neg, s_neg), bins_neg = fidelity(data, negative, floor)
+        values, (_, s_neg), bins_neg = fidelity(data, negative, floor)
     fid.plot(bins_neg["snr"], bins_neg["fidelity"], "s", mfc="none", c="0.45", ms=4,
              label="binned, against the negated data")  # fmt: skip
-    if np.isfinite([c_neg, s_neg]).all():
-        x = np.linspace(*xlim, 200)
-        at = c_neg + s_neg * special.erfinv(2 * fidelity_min - 1)
-        fid.plot(x, fidelity_curve(x, c_neg, s_neg), c="0.45", ls="--",
-                 label=f"erf fit against the negated data; {fidelity_min:g} at S/N {at:.2f}")  # fmt: skip
+    if np.isfinite(s_neg):
+        passing = data[values >= fidelity_min]
+        at = passing.min() if passing.size else np.nan
+        label = rf"from the negated data's tail ($\sigma$ = {s_neg:.3f}); {fidelity_min:g} at S/N {at:.2f}"
+        fid.plot(bins_neg["snr"], bins_neg["model"], ".--", c="0.45", label=label)
     fid.axhline(fidelity_min, c="C3", ls="--", lw=1, label=f"fidelity_min = {fidelity_min:g}")
     fid.set_ylim(-0.05, 1.05)
     fid.set_ylabel(r"Fidelity 1 $-$ N$_{jackknife}$ / N$_{data}$")
@@ -581,7 +582,7 @@ def reliability_check(cat, plots_dir="plots", name="reliability"):
         ax.yaxis.set_major_formatter(plain)
         ax.yaxis.set_minor_formatter(plain)
         ax.legend(fontsize=8)
-    fid.legend(fontsize=8, loc="lower right", framealpha=0.9)
+    fid.legend(fontsize=8, loc="upper left", framealpha=0.9)
     fig.suptitle(f"{detected.size} of {len(data)} data groups detected")
     return _save(fig, plots_dir, name)
 

@@ -4,6 +4,7 @@ import json
 import numpy as np
 import pytest
 from astropy.table import Table
+from scipy import special, stats
 
 from luv_finder import MatchedFilter
 from luv_finder.catalogue import (
@@ -241,23 +242,30 @@ def test_likelihood_of_lines_is_large():
     assert np.all(ratio[(data >= 7.5) & (data <= 10.0)] > 10)
 
 
-def test_fidelity_fits_the_crossover():
-    """Real lines of uniform density m over noise of density N / s exp(-(snr - 4) / s) match at 4 + s ln(N / (s m))."""
+def _gaussian_tail(rng, n, sigma, floor=4.0):
+    """Group S/N of noise: a Gaussian tail of width ``sigma`` above ``floor``."""
+    return stats.truncnorm.rvs(floor / sigma, np.inf, scale=sigma, size=n, random_state=rng)
+
+
+def test_fidelity_from_the_noise_tail():
+    """The tail's width comes back, and data 5% above the noise near the floor (as at 1.2 mm) leave lines at 1."""
     rng = np.random.default_rng(6)
-    n_noise, scale, density = 20000, 0.5, 400
-    data = np.concatenate([_tail(rng, n_noise, scale), rng.uniform(4.0, 10.0, 6 * density)])
-    values, (centre, sigma), bins = fidelity(data, _tail(rng, n_noise, scale), floor=4.0)
-    assert centre == pytest.approx(4 + scale * np.log(n_noise / (scale * density)), abs=0.3)
-    assert 0.3 < sigma < 2.0
-    assert np.all(values[data > 9.0] > 0.95)
+    noise = _gaussian_tail(rng, 20000, 1.1)
+    data = np.concatenate([_gaussian_tail(rng, 21000, 1.1), rng.uniform(4.0, 10.0, 600)])
+    values, (amplitude, sigma), bins = fidelity(data, noise, floor=4.0)
+    assert sigma == pytest.approx(1.1, rel=0.03)
+    assert amplitude * special.erfc(4.0 / (np.sqrt(2) * sigma)) == pytest.approx(noise.size)
+    assert np.all(values[data > 7.0] > 0.95) and np.all(values[data < 4.5] < 0.2)
+    centre = 4.0 + 0.25 * ((data - 4.0) // 0.25 + 0.5)
+    np.testing.assert_array_equal(values, bins["model"][np.searchsorted(bins["snr"], centre - 0.1)])
     assert bins["n_data"].sum() == data.size
     np.testing.assert_allclose((bins["snr"] - 4.0) / 0.25 % 1, 0.5)
 
 
-def test_fidelity_needs_three_bins():
+def test_fidelity_needs_three_noise_groups():
     with pytest.warns(UserWarning, match="too few"):
-        values, fit, bins = fidelity([4.1, 4.2, 4.6], [4.05], floor=4.0)
-    assert np.isnan(values).all() and np.isnan(fit).all()
+        values, fit, bins = fidelity([4.1, 4.2, 4.6], [4.05, 4.3], floor=4.0)
+    assert np.isnan(values).all() and np.isnan(fit).all() and np.isnan(bins["model"]).all()
     assert bins["n_data"].tolist() == [2, 1] and bins["n_noise"].tolist() == [1, 0]
 
 

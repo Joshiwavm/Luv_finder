@@ -130,7 +130,8 @@ jackknife, which has the data's noise and no sky, is the reference throughout:
    ellipsoid, for the data, the jackknife and (as a diagnostic) the negated data;
 4. every data group gets the likelihood ratio ``N_data(>= S/N) / N_jackknife(>= S/N)``
    (van Marrewijk et al. 2025, required >= 3) and the fidelity ``1 - N_jackknife / N_data`` per
-   S/N bin, fitted with an error function (Walter et al. 2016, required >= 0.6).
+   S/N bin, with ``N_jackknife`` from a Gaussian tail fitted to the jackknife's groups
+   (González-López et al. 2019, required >= 0.6).
 
 .. code-block:: python
 

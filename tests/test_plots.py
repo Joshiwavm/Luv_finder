@@ -232,22 +232,13 @@ def test_response_shape_figure(plots):
 def _reliability_catalogue(data, jackknife, negative, floor=4.0, k=3.0, fidelity_min=0.6):
     """A catalogue table with the columns and meta that ``reliability_check`` reads, from group S/N lists."""
     from astropy.table import Table
-    from scipy import special
 
-    from luv_finder.catalogue import fidelity, likelihood
+    from luv_finder.catalogue import _reliability
 
-    ratio, lower = likelihood(data, jackknife)
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        values, (centre, sigma), bins = fidelity(data, jackknife, floor)
-    detected = ((ratio >= k) | lower) & ((values >= fidelity_min) | np.isnan(values))
-    meta = {"floor": floor, "k": k, "fidelity_min": fidelity_min, "fidelity_centre": centre, "fidelity_sigma": sigma}
-    meta["snr_likelihood"] = float(np.min(data[ratio >= k], initial=np.inf)) if np.any(ratio >= k) else np.nan
-    meta["snr_fidelity"] = float(centre + sigma * special.erfinv(2 * fidelity_min - 1))
-    meta |= {"snr_data": data.tolist(), "snr_jackknife": jackknife.tolist(), "snr_negative": negative.tolist()}
-    meta["fidelity_bins"] = {key: value.tolist() for key, value in bins.items()}
-    columns = {"snr": data, "likelihood": ratio, "likelihood_lower_limit": lower, "fidelity": values}
-    return Table(columns | {"detected": detected}, meta=meta)
+        columns, meta = _reliability(dict(data=data, jackknife=jackknife, negative=negative), floor, k, fidelity_min)
+    return Table({"snr": data} | columns, meta=meta)
 
 
 def test_reliability_figure(plots):
@@ -264,7 +255,7 @@ def test_reliability_figure(plots):
     normal = _reliability_catalogue(data, jackknife, negative)
     assert normal["detected"].any()
     nan_fit = _reliability_catalogue(bright, np.array([]), np.array([]))
-    nan_fit.meta |= {"fidelity_centre": np.nan, "fidelity_sigma": np.nan, "snr_fidelity": np.nan}
+    assert np.isnan(nan_fit.meta["noise_sigma"])
     nothing = _reliability_catalogue(noise(160), jackknife, negative)
     nothing["detected"] = False
     empty = _reliability_catalogue(np.array([]), np.array([]), np.array([]))
