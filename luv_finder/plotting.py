@@ -291,7 +291,9 @@ def amp_phase_check(data, positions, plots_dir="plots", name="amp_phase", line_g
     for label, (dra, ddec) in positions.items():
         spectrum = data.spectrum(dra, ddec)
         amp.plot(freqs, 1e3 * np.abs(spectrum), lw=1.2, label=label)
-        phase.plot(freqs, np.degrees(np.angle(spectrum)), ".", ms=4, label=label)
+        deg = np.degrees(np.angle(spectrum))
+        wrap = np.flatnonzero(np.abs(np.diff(deg)) > 180) + 1  # no line across the +-180 wrap
+        phase.plot(np.insert(freqs, wrap, np.nan), np.insert(deg, wrap, np.nan), ".-", ms=4, lw=0.8, label=label)
     for ax in (amp, phase):
         if line_ghz is not None:
             ax.axvline(line_ghz, c="C3", ls="--", lw=0.8)
