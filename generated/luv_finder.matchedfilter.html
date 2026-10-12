@@ -173,7 +173,7 @@
           <svg class="theme-icon-when-light"><use href="#svg-sun"></use></svg>
         </button>
       </div>
-      <label class="toc-overlay-icon toc-header-icon no-toc" for="__toc">
+      <label class="toc-overlay-icon toc-header-icon" for="__toc">
         <span class="icon"><svg><use href="#svg-toc"></use></svg></span>
       </label>
     </div>
@@ -191,9 +191,20 @@
   <input type="hidden" name="area" value="default">
 </form>
 <div id="searchbox"></div><div class="sidebar-scroll"><div class="sidebar-tree">
-  <ul class="current">
+  <p class="caption" role="heading"><span class="caption-text">Getting started</span></p>
+<ul>
 <li class="toctree-l1"><a class="reference internal" href="../installation.html">Installation</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../usage.html">Usage</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../quickstart.html">Quickstart</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../method.html">How it works</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Guides</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../guides/mosaics.html">Mosaics and the primary beam</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../guides/catalogue.html">Catalogue and line fit</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../guides/configuration.html">Configuration</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Reference</span></p>
+<ul class="current">
 <li class="toctree-l1 has-children"><a class="reference internal" href="../tutorials.html">Tutorials</a><input aria-label="Toggle navigation of Tutorials" class="toctree-checkbox" id="toctree-checkbox-1" name="toctree-checkbox-1" role="switch" type="checkbox"/><label for="toctree-checkbox-1"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
 <li class="toctree-l2"><a class="reference internal" href="../tutorials/simulate-mock-observation.html">Simulate a mock line observation</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../tutorials/simulate-mock-observation.html#make-mock-observations-using-mockgenerator.py">make mock observations using mockgenerator.py</a></li>
@@ -209,6 +220,7 @@
 <li class="toctree-l2"><a class="reference internal" href="luv_finder.catalogue.html">luv_finder.catalogue</a></li>
 <li class="toctree-l2"><a class="reference internal" href="luv_finder.fit.html">luv_finder.fit</a></li>
 <li class="toctree-l2"><a class="reference internal" href="luv_finder.mock.html">luv_finder.mock</a></li>
+<li class="toctree-l2"><a class="reference internal" href="luv_finder.plotting.html">luv_finder.plotting</a></li>
 <li class="toctree-l2"><a class="reference internal" href="luv_finder.utils.html">luv_finder.utils</a></li>
 </ul>
 </li>
@@ -245,7 +257,7 @@
               <svg class="theme-icon-when-light"><use href="#svg-sun"></use></svg>
             </button>
           </div>
-          <label class="toc-overlay-icon toc-content-icon no-toc" for="__toc">
+          <label class="toc-overlay-icon toc-content-icon" for="__toc">
             <span class="icon"><svg><use href="#svg-toc"></use></svg></span>
           </label>
         </div>
@@ -266,19 +278,19 @@ has unit variance under the null.</p>
 <div class="table-wrapper autosummary longtable docutils container">
 <table class="autosummary longtable docutils align-default">
 <tbody>
-<tr class="row-odd"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">build_grid</span></code>(data, cfg)</p></td>
+<tr class="row-odd"><td><p><a class="reference internal" href="#luv_finder.matchedfilter.build_grid" title="luv_finder.matchedfilter.build_grid"><code class="xref py py-obj docutils literal notranslate"><span class="pre">build_grid</span></code></a>(data, cfg)</p></td>
 <td><p>Grid ranges from YAML, positions in the dataset's sky frame (arcsec from the reference).</p></td>
 </tr>
-<tr class="row-even"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">combine_pointings</span></code>(results)</p></td>
+<tr class="row-even"><td><p><a class="reference internal" href="#luv_finder.matchedfilter.combine_pointings" title="luv_finder.matchedfilter.combine_pointings"><code class="xref py py-obj docutils literal notranslate"><span class="pre">combine_pointings</span></code></a>(results)</p></td>
 <td><p>Combine the PB-corrected searches of a mosaic's pointings on the union of their grids.</p></td>
 </tr>
-<tr class="row-odd"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">grid_model</span></code>(grid)</p></td>
-<td><p>A model of one Gaussian component whose <code class="docutils literal notranslate"><span class="pre">grid</span></code> is the search axes <code class="docutils literal notranslate"><span class="pre">grid</span></code> (see <code class="xref py py-func docutils literal notranslate"><span class="pre">build_grid()</span></code>).</p></td>
+<tr class="row-odd"><td><p><a class="reference internal" href="#luv_finder.matchedfilter.grid_model" title="luv_finder.matchedfilter.grid_model"><code class="xref py py-obj docutils literal notranslate"><span class="pre">grid_model</span></code></a>(grid)</p></td>
+<td><p>A model of one Gaussian component whose <code class="docutils literal notranslate"><span class="pre">grid</span></code> is the search axes <code class="docutils literal notranslate"><span class="pre">grid</span></code> (see <a class="reference internal" href="#luv_finder.matchedfilter.build_grid" title="luv_finder.matchedfilter.build_grid"><code class="xref py py-func docutils literal notranslate"><span class="pre">build_grid()</span></code></a>).</p></td>
 </tr>
-<tr class="row-even"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">pb_corrected</span></code>(result, data[, pb_limit])</p></td>
+<tr class="row-even"><td><p><a class="reference internal" href="#luv_finder.matchedfilter.pb_corrected" title="luv_finder.matchedfilter.pb_corrected"><code class="xref py py-obj docutils literal notranslate"><span class="pre">pb_corrected</span></code></a>(result, data[, pb_limit])</p></td>
 <td><p>Correct the search of one pointing for its primary beam.</p></td>
 </tr>
-<tr class="row-odd"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">search_pointings</span></code>(path[, grid_cfg, ...])</p></td>
+<tr class="row-odd"><td><p><a class="reference internal" href="#luv_finder.matchedfilter.search_pointings" title="luv_finder.matchedfilter.search_pointings"><code class="xref py py-obj docutils literal notranslate"><span class="pre">search_pointings</span></code></a>(path[, grid_cfg, ...])</p></td>
 <td><p>Search every field of a measurement set or NPZ and combine the pointings on one sky grid.</p></td>
 </tr>
 </tbody>
@@ -288,15 +300,87 @@ has unit variance under the null.</p>
 <div class="table-wrapper autosummary longtable docutils container">
 <table class="autosummary longtable docutils align-default">
 <tbody>
-<tr class="row-odd"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">MatchedFilter</span></code>(data, mod[, continuum_order, ...])</p></td>
+<tr class="row-odd"><td><p><a class="reference internal" href="#luv_finder.matchedfilter.MatchedFilter" title="luv_finder.matchedfilter.MatchedFilter"><code class="xref py py-obj docutils literal notranslate"><span class="pre">MatchedFilter</span></code></a>(data, mod[, continuum_order, ...])</p></td>
 <td><p>S/N of one field over the <code class="docutils literal notranslate"><span class="pre">Model.grid</span></code> axes; <code class="docutils literal notranslate"><span class="pre">channel_correlation</span></code>: &quot;measure&quot;, None or <code class="docutils literal notranslate"><span class="pre">{spw:</span> <span class="pre">rho}</span></code>.</p></td>
 </tr>
-<tr class="row-even"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">SearchResult</span></code>(axes, freqs, snr, flux, error, ...)</p></td>
+<tr class="row-even"><td><p><a class="reference internal" href="#luv_finder.matchedfilter.SearchResult" title="luv_finder.matchedfilter.SearchResult"><code class="xref py py-obj docutils literal notranslate"><span class="pre">SearchResult</span></code></a>(axes, freqs, snr, flux, error, ...)</p></td>
 <td><p>Matched-filter search of one pointing or of a mosaic.</p></td>
 </tr>
 </tbody>
 </table>
 </div>
+<dl class="py class">
+<dt class="sig sig-object py" id="luv_finder.matchedfilter.MatchedFilter">
+<span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">luv_finder.matchedfilter.</span></span><span class="sig-name descname"><span class="pre">MatchedFilter</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="luv_finder.data.html#luv_finder.data.DataHandler" title="luv_finder.data.DataHandler"><span class="pre">DataHandler</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">mod</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="luv_finder.model.html#luv_finder.model.Model" title="luv_finder.model.Model"><span class="pre">Model</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">continuum_order</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="(in Python v3.15)"><span class="pre">int</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/builtins/constants.html#None" title="(in Python v3.15)"><span class="pre">None</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">2</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">channel_correlation</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.15)"><span class="pre">str</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#dict" title="(in Python v3.15)"><span class="pre">dict</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/builtins/constants.html#None" title="(in Python v3.15)"><span class="pre">None</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">'measure'</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/luv_finder/matchedfilter.html#MatchedFilter"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#luv_finder.matchedfilter.MatchedFilter" title="Link to this definition">¶</a></dt>
+<dd><p>S/N of one field over the <code class="docutils literal notranslate"><span class="pre">Model.grid</span></code> axes; <code class="docutils literal notranslate"><span class="pre">channel_correlation</span></code>: “measure”, None or <code class="docutils literal notranslate"><span class="pre">{spw:</span> <span class="pre">rho}</span></code>.</p>
+<dl class="py property">
+<dt class="sig sig-object py" id="luv_finder.matchedfilter.MatchedFilter.freqs">
+<span class="property"><span class="k"><span class="pre">property</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">freqs</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="(in NumPy v2.5)"><span class="pre">ndarray</span></a></span><a class="headerlink" href="#luv_finder.matchedfilter.MatchedFilter.freqs" title="Link to this definition">¶</a></dt>
+<dd><p>Channel frequencies in Hz.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="luv_finder.matchedfilter.MatchedFilter.plot_response">
+<span class="sig-name descname"><span class="pre">plot_response</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">filename</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.15)"><span class="pre">str</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">'plots/filter_response.png'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">show</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#bool" title="(in Python v3.15)"><span class="pre">bool</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">vline</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><span class="pre">float</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/builtins/constants.html#None" title="(in Python v3.15)"><span class="pre">None</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/luv_finder/matchedfilter.html#MatchedFilter.plot_response"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#luv_finder.matchedfilter.MatchedFilter.plot_response" title="Link to this definition">¶</a></dt>
+<dd><p>Save the best grid point’s S/N spectrum (see <a class="reference internal" href="luv_finder.plotting.html#module-luv_finder.plotting" title="luv_finder.plotting"><code class="xref py py-mod docutils literal notranslate"><span class="pre">luv_finder.plotting</span></code></a>).</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="luv_finder.matchedfilter.MatchedFilter.run">
+<span class="sig-name descname"><span class="pre">run</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">jackknife</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#bool" title="(in Python v3.15)"><span class="pre">bool</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">cores</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="(in Python v3.15)"><span class="pre">int</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/builtins/constants.html#None" title="(in Python v3.15)"><span class="pre">None</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/builtins/constants.html#None" title="(in Python v3.15)"><span class="pre">None</span></a></span></span><a class="reference internal" href="../_modules/luv_finder/matchedfilter.html#MatchedFilter.run"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#luv_finder.matchedfilter.MatchedFilter.run" title="Link to this definition">¶</a></dt>
+<dd><p>Fill <code class="docutils literal notranslate"><span class="pre">result</span></code> and, with <code class="docutils literal notranslate"><span class="pre">jackknife</span></code>, <code class="docutils literal notranslate"><span class="pre">result.jackknife</span></code> on the same grid, on <code class="docutils literal notranslate"><span class="pre">cores</span></code> cores.</p>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="luv_finder.matchedfilter.SearchResult">
+<span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">luv_finder.matchedfilter.</span></span><span class="sig-name descname"><span class="pre">SearchResult</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">axes</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#dict" title="(in Python v3.15)"><span class="pre">dict</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">freqs</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="(in NumPy v2.5)"><span class="pre">ndarray</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">snr</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="(in NumPy v2.5)"><span class="pre">ndarray</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">flux</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="(in NumPy v2.5)"><span class="pre">ndarray</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">error</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="(in NumPy v2.5)"><span class="pre">ndarray</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">coverage</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="(in NumPy v2.5)"><span class="pre">ndarray</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">jackknife</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="#luv_finder.matchedfilter.SearchResult" title="luv_finder.matchedfilter.SearchResult"><span class="pre">SearchResult</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/builtins/constants.html#None" title="(in Python v3.15)"><span class="pre">None</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/luv_finder/matchedfilter.html#SearchResult"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#luv_finder.matchedfilter.SearchResult" title="Link to this definition">¶</a></dt>
+<dd><p>Matched-filter search of one pointing or of a mosaic.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="luv_finder.matchedfilter.SearchResult.integrated_flux">
+<span class="sig-name descname"><span class="pre">integrated_flux</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#tuple" title="(in Python v3.15)"><span class="pre">tuple</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="(in NumPy v2.5)"><span class="pre">ndarray</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><a class="reference external" href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="(in NumPy v2.5)"><span class="pre">ndarray</span></a><span class="p"><span class="pre">]</span></span></span></span><a class="reference internal" href="../_modules/luv_finder/matchedfilter.html#SearchResult.integrated_flux"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#luv_finder.matchedfilter.SearchResult.integrated_flux" title="Link to this definition">¶</a></dt>
+<dd><p>Line flux and its error in Jy km/s: <code class="docutils literal notranslate"><span class="pre">flux</span></code> and <code class="docutils literal notranslate"><span class="pre">error</span></code> times <code class="docutils literal notranslate"><span class="pre">width</span> <span class="pre">*</span> <span class="pre">sqrt(2</span> <span class="pre">pi)</span> <span class="pre">/</span> <span class="pre">2.355</span></code>.</p>
+</dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="luv_finder.matchedfilter.SearchResult.response">
+<span class="property"><span class="k"><span class="pre">property</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">response</span></span><span class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="(in NumPy v2.5)"><span class="pre">ndarray</span></a></span><a class="headerlink" href="#luv_finder.matchedfilter.SearchResult.response" title="Link to this definition">¶</a></dt>
+<dd><p>S/N as <code class="docutils literal notranslate"><span class="pre">(n_grid,</span> <span class="pre">n_chan)</span></code>, one row per <code class="xref py py-attr docutils literal notranslate"><span class="pre">grid_params</span></code> entry.</p>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="luv_finder.matchedfilter.build_grid">
+<span class="sig-prename descclassname"><span class="pre">luv_finder.matchedfilter.</span></span><span class="sig-name descname"><span class="pre">build_grid</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="luv_finder.data.html#luv_finder.data.DataHandler" title="luv_finder.data.DataHandler"><span class="pre">DataHandler</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">cfg</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#dict" title="(in Python v3.15)"><span class="pre">dict</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/builtins/constants.html#None" title="(in Python v3.15)"><span class="pre">None</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#dict" title="(in Python v3.15)"><span class="pre">dict</span></a></span></span><a class="reference internal" href="../_modules/luv_finder/matchedfilter.html#build_grid"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#luv_finder.matchedfilter.build_grid" title="Link to this definition">¶</a></dt>
+<dd><p>Grid ranges from YAML, positions in the dataset’s sky frame (arcsec from the reference).</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="luv_finder.matchedfilter.combine_pointings">
+<span class="sig-prename descclassname"><span class="pre">luv_finder.matchedfilter.</span></span><span class="sig-name descname"><span class="pre">combine_pointings</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">results</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/collections.abc.html#collections.abc.Sequence" title="(in Python v3.15)"><span class="pre">Sequence</span></a><span class="p"><span class="pre">[</span></span><a class="reference internal" href="#luv_finder.matchedfilter.SearchResult" title="luv_finder.matchedfilter.SearchResult"><span class="pre">SearchResult</span></a><span class="p"><span class="pre">]</span></span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="#luv_finder.matchedfilter.SearchResult" title="luv_finder.matchedfilter.SearchResult"><span class="pre">SearchResult</span></a></span></span><a class="reference internal" href="../_modules/luv_finder/matchedfilter.html#combine_pointings"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#luv_finder.matchedfilter.combine_pointings" title="Link to this definition">¶</a></dt>
+<dd><p>Combine the PB-corrected searches of a mosaic’s pointings on the union of their grids.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="luv_finder.matchedfilter.grid_model">
+<span class="sig-prename descclassname"><span class="pre">luv_finder.matchedfilter.</span></span><span class="sig-name descname"><span class="pre">grid_model</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">grid</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#dict" title="(in Python v3.15)"><span class="pre">dict</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="luv_finder.model.html#luv_finder.model.Model" title="luv_finder.model.Model"><span class="pre">Model</span></a></span></span><a class="reference internal" href="../_modules/luv_finder/matchedfilter.html#grid_model"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#luv_finder.matchedfilter.grid_model" title="Link to this definition">¶</a></dt>
+<dd><p>A model of one Gaussian component whose <code class="docutils literal notranslate"><span class="pre">grid</span></code> is the search axes <code class="docutils literal notranslate"><span class="pre">grid</span></code> (see <a class="reference internal" href="#luv_finder.matchedfilter.build_grid" title="luv_finder.matchedfilter.build_grid"><code class="xref py py-func docutils literal notranslate"><span class="pre">build_grid()</span></code></a>).</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="luv_finder.matchedfilter.pb_corrected">
+<span class="sig-prename descclassname"><span class="pre">luv_finder.matchedfilter.</span></span><span class="sig-name descname"><span class="pre">pb_corrected</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">result</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="#luv_finder.matchedfilter.SearchResult" title="luv_finder.matchedfilter.SearchResult"><span class="pre">SearchResult</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">data</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="luv_finder.data.html#luv_finder.data.DataHandler" title="luv_finder.data.DataHandler"><span class="pre">DataHandler</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">pb_limit</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><span class="pre">float</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">0.2</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="#luv_finder.matchedfilter.SearchResult" title="luv_finder.matchedfilter.SearchResult"><span class="pre">SearchResult</span></a></span></span><a class="reference internal" href="../_modules/luv_finder/matchedfilter.html#pb_corrected"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#luv_finder.matchedfilter.pb_corrected" title="Link to this definition">¶</a></dt>
+<dd><p>Correct the search of one pointing for its primary beam.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="luv_finder.matchedfilter.search_pointings">
+<span class="sig-prename descclassname"><span class="pre">luv_finder.matchedfilter.</span></span><span class="sig-name descname"><span class="pre">search_pointings</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">path</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.15)"><span class="pre">str</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">grid_cfg</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#dict" title="(in Python v3.15)"><span class="pre">dict</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/builtins/constants.html#None" title="(in Python v3.15)"><span class="pre">None</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">jackknife</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#bool" title="(in Python v3.15)"><span class="pre">bool</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">cores</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="(in Python v3.15)"><span class="pre">int</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/builtins/constants.html#None" title="(in Python v3.15)"><span class="pre">None</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">pb_limit</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><span class="pre">float</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">0.2</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">filter_kwargs</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="#luv_finder.matchedfilter.SearchResult" title="luv_finder.matchedfilter.SearchResult"><span class="pre">SearchResult</span></a></span></span><a class="reference internal" href="../_modules/luv_finder/matchedfilter.html#search_pointings"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#luv_finder.matchedfilter.search_pointings" title="Link to this definition">¶</a></dt>
+<dd><p>Search every field of a measurement set or NPZ and combine the pointings on one sky grid.</p>
+</dd></dl>
+
 </section>
 
         </article>
@@ -342,8 +426,42 @@ has unit variance under the null.</p>
         
       </footer>
     </div>
-    <aside class="toc-drawer no-toc">
+    <aside class="toc-drawer">
       
+      
+      <div class="toc-sticky toc-scroll">
+        <div class="toc-title-container">
+          <span class="toc-title">
+            On this page
+          </span>
+        </div>
+        <div class="toc-tree-container">
+          <div class="toc-tree">
+            <ul>
+<li><a class="reference internal" href="#">luv_finder.matchedfilter</a><ul>
+<li><a class="reference internal" href="#luv_finder.matchedfilter.MatchedFilter"><code class="docutils literal notranslate"><span class="pre">MatchedFilter</span></code></a><ul>
+<li><a class="reference internal" href="#luv_finder.matchedfilter.MatchedFilter.freqs"><code class="docutils literal notranslate"><span class="pre">MatchedFilter.freqs</span></code></a></li>
+<li><a class="reference internal" href="#luv_finder.matchedfilter.MatchedFilter.plot_response"><code class="docutils literal notranslate"><span class="pre">MatchedFilter.plot_response()</span></code></a></li>
+<li><a class="reference internal" href="#luv_finder.matchedfilter.MatchedFilter.run"><code class="docutils literal notranslate"><span class="pre">MatchedFilter.run()</span></code></a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#luv_finder.matchedfilter.SearchResult"><code class="docutils literal notranslate"><span class="pre">SearchResult</span></code></a><ul>
+<li><a class="reference internal" href="#luv_finder.matchedfilter.SearchResult.integrated_flux"><code class="docutils literal notranslate"><span class="pre">SearchResult.integrated_flux()</span></code></a></li>
+<li><a class="reference internal" href="#luv_finder.matchedfilter.SearchResult.response"><code class="docutils literal notranslate"><span class="pre">SearchResult.response</span></code></a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#luv_finder.matchedfilter.build_grid"><code class="docutils literal notranslate"><span class="pre">build_grid()</span></code></a></li>
+<li><a class="reference internal" href="#luv_finder.matchedfilter.combine_pointings"><code class="docutils literal notranslate"><span class="pre">combine_pointings()</span></code></a></li>
+<li><a class="reference internal" href="#luv_finder.matchedfilter.grid_model"><code class="docutils literal notranslate"><span class="pre">grid_model()</span></code></a></li>
+<li><a class="reference internal" href="#luv_finder.matchedfilter.pb_corrected"><code class="docutils literal notranslate"><span class="pre">pb_corrected()</span></code></a></li>
+<li><a class="reference internal" href="#luv_finder.matchedfilter.search_pointings"><code class="docutils literal notranslate"><span class="pre">search_pointings()</span></code></a></li>
+</ul>
+</li>
+</ul>
+
+          </div>
+        </div>
+      </div>
       
       
     </aside>

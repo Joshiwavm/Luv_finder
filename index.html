@@ -191,9 +191,20 @@
   <input type="hidden" name="area" value="default">
 </form>
 <div id="searchbox"></div><div class="sidebar-scroll"><div class="sidebar-tree">
-  <ul>
+  <p class="caption" role="heading"><span class="caption-text">Getting started</span></p>
+<ul>
 <li class="toctree-l1"><a class="reference internal" href="installation.html">Installation</a></li>
-<li class="toctree-l1"><a class="reference internal" href="usage.html">Usage</a></li>
+<li class="toctree-l1"><a class="reference internal" href="quickstart.html">Quickstart</a></li>
+<li class="toctree-l1"><a class="reference internal" href="method.html">How it works</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Guides</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="guides/mosaics.html">Mosaics and the primary beam</a></li>
+<li class="toctree-l1"><a class="reference internal" href="guides/catalogue.html">Catalogue and line fit</a></li>
+<li class="toctree-l1"><a class="reference internal" href="guides/configuration.html">Configuration</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Reference</span></p>
+<ul>
 <li class="toctree-l1 has-children"><a class="reference internal" href="tutorials.html">Tutorials</a><input aria-label="Toggle navigation of Tutorials" class="toctree-checkbox" id="toctree-checkbox-1" name="toctree-checkbox-1" role="switch" type="checkbox"/><label for="toctree-checkbox-1"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
 <li class="toctree-l2"><a class="reference internal" href="tutorials/simulate-mock-observation.html">Simulate a mock line observation</a></li>
 <li class="toctree-l2"><a class="reference internal" href="tutorials/simulate-mock-observation.html#make-mock-observations-using-mockgenerator.py">make mock observations using mockgenerator.py</a></li>
@@ -209,6 +220,7 @@
 <li class="toctree-l2"><a class="reference internal" href="generated/luv_finder.catalogue.html">luv_finder.catalogue</a></li>
 <li class="toctree-l2"><a class="reference internal" href="generated/luv_finder.fit.html">luv_finder.fit</a></li>
 <li class="toctree-l2"><a class="reference internal" href="generated/luv_finder.mock.html">luv_finder.mock</a></li>
+<li class="toctree-l2"><a class="reference internal" href="generated/luv_finder.plotting.html">luv_finder.plotting</a></li>
 <li class="toctree-l2"><a class="reference internal" href="generated/luv_finder.utils.html">luv_finder.utils</a></li>
 </ul>
 </li>
@@ -252,47 +264,40 @@
         <article role="main" id="furo-main-content">
           <section id="luv-finder">
 <h1>Luv_finder<a class="headerlink" href="#luv-finder" title="Link to this heading">¶</a></h1>
-<p>Blind spectral-line finding in the UV plane for interferometric data.</p>
-<p>A parametric line model is evaluated directly on the visibilities and
-cross-correlated with the data over a grid of positions, sizes, widths and
-fluxes. A jackknifed copy of the data provides a signal-free noise realisation
-on the same grid.</p>
+<p>Blind spectral-line search in the uv plane for interferometric (ALMA) data.</p>
+<p>At every trial position, source shape and line width, Luv_finder matches a
+Gaussian line template against the visibilities and reports the matched-filter
+statistic in signal-to-noise units. A jackknife of the data, consecutive
+integrations differenced, is the noise reference: it calibrates the S/N, the
+shape a source leaves in the search, and the false-alarm rate. Mosaics are
+corrected for the primary beam and combined, and candidates are catalogued with
+a likelihood ratio and a fidelity, then fitted in the visibilities.</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>pip<span class="w"> </span>install<span class="w"> </span>-e<span class="w"> </span><span class="s2">".[casa,dev]"</span>
+luv-mock<span class="w"> </span>configs/mocks/smoke.yaml
+luv-find<span class="w"> </span>--ms<span class="w"> </span>output/ms_files/smoke/smoke.aca.cycle13.noisy.ms<span class="w"> </span>--grid<span class="w"> </span>configs/grids/smoke.yaml<span class="w"> </span>--jackknife
+</pre></div>
+</div>
 <div class="toctree-wrapper compound">
+<p class="caption" role="heading"><span class="caption-text">Getting started</span></p>
 <ul>
-<li class="toctree-l1"><a class="reference internal" href="installation.html">Installation</a><ul>
-<li class="toctree-l2"><a class="reference internal" href="installation.html#extras">Extras</a></li>
-<li class="toctree-l2"><a class="reference internal" href="installation.html#casa-runtime-data">CASA runtime data</a></li>
-<li class="toctree-l2"><a class="reference internal" href="installation.html#casa-log-files">CASA log files</a></li>
+<li class="toctree-l1"><a class="reference internal" href="installation.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="quickstart.html">Quickstart</a></li>
+<li class="toctree-l1"><a class="reference internal" href="method.html">How it works</a></li>
 </ul>
-</li>
-<li class="toctree-l1"><a class="reference internal" href="usage.html">Usage</a><ul>
-<li class="toctree-l2"><a class="reference internal" href="usage.html#command-line">Command line</a></li>
-<li class="toctree-l2"><a class="reference internal" href="usage.html#data-layout">Data layout</a></li>
-<li class="toctree-l2"><a class="reference internal" href="usage.html#signal-to-noise-units">Signal-to-noise units</a></li>
-<li class="toctree-l2"><a class="reference internal" href="usage.html#catalogue">Catalogue</a></li>
-<li class="toctree-l2"><a class="reference internal" href="usage.html#fitting-the-detected-lines">Fitting the detected lines</a></li>
-<li class="toctree-l2"><a class="reference internal" href="usage.html#diagnostic-figures">Diagnostic figures</a></li>
-<li class="toctree-l2"><a class="reference internal" href="usage.html#parameter-naming">Parameter naming</a></li>
+</div>
+<div class="toctree-wrapper compound">
+<p class="caption" role="heading"><span class="caption-text">Guides</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="guides/mosaics.html">Mosaics and the primary beam</a></li>
+<li class="toctree-l1"><a class="reference internal" href="guides/catalogue.html">Catalogue and line fit</a></li>
+<li class="toctree-l1"><a class="reference internal" href="guides/configuration.html">Configuration</a></li>
 </ul>
-</li>
-<li class="toctree-l1"><a class="reference internal" href="tutorials.html">Tutorials</a><ul>
-<li class="toctree-l2"><a class="reference internal" href="tutorials/simulate-mock-observation.html">Simulate a mock line observation</a></li>
-<li class="toctree-l2"><a class="reference internal" href="tutorials/simulate-mock-observation.html#make-mock-observations-using-mockgenerator.py">make mock observations using mockgenerator.py</a></li>
-<li class="toctree-l2"><a class="reference internal" href="tutorials/find-lines-matched-filter.html">Find lines with the matched filter</a></li>
-</ul>
-</li>
-<li class="toctree-l1"><a class="reference internal" href="api.html">API</a><ul>
-<li class="toctree-l2"><a class="reference internal" href="generated/luv_finder.data.html">luv_finder.data</a></li>
-<li class="toctree-l2"><a class="reference internal" href="generated/luv_finder.model.html">luv_finder.model</a></li>
-<li class="toctree-l2"><a class="reference internal" href="generated/luv_finder.kernel.html">luv_finder.kernel</a></li>
-<li class="toctree-l2"><a class="reference internal" href="generated/luv_finder.matchedfilter.html">luv_finder.matchedfilter</a></li>
-<li class="toctree-l2"><a class="reference internal" href="generated/luv_finder.imaging.html">luv_finder.imaging</a></li>
-<li class="toctree-l2"><a class="reference internal" href="generated/luv_finder.catalogue.html">luv_finder.catalogue</a></li>
-<li class="toctree-l2"><a class="reference internal" href="generated/luv_finder.fit.html">luv_finder.fit</a></li>
-<li class="toctree-l2"><a class="reference internal" href="generated/luv_finder.mock.html">luv_finder.mock</a></li>
-<li class="toctree-l2"><a class="reference internal" href="generated/luv_finder.utils.html">luv_finder.utils</a></li>
-</ul>
-</li>
+</div>
+<div class="toctree-wrapper compound">
+<p class="caption" role="heading"><span class="caption-text">Reference</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="tutorials.html">Tutorials</a></li>
+<li class="toctree-l1"><a class="reference internal" href="api.html">API</a></li>
 </ul>
 </div>
 <p>Source: <a class="reference external" href="https://github.com/Joshiwavm/Luv_finder">https://github.com/Joshiwavm/Luv_finder</a></p>

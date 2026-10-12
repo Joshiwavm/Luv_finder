@@ -3,7 +3,7 @@
   <head><meta charset="utf-8">
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
-<link rel="index" title="Index" href="genindex.html"><link rel="search" title="Search" href="search.html"><link rel="next" title="Usage" href="usage.html"><link rel="prev" title="Luv_finder" href="index.html">
+<link rel="index" title="Index" href="genindex.html"><link rel="search" title="Search" href="search.html"><link rel="next" title="Quickstart" href="quickstart.html"><link rel="prev" title="Luv_finder" href="index.html">
 
     <!-- Generated with Sphinx 9.1.0 and Furo 2025.12.19 -->
         <title>Installation - Luv_finder</title>
@@ -191,9 +191,20 @@
   <input type="hidden" name="area" value="default">
 </form>
 <div id="searchbox"></div><div class="sidebar-scroll"><div class="sidebar-tree">
-  <ul class="current">
+  <p class="caption" role="heading"><span class="caption-text">Getting started</span></p>
+<ul class="current">
 <li class="toctree-l1 current current-page"><a class="current reference internal" href="#">Installation</a></li>
-<li class="toctree-l1"><a class="reference internal" href="usage.html">Usage</a></li>
+<li class="toctree-l1"><a class="reference internal" href="quickstart.html">Quickstart</a></li>
+<li class="toctree-l1"><a class="reference internal" href="method.html">How it works</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Guides</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="guides/mosaics.html">Mosaics and the primary beam</a></li>
+<li class="toctree-l1"><a class="reference internal" href="guides/catalogue.html">Catalogue and line fit</a></li>
+<li class="toctree-l1"><a class="reference internal" href="guides/configuration.html">Configuration</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Reference</span></p>
+<ul>
 <li class="toctree-l1 has-children"><a class="reference internal" href="tutorials.html">Tutorials</a><input aria-label="Toggle navigation of Tutorials" class="toctree-checkbox" id="toctree-checkbox-1" name="toctree-checkbox-1" role="switch" type="checkbox"/><label for="toctree-checkbox-1"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
 <li class="toctree-l2"><a class="reference internal" href="tutorials/simulate-mock-observation.html">Simulate a mock line observation</a></li>
 <li class="toctree-l2"><a class="reference internal" href="tutorials/simulate-mock-observation.html#make-mock-observations-using-mockgenerator.py">make mock observations using mockgenerator.py</a></li>
@@ -209,6 +220,7 @@
 <li class="toctree-l2"><a class="reference internal" href="generated/luv_finder.catalogue.html">luv_finder.catalogue</a></li>
 <li class="toctree-l2"><a class="reference internal" href="generated/luv_finder.fit.html">luv_finder.fit</a></li>
 <li class="toctree-l2"><a class="reference internal" href="generated/luv_finder.mock.html">luv_finder.mock</a></li>
+<li class="toctree-l2"><a class="reference internal" href="generated/luv_finder.plotting.html">luv_finder.plotting</a></li>
 <li class="toctree-l2"><a class="reference internal" href="generated/luv_finder.utils.html">luv_finder.utils</a></li>
 </ul>
 </li>
@@ -260,54 +272,35 @@ pip<span class="w"> </span>install<span class="w"> </span>-e<span class="w"> </s
 <section id="extras">
 <h2>Extras<a class="headerlink" href="#extras" title="Link to this heading">¶</a></h2>
 <dl class="simple">
-<dt><code class="docutils literal notranslate"><span class="pre">casa</span></code></dt><dd><p><code class="docutils literal notranslate"><span class="pre">casatools</span></code> and <code class="docutils literal notranslate"><span class="pre">casatasks</span></code>. Needed to read measurement sets and to
-simulate mocks. Native arm64 wheels exist for Python 3.12 on macOS &gt;= 14.
-If the import fails with <code class="docutils literal notranslate"><span class="pre">Symbol</span> <span class="pre">not</span> <span class="pre">found:</span> <span class="pre">_CRYPTO_calloc</span></code>, upgrade the
-environment’s OpenSSL: <code class="docutils literal notranslate"><span class="pre">conda</span> <span class="pre">install</span> <span class="pre">-c</span> <span class="pre">conda-forge</span> <span class="pre">&quot;openssl&gt;=3.6&quot;</span></code>
-(casatools bundles OpenSSL 3.6 and dyld reuses whichever
-<code class="docutils literal notranslate"><span class="pre">libcrypto.3.dylib</span></code> loads first).</p>
+<dt><code class="docutils literal notranslate"><span class="pre">casa</span></code></dt><dd><p><code class="docutils literal notranslate"><span class="pre">casatools</span></code> and <code class="docutils literal notranslate"><span class="pre">casatasks</span></code>, needed to read measurement sets and to simulate
+mocks. Native arm64 wheels exist for Python 3.12 on macOS &gt;= 14.</p>
 </dd>
 <dt><code class="docutils literal notranslate"><span class="pre">dev</span></code></dt><dd><p>pytest, ruff, pre-commit, Sphinx.</p>
 </dd>
 </dl>
-<p>Reading data and simulating mocks are numpy (and CASA); the matched filter is JAX,
-in float64. Exporting a measurement set to NPZ with <code class="docutils literal notranslate"><span class="pre">luv-export</span></code> lets everything
-else run without CASA.</p>
+<p>Reading data and simulating mocks are NumPy (and CASA); the matched filter is JAX, in
+float64. Exporting a measurement set to NPZ with <code class="docutils literal notranslate"><span class="pre">luv-export</span></code> lets everything else run
+without CASA.</p>
 </section>
-<section id="casa-runtime-data">
-<h2>CASA runtime data<a class="headerlink" href="#casa-runtime-data" title="Link to this heading">¶</a></h2>
-<p>CASA needs a data directory (measures tables, ephemerides, observatory
-positions). The <code class="docutils literal notranslate"><span class="pre">casadata</span></code> pip package ships one copy per environment at
-roughly 850 MB each; it is not a dependency of <code class="docutils literal notranslate"><span class="pre">casatools</span></code> and this project
-does not install it. Keep a single shared copy instead, maintained by
-casaconfig, and point every environment at it from <code class="docutils literal notranslate"><span class="pre">~/.casa/config.py</span></code>:</p>
+<section id="casa-setup">
+<h2>CASA setup<a class="headerlink" href="#casa-setup" title="Link to this heading">¶</a></h2>
+<p>CASA needs a runtime data directory (measures tables, ephemerides, antenna
+configurations). Keep one shared copy instead of a <code class="docutils literal notranslate"><span class="pre">casadata</span></code> package per environment,
+and point every environment at it from <code class="docutils literal notranslate"><span class="pre">~/.casa/config.py</span></code>:</p>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">measurespath</span> <span class="o">=</span> <span class="s2">"/Users/&lt;you&gt;/.casa/data"</span>
 <span class="n">measures_auto_update</span> <span class="o">=</span> <span class="kc">True</span>   <span class="c1"># small, changes often</span>
 <span class="n">data_auto_update</span> <span class="o">=</span> <span class="kc">False</span>      <span class="c1"># ~850 MB, update by hand</span>
 </pre></div>
 </div>
-<p>Antenna configurations come from this directory too, so the repository does not
-vendor any <code class="docutils literal notranslate"><span class="pre">.cfg</span></code> files. Cycle 13 requires casarundata 2026.02.19 or newer;
-<code class="docutils literal notranslate"><span class="pre">luv_finder.mock.resolve_antenna_config</span></code> reports which cycles your copy has if
-the requested one is missing.</p>
-<p>Populate or refresh it with:</p>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>python<span class="w"> </span>-c<span class="w"> </span><span class="s2">"from casaconfig import pull_data; pull_data()"</span><span class="w">       </span><span class="c1"># first time</span>
-python<span class="w"> </span>-c<span class="w"> </span><span class="s2">"from casaconfig import measures_update; measures_update()"</span>
-python<span class="w"> </span>-c<span class="w"> </span><span class="s2">"from casaconfig import data_update; data_update()"</span>
-</pre></div>
-</div>
-<p>If <code class="docutils literal notranslate"><span class="pre">casadata</span></code> is installed alongside this, it shadows <code class="docutils literal notranslate"><span class="pre">measurespath</span></code> on the
-data path and CASA warns that the two sets of measures tables differ. Uninstall
-it: <code class="docutils literal notranslate"><span class="pre">pip</span> <span class="pre">uninstall</span> <span class="pre">casadata</span></code>.</p>
-</section>
-<section id="casa-log-files">
-<h2>CASA log files<a class="headerlink" href="#casa-log-files" title="Link to this heading">¶</a></h2>
-<p><code class="docutils literal notranslate"><span class="pre">casatools</span></code> and <code class="docutils literal notranslate"><span class="pre">casatasks</span></code> write a <code class="docutils literal notranslate"><span class="pre">casa-&lt;timestamp&gt;.log</span></code> into the working
-directory as soon as they are imported. <code class="xref py py-mod docutils literal notranslate"><span class="pre">luv_finder._casa</span></code> presets the
-casaconfig log path so these land in <code class="docutils literal notranslate"><span class="pre">logs/</span></code> instead, which is gitignored. Set
-<code class="docutils literal notranslate"><span class="pre">LUV_CASA_LOG_DIR</span></code> to send them elsewhere. Reach CASA through
-<code class="docutils literal notranslate"><span class="pre">luv_finder._casa.tools()</span></code> / <code class="docutils literal notranslate"><span class="pre">tasks()</span></code>; importing it directly re-creates the
-clutter, because the destination is fixed at the first CASA import.</p>
+<p>Populate it once with <code class="docutils literal notranslate"><span class="pre">python</span> <span class="pre">-c</span> <span class="pre">&quot;from</span> <span class="pre">casaconfig</span> <span class="pre">import</span> <span class="pre">pull_data;</span> <span class="pre">pull_data()&quot;</span></code>.
+Cycle 13 antenna configurations need casarundata 2026.02.19 or newer.</p>
+<ul class="simple">
+<li><p>If <code class="docutils literal notranslate"><span class="pre">import</span> <span class="pre">casatools</span></code> fails with <code class="docutils literal notranslate"><span class="pre">Symbol</span> <span class="pre">not</span> <span class="pre">found:</span> <span class="pre">_CRYPTO_calloc</span></code>, upgrade the
+environment’s OpenSSL: <code class="docutils literal notranslate"><span class="pre">conda</span> <span class="pre">install</span> <span class="pre">-c</span> <span class="pre">conda-forge</span> <span class="pre">&quot;openssl&gt;=3.6&quot;</span></code>.</p></li>
+<li><p>If <code class="docutils literal notranslate"><span class="pre">casadata</span></code> is installed as well, it shadows <code class="docutils literal notranslate"><span class="pre">measurespath</span></code>: <code class="docutils literal notranslate"><span class="pre">pip</span> <span class="pre">uninstall</span> <span class="pre">casadata</span></code>.</p></li>
+<li><p>CASA’s <code class="docutils literal notranslate"><span class="pre">casa-&lt;timestamp&gt;.log</span></code> files go to <code class="docutils literal notranslate"><span class="pre">logs/</span></code> (gitignored; set <code class="docutils literal notranslate"><span class="pre">LUV_CASA_LOG_DIR</span></code>
+to change it), as long as CASA is reached through <code class="docutils literal notranslate"><span class="pre">luv_finder._casa</span></code>.</p></li>
+</ul>
 </section>
 </section>
 
@@ -316,12 +309,12 @@ clutter, because the destination is fixed at the first CASA import.</p>
       <footer>
         
         <div class="related-pages">
-          <a class="next-page" href="usage.html">
+          <a class="next-page" href="quickstart.html">
               <div class="page-info">
                 <div class="context">
                   <span>Next</span>
                 </div>
-                <div class="title">Usage</div>
+                <div class="title">Quickstart</div>
               </div>
               <svg class="furo-related-icon"><use href="#svg-arrow-right"></use></svg>
             </a>
@@ -368,8 +361,7 @@ clutter, because the destination is fixed at the first CASA import.</p>
             <ul>
 <li><a class="reference internal" href="#">Installation</a><ul>
 <li><a class="reference internal" href="#extras">Extras</a></li>
-<li><a class="reference internal" href="#casa-runtime-data">CASA runtime data</a></li>
-<li><a class="reference internal" href="#casa-log-files">CASA log files</a></li>
+<li><a class="reference internal" href="#casa-setup">CASA setup</a></li>
 </ul>
 </li>
 </ul>

@@ -3,7 +3,7 @@
   <head><meta charset="utf-8">
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
-<link rel="index" title="Index" href="../genindex.html"><link rel="search" title="Search" href="../search.html"><link rel="next" title="luv_finder.utils" href="luv_finder.utils.html"><link rel="prev" title="luv_finder.fit" href="luv_finder.fit.html">
+<link rel="index" title="Index" href="../genindex.html"><link rel="search" title="Search" href="../search.html"><link rel="next" title="luv_finder.plotting" href="luv_finder.plotting.html"><link rel="prev" title="luv_finder.fit" href="luv_finder.fit.html">
 
     <!-- Generated with Sphinx 9.1.0 and Furo 2025.12.19 -->
         <title>luv_finder.mock - Luv_finder</title>
@@ -173,7 +173,7 @@
           <svg class="theme-icon-when-light"><use href="#svg-sun"></use></svg>
         </button>
       </div>
-      <label class="toc-overlay-icon toc-header-icon no-toc" for="__toc">
+      <label class="toc-overlay-icon toc-header-icon" for="__toc">
         <span class="icon"><svg><use href="#svg-toc"></use></svg></span>
       </label>
     </div>
@@ -191,9 +191,20 @@
   <input type="hidden" name="area" value="default">
 </form>
 <div id="searchbox"></div><div class="sidebar-scroll"><div class="sidebar-tree">
-  <ul class="current">
+  <p class="caption" role="heading"><span class="caption-text">Getting started</span></p>
+<ul>
 <li class="toctree-l1"><a class="reference internal" href="../installation.html">Installation</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../usage.html">Usage</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../quickstart.html">Quickstart</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../method.html">How it works</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Guides</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../guides/mosaics.html">Mosaics and the primary beam</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../guides/catalogue.html">Catalogue and line fit</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../guides/configuration.html">Configuration</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Reference</span></p>
+<ul class="current">
 <li class="toctree-l1 has-children"><a class="reference internal" href="../tutorials.html">Tutorials</a><input aria-label="Toggle navigation of Tutorials" class="toctree-checkbox" id="toctree-checkbox-1" name="toctree-checkbox-1" role="switch" type="checkbox"/><label for="toctree-checkbox-1"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
 <li class="toctree-l2"><a class="reference internal" href="../tutorials/simulate-mock-observation.html">Simulate a mock line observation</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../tutorials/simulate-mock-observation.html#make-mock-observations-using-mockgenerator.py">make mock observations using mockgenerator.py</a></li>
@@ -209,6 +220,7 @@
 <li class="toctree-l2"><a class="reference internal" href="luv_finder.catalogue.html">luv_finder.catalogue</a></li>
 <li class="toctree-l2"><a class="reference internal" href="luv_finder.fit.html">luv_finder.fit</a></li>
 <li class="toctree-l2 current current-page"><a class="current reference internal" href="#">luv_finder.mock</a></li>
+<li class="toctree-l2"><a class="reference internal" href="luv_finder.plotting.html">luv_finder.plotting</a></li>
 <li class="toctree-l2"><a class="reference internal" href="luv_finder.utils.html">luv_finder.utils</a></li>
 </ul>
 </li>
@@ -245,7 +257,7 @@
               <svg class="theme-icon-when-light"><use href="#svg-sun"></use></svg>
             </button>
           </div>
-          <label class="toc-overlay-icon toc-content-icon no-toc" for="__toc">
+          <label class="toc-overlay-icon toc-content-icon" for="__toc">
             <span class="icon"><svg><use href="#svg-toc"></use></svg></span>
           </label>
         </div>
@@ -257,10 +269,10 @@
 <div class="table-wrapper autosummary longtable docutils container">
 <table class="autosummary longtable docutils align-default">
 <tbody>
-<tr class="row-odd"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">resolve_antenna_config</span></code>(name)</p></td>
+<tr class="row-odd"><td><p><a class="reference internal" href="#luv_finder.mock.resolve_antenna_config" title="luv_finder.mock.resolve_antenna_config"><code class="xref py py-obj docutils literal notranslate"><span class="pre">resolve_antenna_config</span></code></a>(name)</p></td>
 <td><p>Absolute path to a CASA antenna configuration, by bare name or path.</p></td>
 </tr>
-<tr class="row-even"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">source_from_grid</span></code>(grid, source)</p></td>
+<tr class="row-even"><td><p><a class="reference internal" href="#luv_finder.mock.source_from_grid" title="luv_finder.mock.source_from_grid"><code class="xref py py-obj docutils literal notranslate"><span class="pre">source_from_grid</span></code></a>(grid, source)</p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">source</span></code> with position, size and line width taken from a targeted grid.</p></td>
 </tr>
 </tbody>
@@ -270,12 +282,74 @@
 <div class="table-wrapper autosummary longtable docutils container">
 <table class="autosummary longtable docutils align-default">
 <tbody>
-<tr class="row-odd"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">MockObservation</span></code>([cube_shape, dv, ...])</p></td>
+<tr class="row-odd"><td><p><a class="reference internal" href="#luv_finder.mock.MockObservation" title="luv_finder.mock.MockObservation"><code class="xref py py-obj docutils literal notranslate"><span class="pre">MockObservation</span></code></a>([cube_shape, dv, ...])</p></td>
 <td><p>Build a line cube, observe it with <code class="docutils literal notranslate"><span class="pre">simobserve</span></code>, image it, and move the products.</p></td>
 </tr>
 </tbody>
 </table>
 </div>
+<dl class="py class">
+<dt class="sig sig-object py" id="luv_finder.mock.MockObservation">
+<span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">luv_finder.mock.</span></span><span class="sig-name descname"><span class="pre">MockObservation</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">cube_shape</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">(30,</span> <span class="pre">256,</span> <span class="pre">256)</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dv</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'100km/s'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">freq_center</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'40GHz'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">cell</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'0.25arcsec'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">sensitivity</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">integration_time</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">fits_filename</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">sources</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">direction</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'J2000</span> <span class="pre">00h00m00.10</span> <span class="pre">-40d00m00.00'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">ptg_file</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">alma_config</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'alma.cycle13.3.cfg'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">output_folder</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'output/ms_files'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">support_folder</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'support'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">seed</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">242</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">calibrate_snr</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/luv_finder/mock.html#MockObservation"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#luv_finder.mock.MockObservation" title="Link to this definition">¶</a></dt>
+<dd><p>Build a line cube, observe it with <code class="docutils literal notranslate"><span class="pre">simobserve</span></code>, image it, and move the products.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><dl class="simple">
+<dt><strong>cube_shape</strong><span class="classifier">(nchan, ny, nx)</span></dt><dd></dd>
+<dt><strong>dv, freq_center, cell</strong><span class="classifier">str with units, e.g. “100km/s”, “40GHz”, “0.25arcsec”</span></dt><dd></dd>
+<dt><strong>sensitivity</strong><span class="classifier">str or float, per-channel rms in Jy (ignored if integration_time given)</span></dt><dd></dd>
+<dt><strong>integration_time</strong><span class="classifier">str with units, e.g. “8min”</span></dt><dd></dd>
+<dt><strong>sources</strong><span class="classifier">list of dict</span></dt><dd><p><code class="docutils literal notranslate"><span class="pre">position</span></code> (dra, ddec) arcsec east and north; optional <code class="docutils literal notranslate"><span class="pre">axis_maj</span></code>/<code class="docutils literal notranslate"><span class="pre">axis_min</span></code>, the Gaussian
+sigma in arcsec (the model’s <code class="docutils literal notranslate"><span class="pre">bmaj</span></code>/<code class="docutils literal notranslate"><span class="pre">bmin</span></code>, default one cell), and <code class="docutils literal notranslate"><span class="pre">pa</span></code>, the
+major axis’ position angle in degrees east of north (default 0);
+<code class="docutils literal notranslate"><span class="pre">line</span></code> {width km/s, mean GHz, snr}; <code class="docutils literal notranslate"><span class="pre">continuum</span></code> {snr}.</p>
+</dd>
+<dt><strong>alma_config</strong><span class="classifier">str</span></dt><dd><p>Bare name of a CASA antenna configuration, e.g. <code class="docutils literal notranslate"><span class="pre">alma.cycle13.3.cfg</span></code>,
+resolved from CASA’s own data directory.</p>
+</dd>
+<dt><strong>calibrate_snr</strong><span class="classifier">bool</span></dt><dd><p>Re-simulate once with the flux rescaled so that each line’s declared
+<code class="docutils literal notranslate"><span class="pre">snr</span></code> is its achieved matched-filter S/N. Doubles the runtime.</p>
+</dd>
+</dl>
+</dd>
+</dl>
+<dl class="py method">
+<dt class="sig sig-object py" id="luv_finder.mock.MockObservation.achieved_snr">
+<span class="sig-name descname"><span class="pre">achieved_snr</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#list" title="(in Python v3.15)"><span class="pre">list</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><span class="pre">float</span></a><span class="p"><span class="pre">]</span></span></span></span><a class="reference internal" href="../_modules/luv_finder/mock.html#MockObservation.achieved_snr"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#luv_finder.mock.MockObservation.achieved_snr" title="Link to this definition">¶</a></dt>
+<dd><p>Optimal matched-filter S/N of each line source in the simulated data.</p>
+<p>Uses the noiseless visibilities as the signal and the noisy weights as the
+noise model, so this is the expected S/N rather than one noisy draw. The
+template is the source itself, sqrt(sum_jk w Re[V’]^2), which the
+filter attains; for a point source it equals the channel-averaged S/N.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="luv_finder.mock.MockObservation.from_yaml">
+<span class="property"><span class="k"><span class="pre">classmethod</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">from_yaml</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">path</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.15)"><span class="pre">str</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">grid</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#dict" title="(in Python v3.15)"><span class="pre">dict</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.15)"><span class="pre">str</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/builtins/constants.html#None" title="(in Python v3.15)"><span class="pre">None</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">overrides</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="#luv_finder.mock.MockObservation" title="luv_finder.mock.MockObservation"><span class="pre">MockObservation</span></a></span></span><a class="reference internal" href="../_modules/luv_finder/mock.html#MockObservation.from_yaml"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#luv_finder.mock.MockObservation.from_yaml" title="Link to this definition">¶</a></dt>
+<dd><p>Build from a YAML preset; <code class="docutils literal notranslate"><span class="pre">grid</span></code> sets the first source’s geometry (see <a class="reference internal" href="#luv_finder.mock.source_from_grid" title="luv_finder.mock.source_from_grid"><code class="xref py py-func docutils literal notranslate"><span class="pre">source_from_grid()</span></code></a>).</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="luv_finder.mock.MockObservation.plot_results">
+<span class="sig-name descname"><span class="pre">plot_results</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">plots_dir</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.15)"><span class="pre">str</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">'plots'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">show</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#bool" title="(in Python v3.15)"><span class="pre">bool</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/builtins/constants.html#None" title="(in Python v3.15)"><span class="pre">None</span></a></span></span><a class="reference internal" href="../_modules/luv_finder/mock.html#MockObservation.plot_results"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#luv_finder.mock.MockObservation.plot_results" title="Link to this definition">¶</a></dt>
+<dd><p>Line / continuum maps (noiseless, noisy, SNR) for every source.</p>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="luv_finder.mock.resolve_antenna_config">
+<span class="sig-prename descclassname"><span class="pre">luv_finder.mock.</span></span><span class="sig-name descname"><span class="pre">resolve_antenna_config</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">name</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.15)"><span class="pre">str</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.15)"><span class="pre">str</span></a></span></span><a class="reference internal" href="../_modules/luv_finder/mock.html#resolve_antenna_config"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#luv_finder.mock.resolve_antenna_config" title="Link to this definition">¶</a></dt>
+<dd><p>Absolute path to a CASA antenna configuration, by bare name or path.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="luv_finder.mock.source_from_grid">
+<span class="sig-prename descclassname"><span class="pre">luv_finder.mock.</span></span><span class="sig-name descname"><span class="pre">source_from_grid</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">grid</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#dict" title="(in Python v3.15)"><span class="pre">dict</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.15)"><span class="pre">str</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">source</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#dict" title="(in Python v3.15)"><span class="pre">dict</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#dict" title="(in Python v3.15)"><span class="pre">dict</span></a></span></span><a class="reference internal" href="../_modules/luv_finder/mock.html#source_from_grid"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#luv_finder.mock.source_from_grid" title="Link to this definition">¶</a></dt>
+<dd><p><code class="docutils literal notranslate"><span class="pre">source</span></code> with position, size and line width taken from a targeted grid.</p>
+<p><code class="docutils literal notranslate"><span class="pre">grid</span></code> is a grid YAML (or its dict) with one value per key.</p>
+</dd></dl>
+
 </section>
 
         </article>
@@ -283,12 +357,12 @@
       <footer>
         
         <div class="related-pages">
-          <a class="next-page" href="luv_finder.utils.html">
+          <a class="next-page" href="luv_finder.plotting.html">
               <div class="page-info">
                 <div class="context">
                   <span>Next</span>
                 </div>
-                <div class="title">luv_finder.utils</div>
+                <div class="title">luv_finder.plotting</div>
               </div>
               <svg class="furo-related-icon"><use href="#svg-arrow-right"></use></svg>
             </a>
@@ -321,8 +395,34 @@
         
       </footer>
     </div>
-    <aside class="toc-drawer no-toc">
+    <aside class="toc-drawer">
       
+      
+      <div class="toc-sticky toc-scroll">
+        <div class="toc-title-container">
+          <span class="toc-title">
+            On this page
+          </span>
+        </div>
+        <div class="toc-tree-container">
+          <div class="toc-tree">
+            <ul>
+<li><a class="reference internal" href="#">luv_finder.mock</a><ul>
+<li><a class="reference internal" href="#luv_finder.mock.MockObservation"><code class="docutils literal notranslate"><span class="pre">MockObservation</span></code></a><ul>
+<li><a class="reference internal" href="#luv_finder.mock.MockObservation.achieved_snr"><code class="docutils literal notranslate"><span class="pre">MockObservation.achieved_snr()</span></code></a></li>
+<li><a class="reference internal" href="#luv_finder.mock.MockObservation.from_yaml"><code class="docutils literal notranslate"><span class="pre">MockObservation.from_yaml()</span></code></a></li>
+<li><a class="reference internal" href="#luv_finder.mock.MockObservation.plot_results"><code class="docutils literal notranslate"><span class="pre">MockObservation.plot_results()</span></code></a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#luv_finder.mock.resolve_antenna_config"><code class="docutils literal notranslate"><span class="pre">resolve_antenna_config()</span></code></a></li>
+<li><a class="reference internal" href="#luv_finder.mock.source_from_grid"><code class="docutils literal notranslate"><span class="pre">source_from_grid()</span></code></a></li>
+</ul>
+</li>
+</ul>
+
+          </div>
+        </div>
+      </div>
       
       
     </aside>

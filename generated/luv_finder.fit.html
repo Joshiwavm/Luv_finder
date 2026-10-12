@@ -173,7 +173,7 @@
           <svg class="theme-icon-when-light"><use href="#svg-sun"></use></svg>
         </button>
       </div>
-      <label class="toc-overlay-icon toc-header-icon no-toc" for="__toc">
+      <label class="toc-overlay-icon toc-header-icon" for="__toc">
         <span class="icon"><svg><use href="#svg-toc"></use></svg></span>
       </label>
     </div>
@@ -191,9 +191,20 @@
   <input type="hidden" name="area" value="default">
 </form>
 <div id="searchbox"></div><div class="sidebar-scroll"><div class="sidebar-tree">
-  <ul class="current">
+  <p class="caption" role="heading"><span class="caption-text">Getting started</span></p>
+<ul>
 <li class="toctree-l1"><a class="reference internal" href="../installation.html">Installation</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../usage.html">Usage</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../quickstart.html">Quickstart</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../method.html">How it works</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Guides</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../guides/mosaics.html">Mosaics and the primary beam</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../guides/catalogue.html">Catalogue and line fit</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../guides/configuration.html">Configuration</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Reference</span></p>
+<ul class="current">
 <li class="toctree-l1 has-children"><a class="reference internal" href="../tutorials.html">Tutorials</a><input aria-label="Toggle navigation of Tutorials" class="toctree-checkbox" id="toctree-checkbox-1" name="toctree-checkbox-1" role="switch" type="checkbox"/><label for="toctree-checkbox-1"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
 <li class="toctree-l2"><a class="reference internal" href="../tutorials/simulate-mock-observation.html">Simulate a mock line observation</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../tutorials/simulate-mock-observation.html#make-mock-observations-using-mockgenerator.py">make mock observations using mockgenerator.py</a></li>
@@ -209,6 +220,7 @@
 <li class="toctree-l2"><a class="reference internal" href="luv_finder.catalogue.html">luv_finder.catalogue</a></li>
 <li class="toctree-l2 current current-page"><a class="current reference internal" href="#">luv_finder.fit</a></li>
 <li class="toctree-l2"><a class="reference internal" href="luv_finder.mock.html">luv_finder.mock</a></li>
+<li class="toctree-l2"><a class="reference internal" href="luv_finder.plotting.html">luv_finder.plotting</a></li>
 <li class="toctree-l2"><a class="reference internal" href="luv_finder.utils.html">luv_finder.utils</a></li>
 </ul>
 </li>
@@ -245,7 +257,7 @@
               <svg class="theme-icon-when-light"><use href="#svg-sun"></use></svg>
             </button>
           </div>
-          <label class="toc-overlay-icon toc-content-icon no-toc" for="__toc">
+          <label class="toc-overlay-icon toc-content-icon" for="__toc">
             <span class="icon"><svg><use href="#svg-toc"></use></svg></span>
           </label>
         </div>
@@ -256,23 +268,23 @@
 <p>The model in pointing p is <code class="docutils literal notranslate"><span class="pre">a_p(nu)</span> <span class="pre">E(u,</span> <span class="pre">v)</span> <span class="pre">e^{+i</span> <span class="pre">phi}</span></code>, <code class="docutils literal notranslate"><span class="pre">a_p</span> <span class="pre">=</span> <span class="pre">PB_p</span> <span class="pre">F</span></code>: an elliptical Gaussian
 of sky covariance <code class="docutils literal notranslate"><span class="pre">(s_ee,</span> <span class="pre">s_nn,</span> <span class="pre">s_en)</span></code> whose spectrum <code class="docutils literal notranslate"><span class="pre">F</span></code> is a Gaussian line on a polynomial
 continuum. Every derivative of <code class="docutils literal notranslate"><span class="pre">E</span> <span class="pre">e^{+i</span> <span class="pre">phi}</span></code> in position and shape is itself times a polynomial
-in (u, v), so one pass over the visibilities (<code class="xref py py-func docutils literal notranslate"><span class="pre">point_moments()</span></code>) gives
+in (u, v), so one pass over the visibilities (<a class="reference internal" href="luv_finder.kernel.html#luv_finder.kernel.point_moments" title="luv_finder.kernel.point_moments"><code class="xref py py-func docutils literal notranslate"><span class="pre">point_moments()</span></code></a>) gives
 chi^2, its gradient and the Gauss-Newton matrix <code class="docutils literal notranslate"><span class="pre">J^T</span> <span class="pre">W</span> <span class="pre">J</span></code> in every parameter exactly. Errors are
 <code class="docutils literal notranslate"><span class="pre">2</span> <span class="pre">(J^T</span> <span class="pre">W</span> <span class="pre">J)^-1</span></code>, corrected for the channel correlation by a sandwich estimator over the channels.</p>
 <p class="rubric">Module Attributes</p>
 <div class="table-wrapper autosummary longtable docutils container">
 <table class="autosummary longtable docutils align-default">
 <tbody>
-<tr class="row-odd"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">LINE_FLUX</span></code></p></td>
-<td><p>Line flux per peak flux density and FWHM, as <code class="xref py py-meth docutils literal notranslate"><span class="pre">integrated_flux()</span></code>.</p></td>
+<tr class="row-odd"><td><p><a class="reference internal" href="#luv_finder.fit.LINE_FLUX" title="luv_finder.fit.LINE_FLUX"><code class="xref py py-obj docutils literal notranslate"><span class="pre">LINE_FLUX</span></code></a></p></td>
+<td><p>Line flux per peak flux density and FWHM, as <a class="reference internal" href="luv_finder.matchedfilter.html#luv_finder.matchedfilter.SearchResult.integrated_flux" title="luv_finder.matchedfilter.SearchResult.integrated_flux"><code class="xref py py-meth docutils literal notranslate"><span class="pre">integrated_flux()</span></code></a>.</p></td>
 </tr>
-<tr class="row-even"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">REPORTED</span></code></p></td>
+<tr class="row-even"><td><p><a class="reference internal" href="#luv_finder.fit.REPORTED" title="luv_finder.fit.REPORTED"><code class="xref py py-obj docutils literal notranslate"><span class="pre">REPORTED</span></code></a></p></td>
 <td><p>Quantities reported per line, each with an <code class="docutils literal notranslate"><span class="pre">_error</span></code>, and their units.</p></td>
 </tr>
-<tr class="row-odd"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">COLUMNS</span></code></p></td>
-<td><p>Columns <code class="xref py py-func docutils literal notranslate"><span class="pre">fit_lines()</span></code> adds, with their units.</p></td>
+<tr class="row-odd"><td><p><a class="reference internal" href="#luv_finder.fit.COLUMNS" title="luv_finder.fit.COLUMNS"><code class="xref py py-obj docutils literal notranslate"><span class="pre">COLUMNS</span></code></a></p></td>
+<td><p>Columns <a class="reference internal" href="#luv_finder.fit.fit_lines" title="luv_finder.fit.fit_lines"><code class="xref py py-func docutils literal notranslate"><span class="pre">fit_lines()</span></code></a> adds, with their units.</p></td>
 </tr>
-<tr class="row-even"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">START</span></code></p></td>
+<tr class="row-even"><td><p><a class="reference internal" href="#luv_finder.fit.START" title="luv_finder.fit.START"><code class="xref py py-obj docutils literal notranslate"><span class="pre">START</span></code></a></p></td>
 <td><p>Catalogue columns a fit starts from; the source shape defaults to a point.</p></td>
 </tr>
 </tbody>
@@ -282,15 +294,52 @@ chi^2, its gradient and the Gauss-Newton matrix <code class="docutils literal no
 <div class="table-wrapper autosummary longtable docutils container">
 <table class="autosummary longtable docutils align-default">
 <tbody>
-<tr class="row-odd"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">fit_line</span></code>(data, dra, ddec, freq_ghz, width[, ...])</p></td>
+<tr class="row-odd"><td><p><a class="reference internal" href="#luv_finder.fit.fit_line" title="luv_finder.fit.fit_line"><code class="xref py py-obj docutils literal notranslate"><span class="pre">fit_line</span></code></a>(data, dra, ddec, freq_ghz, width[, ...])</p></td>
 <td><p>Fit one line, started from the matched filter's position, template shape (sigma, arcsec) and width.</p></td>
 </tr>
-<tr class="row-even"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">fit_lines</span></code>(data, cat[, rows, cores])</p></td>
-<td><p>A copy of <code class="docutils literal notranslate"><span class="pre">cat</span></code> with the <code class="xref py py-data docutils literal notranslate"><span class="pre">COLUMNS</span></code> of every <code class="docutils literal notranslate"><span class="pre">rows</span></code> line (default the detected); failures warn.</p></td>
+<tr class="row-even"><td><p><a class="reference internal" href="#luv_finder.fit.fit_lines" title="luv_finder.fit.fit_lines"><code class="xref py py-obj docutils literal notranslate"><span class="pre">fit_lines</span></code></a>(data, cat[, rows, cores])</p></td>
+<td><p>A copy of <code class="docutils literal notranslate"><span class="pre">cat</span></code> with the <a class="reference internal" href="#luv_finder.fit.COLUMNS" title="luv_finder.fit.COLUMNS"><code class="xref py py-data docutils literal notranslate"><span class="pre">COLUMNS</span></code></a> of every <code class="docutils literal notranslate"><span class="pre">rows</span></code> line (default the detected); failures warn.</p></td>
 </tr>
 </tbody>
 </table>
 </div>
+<dl class="py data">
+<dt class="sig sig-object py" id="luv_finder.fit.COLUMNS">
+<span class="sig-prename descclassname"><span class="pre">luv_finder.fit.</span></span><span class="sig-name descname"><span class="pre">COLUMNS</span></span><span class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">{'fit_bmaj':</span> <span class="pre">'arcsec',</span> <span class="pre">'fit_bmaj_error':</span> <span class="pre">'arcsec',</span> <span class="pre">'fit_bmin':</span> <span class="pre">'arcsec',</span> <span class="pre">'fit_bmin_error':</span> <span class="pre">'arcsec',</span> <span class="pre">'fit_chi2_reduced':</span> <span class="pre">None,</span> <span class="pre">'fit_continuum':</span> <span class="pre">'Jy',</span> <span class="pre">'fit_continuum_error':</span> <span class="pre">'Jy',</span> <span class="pre">'fit_converged':</span> <span class="pre">None,</span> <span class="pre">'fit_ddec':</span> <span class="pre">'arcsec',</span> <span class="pre">'fit_ddec_error':</span> <span class="pre">'arcsec',</span> <span class="pre">'fit_dec':</span> <span class="pre">'deg',</span> <span class="pre">'fit_dra':</span> <span class="pre">'arcsec',</span> <span class="pre">'fit_dra_error':</span> <span class="pre">'arcsec',</span> <span class="pre">'fit_freq_ghz':</span> <span class="pre">'GHz',</span> <span class="pre">'fit_freq_ghz_error':</span> <span class="pre">'GHz',</span> <span class="pre">'fit_line_flux':</span> <span class="pre">'Jy</span> <span class="pre">km/s',</span> <span class="pre">'fit_line_flux_error':</span> <span class="pre">'Jy</span> <span class="pre">km/s',</span> <span class="pre">'fit_n_pointings':</span> <span class="pre">None,</span> <span class="pre">'fit_pa':</span> <span class="pre">'deg',</span> <span class="pre">'fit_pa_error':</span> <span class="pre">'deg',</span> <span class="pre">'fit_peak':</span> <span class="pre">'Jy',</span> <span class="pre">'fit_peak_error':</span> <span class="pre">'Jy',</span> <span class="pre">'fit_ra':</span> <span class="pre">'deg',</span> <span class="pre">'fit_width':</span> <span class="pre">'km/s',</span> <span class="pre">'fit_width_error':</span> <span class="pre">'km/s'}</span></span><a class="headerlink" href="#luv_finder.fit.COLUMNS" title="Link to this definition">¶</a></dt>
+<dd><p>Columns <a class="reference internal" href="#luv_finder.fit.fit_lines" title="luv_finder.fit.fit_lines"><code class="xref py py-func docutils literal notranslate"><span class="pre">fit_lines()</span></code></a> adds, with their units.</p>
+</dd></dl>
+
+<dl class="py data">
+<dt class="sig sig-object py" id="luv_finder.fit.LINE_FLUX">
+<span class="sig-prename descclassname"><span class="pre">luv_finder.fit.</span></span><span class="sig-name descname"><span class="pre">LINE_FLUX</span></span><span class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">np.float64(1.0643856792488324)</span></span><a class="headerlink" href="#luv_finder.fit.LINE_FLUX" title="Link to this definition">¶</a></dt>
+<dd><p>Line flux per peak flux density and FWHM, as <a class="reference internal" href="luv_finder.matchedfilter.html#luv_finder.matchedfilter.SearchResult.integrated_flux" title="luv_finder.matchedfilter.SearchResult.integrated_flux"><code class="xref py py-meth docutils literal notranslate"><span class="pre">integrated_flux()</span></code></a>.</p>
+</dd></dl>
+
+<dl class="py data">
+<dt class="sig sig-object py" id="luv_finder.fit.REPORTED">
+<span class="sig-prename descclassname"><span class="pre">luv_finder.fit.</span></span><span class="sig-name descname"><span class="pre">REPORTED</span></span><span class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">{'bmaj':</span> <span class="pre">'arcsec',</span> <span class="pre">'bmin':</span> <span class="pre">'arcsec',</span> <span class="pre">'continuum':</span> <span class="pre">'Jy',</span> <span class="pre">'ddec':</span> <span class="pre">'arcsec',</span> <span class="pre">'dra':</span> <span class="pre">'arcsec',</span> <span class="pre">'freq_ghz':</span> <span class="pre">'GHz',</span> <span class="pre">'line_flux':</span> <span class="pre">'Jy</span> <span class="pre">km/s',</span> <span class="pre">'pa':</span> <span class="pre">'deg',</span> <span class="pre">'peak':</span> <span class="pre">'Jy',</span> <span class="pre">'width':</span> <span class="pre">'km/s'}</span></span><a class="headerlink" href="#luv_finder.fit.REPORTED" title="Link to this definition">¶</a></dt>
+<dd><p>Quantities reported per line, each with an <code class="docutils literal notranslate"><span class="pre">_error</span></code>, and their units.</p>
+</dd></dl>
+
+<dl class="py data">
+<dt class="sig sig-object py" id="luv_finder.fit.START">
+<span class="sig-prename descclassname"><span class="pre">luv_finder.fit.</span></span><span class="sig-name descname"><span class="pre">START</span></span><span class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">('dra',</span> <span class="pre">'ddec',</span> <span class="pre">'freq_ghz',</span> <span class="pre">'width',</span> <span class="pre">'bmaj',</span> <span class="pre">'bmin',</span> <span class="pre">'pa')</span></span><a class="headerlink" href="#luv_finder.fit.START" title="Link to this definition">¶</a></dt>
+<dd><p>Catalogue columns a fit starts from; the source shape defaults to a point.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="luv_finder.fit.fit_line">
+<span class="sig-prename descclassname"><span class="pre">luv_finder.fit.</span></span><span class="sig-name descname"><span class="pre">fit_line</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="luv_finder.data.html#luv_finder.data.DataHandler" title="luv_finder.data.DataHandler"><span class="pre">DataHandler</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">dra</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><span class="pre">float</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">ddec</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><span class="pre">float</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">freq_ghz</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><span class="pre">float</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">width</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><span class="pre">float</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">bmaj</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><span class="pre">float</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">0.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">bmin</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><span class="pre">float</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">0.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">pa</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><span class="pre">float</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">0.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">continuum_order</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="(in Python v3.15)"><span class="pre">int</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/builtins/constants.html#None" title="(in Python v3.15)"><span class="pre">None</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">2</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">pb_limit</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><span class="pre">float</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">0.2</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">channel_correlation</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.15)"><span class="pre">str</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#dict" title="(in Python v3.15)"><span class="pre">dict</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/builtins/constants.html#None" title="(in Python v3.15)"><span class="pre">None</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">'measure'</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#dict" title="(in Python v3.15)"><span class="pre">dict</span></a></span></span><a class="reference internal" href="../_modules/luv_finder/fit.html#fit_line"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#luv_finder.fit.fit_line" title="Link to this definition">¶</a></dt>
+<dd><p>Fit one line, started from the matched filter’s position, template shape (sigma, arcsec) and width.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="luv_finder.fit.fit_lines">
+<span class="sig-prename descclassname"><span class="pre">luv_finder.fit.</span></span><span class="sig-name descname"><span class="pre">fit_lines</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="luv_finder.data.html#luv_finder.data.DataHandler" title="luv_finder.data.DataHandler"><span class="pre">DataHandler</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.15)"><span class="pre">str</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">cat</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.astropy.org/en/stable/api/astropy.table.Table.html#astropy.table.Table" title="(in Astropy v8.0)"><span class="pre">Table</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">rows</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">cores</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="(in Python v3.15)"><span class="pre">int</span></a><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/builtins/constants.html#None" title="(in Python v3.15)"><span class="pre">None</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.astropy.org/en/stable/api/astropy.table.Table.html#astropy.table.Table" title="(in Astropy v8.0)"><span class="pre">Table</span></a></span></span><a class="reference internal" href="../_modules/luv_finder/fit.html#fit_lines"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#luv_finder.fit.fit_lines" title="Link to this definition">¶</a></dt>
+<dd><p>A copy of <code class="docutils literal notranslate"><span class="pre">cat</span></code> with the <a class="reference internal" href="#luv_finder.fit.COLUMNS" title="luv_finder.fit.COLUMNS"><code class="xref py py-data docutils literal notranslate"><span class="pre">COLUMNS</span></code></a> of every <code class="docutils literal notranslate"><span class="pre">rows</span></code> line (default the detected); failures warn.</p>
+<p><code class="docutils literal notranslate"><span class="pre">meta[&quot;spectra&quot;]</span></code> holds each fitted line’s PB-corrected spectrum at its fitted position and the best-fit model.</p>
+</dd></dl>
+
 </section>
 
         </article>
@@ -336,8 +385,32 @@ chi^2, its gradient and the Gauss-Newton matrix <code class="docutils literal no
         
       </footer>
     </div>
-    <aside class="toc-drawer no-toc">
+    <aside class="toc-drawer">
       
+      
+      <div class="toc-sticky toc-scroll">
+        <div class="toc-title-container">
+          <span class="toc-title">
+            On this page
+          </span>
+        </div>
+        <div class="toc-tree-container">
+          <div class="toc-tree">
+            <ul>
+<li><a class="reference internal" href="#">luv_finder.fit</a><ul>
+<li><a class="reference internal" href="#luv_finder.fit.COLUMNS"><code class="docutils literal notranslate"><span class="pre">COLUMNS</span></code></a></li>
+<li><a class="reference internal" href="#luv_finder.fit.LINE_FLUX"><code class="docutils literal notranslate"><span class="pre">LINE_FLUX</span></code></a></li>
+<li><a class="reference internal" href="#luv_finder.fit.REPORTED"><code class="docutils literal notranslate"><span class="pre">REPORTED</span></code></a></li>
+<li><a class="reference internal" href="#luv_finder.fit.START"><code class="docutils literal notranslate"><span class="pre">START</span></code></a></li>
+<li><a class="reference internal" href="#luv_finder.fit.fit_line"><code class="docutils literal notranslate"><span class="pre">fit_line()</span></code></a></li>
+<li><a class="reference internal" href="#luv_finder.fit.fit_lines"><code class="docutils literal notranslate"><span class="pre">fit_lines()</span></code></a></li>
+</ul>
+</li>
+</ul>
+
+          </div>
+        </div>
+      </div>
       
       
     </aside>

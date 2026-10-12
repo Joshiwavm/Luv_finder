@@ -1,0 +1,579 @@
+<!doctype html>
+<html class="no-js" lang="en" data-content_root="../">
+  <head><meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="index" title="Index" href="../genindex.html"><link rel="search" title="Search" href="../search.html"><link rel="next" title="luv_finder.utils" href="luv_finder.utils.html"><link rel="prev" title="luv_finder.mock" href="luv_finder.mock.html">
+
+    <!-- Generated with Sphinx 9.1.0 and Furo 2025.12.19 -->
+        <title>luv_finder.plotting - Luv_finder</title>
+      <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=03e43079" />
+    <link rel="stylesheet" type="text/css" href="../_static/styles/furo.css?v=7bdb33bb" />
+    <link rel="stylesheet" type="text/css" href="../_static/copybutton.css?v=76b2166b" />
+    <link rel="stylesheet" type="text/css" href="../_static/styles/furo-extensions.css?v=8dab3a3b" />
+    
+    
+
+
+<style>
+  body {
+    --color-code-background: #eeffcc;
+  --color-code-foreground: black;
+  
+  }
+  @media not print {
+    body[data-theme="dark"] {
+      --color-code-background: #272822;
+  --color-code-foreground: #f8f8f2;
+  
+    }
+    @media (prefers-color-scheme: dark) {
+      body:not([data-theme="light"]) {
+        --color-code-background: #272822;
+  --color-code-foreground: #f8f8f2;
+  
+      }
+    }
+  }
+</style></head>
+  <body>
+    
+    <script>
+      document.body.dataset.theme = localStorage.getItem("theme") || "auto";
+    </script>
+    
+
+<svg xmlns="http://www.w3.org/2000/svg" style="display: none;">
+  <symbol id="svg-toc" viewBox="0 0 24 24">
+    <title>Contents</title>
+    <svg stroke="currentColor" fill="currentColor" stroke-width="0" viewBox="0 0 1024 1024">
+      <path d="M408 442h480c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8H408c-4.4 0-8 3.6-8 8v56c0 4.4 3.6 8 8 8zm-8 204c0 4.4 3.6 8 8 8h480c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8H408c-4.4 0-8 3.6-8 8v56zm504-486H120c-4.4 0-8 3.6-8 8v56c0 4.4 3.6 8 8 8h784c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8zm0 632H120c-4.4 0-8 3.6-8 8v56c0 4.4 3.6 8 8 8h784c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8zM115.4 518.9L271.7 642c5.8 4.6 14.4.5 14.4-6.9V388.9c0-7.4-8.5-11.5-14.4-6.9L115.4 505.1a8.74 8.74 0 0 0 0 13.8z"/>
+    </svg>
+  </symbol>
+  <symbol id="svg-menu" viewBox="0 0 24 24">
+    <title>Menu</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather-menu">
+      <line x1="3" y1="12" x2="21" y2="12"></line>
+      <line x1="3" y1="6" x2="21" y2="6"></line>
+      <line x1="3" y1="18" x2="21" y2="18"></line>
+    </svg>
+  </symbol>
+  <symbol id="svg-arrow-right" viewBox="0 0 24 24">
+    <title>Expand</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather-chevron-right">
+      <polyline points="9 18 15 12 9 6"></polyline>
+    </svg>
+  </symbol>
+  <symbol id="svg-sun" viewBox="0 0 24 24">
+    <title>Light mode</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="feather-sun">
+      <circle cx="12" cy="12" r="5"></circle>
+      <line x1="12" y1="1" x2="12" y2="3"></line>
+      <line x1="12" y1="21" x2="12" y2="23"></line>
+      <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+      <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+      <line x1="1" y1="12" x2="3" y2="12"></line>
+      <line x1="21" y1="12" x2="23" y2="12"></line>
+      <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+      <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+    </svg>
+  </symbol>
+  <symbol id="svg-moon" viewBox="0 0 24 24">
+    <title>Dark mode</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="icon-tabler-moon">
+      <path stroke="none" d="M0 0h24v24H0z" fill="none" />
+      <path d="M12 3c.132 0 .263 0 .393 0a7.5 7.5 0 0 0 7.92 12.446a9 9 0 1 1 -8.313 -12.454z" />
+    </svg>
+  </symbol>
+  <symbol id="svg-sun-with-moon" viewBox="0 0 24 24">
+    <title>Auto light/dark, in light mode</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round"
+      class="icon-custom-derived-from-feather-sun-and-tabler-moon">
+      <path style="opacity: 50%" d="M 5.411 14.504 C 5.471 14.504 5.532 14.504 5.591 14.504 C 3.639 16.319 4.383 19.569 6.931 20.352 C 7.693 20.586 8.512 20.551 9.25 20.252 C 8.023 23.207 4.056 23.725 2.11 21.184 C 0.166 18.642 1.702 14.949 4.874 14.536 C 5.051 14.512 5.231 14.5 5.411 14.5 L 5.411 14.504 Z"/>
+      <line x1="14.5" y1="3.25" x2="14.5" y2="1.25"/>
+      <line x1="14.5" y1="15.85" x2="14.5" y2="17.85"/>
+      <line x1="10.044" y1="5.094" x2="8.63" y2="3.68"/>
+      <line x1="19" y1="14.05" x2="20.414" y2="15.464"/>
+      <line x1="8.2" y1="9.55" x2="6.2" y2="9.55"/>
+      <line x1="20.8" y1="9.55" x2="22.8" y2="9.55"/>
+      <line x1="10.044" y1="14.006" x2="8.63" y2="15.42"/>
+      <line x1="19" y1="5.05" x2="20.414" y2="3.636"/>
+      <circle cx="14.5" cy="9.55" r="3.6"/>
+    </svg>
+  </symbol>
+  <symbol id="svg-moon-with-sun" viewBox="0 0 24 24">
+    <title>Auto light/dark, in dark mode</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round"
+      class="icon-custom-derived-from-feather-sun-and-tabler-moon">
+      <path d="M 8.282 7.007 C 8.385 7.007 8.494 7.007 8.595 7.007 C 5.18 10.184 6.481 15.869 10.942 17.24 C 12.275 17.648 13.706 17.589 15 17.066 C 12.851 22.236 5.91 23.143 2.505 18.696 C -0.897 14.249 1.791 7.786 7.342 7.063 C 7.652 7.021 7.965 7 8.282 7 L 8.282 7.007 Z"/>
+      <line style="opacity: 50%" x1="18" y1="3.705" x2="18" y2="2.5"/>
+      <line style="opacity: 50%" x1="18" y1="11.295" x2="18" y2="12.5"/>
+      <line style="opacity: 50%" x1="15.316" y1="4.816" x2="14.464" y2="3.964"/>
+      <line style="opacity: 50%" x1="20.711" y1="10.212" x2="21.563" y2="11.063"/>
+      <line style="opacity: 50%" x1="14.205" y1="7.5" x2="13.001" y2="7.5"/>
+      <line style="opacity: 50%" x1="21.795" y1="7.5" x2="23" y2="7.5"/>
+      <line style="opacity: 50%" x1="15.316" y1="10.184" x2="14.464" y2="11.036"/>
+      <line style="opacity: 50%" x1="20.711" y1="4.789" x2="21.563" y2="3.937"/>
+      <circle style="opacity: 50%" cx="18" cy="7.5" r="2.169"/>
+    </svg>
+  </symbol>
+  <symbol id="svg-pencil" viewBox="0 0 24 24">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="icon-tabler-pencil-code">
+      <path d="M4 20h4l10.5 -10.5a2.828 2.828 0 1 0 -4 -4l-10.5 10.5v4" />
+      <path d="M13.5 6.5l4 4" />
+      <path d="M20 21l2 -2l-2 -2" />
+      <path d="M17 17l-2 2l2 2" />
+    </svg>
+  </symbol>
+  <symbol id="svg-eye" viewBox="0 0 24 24">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="icon-tabler-eye-code">
+      <path stroke="none" d="M0 0h24v24H0z" fill="none" />
+      <path d="M10 12a2 2 0 1 0 4 0a2 2 0 0 0 -4 0" />
+      <path
+        d="M11.11 17.958c-3.209 -.307 -5.91 -2.293 -8.11 -5.958c2.4 -4 5.4 -6 9 -6c3.6 0 6.6 2 9 6c-.21 .352 -.427 .688 -.647 1.008" />
+      <path d="M20 21l2 -2l-2 -2" />
+      <path d="M17 17l-2 2l2 2" />
+    </svg>
+  </symbol>
+</svg>
+
+<input type="checkbox" class="sidebar-toggle" name="__navigation" id="__navigation" aria-label="Toggle site navigation sidebar">
+<input type="checkbox" class="sidebar-toggle" name="__toc" id="__toc" aria-label="Toggle table of contents sidebar">
+<label class="overlay sidebar-overlay" for="__navigation"></label>
+<label class="overlay toc-overlay" for="__toc"></label>
+
+<a class="skip-to-content muted-link" href="#furo-main-content">Skip to content</a>
+
+
+
+<div class="page">
+  <header class="mobile-header">
+    <div class="header-left">
+      <label class="nav-overlay-icon" for="__navigation">
+        <span class="icon"><svg><use href="#svg-menu"></use></svg></span>
+      </label>
+    </div>
+    <div class="header-center">
+      <a href="../index.html"><div class="brand">Luv_finder</div></a>
+    </div>
+    <div class="header-right">
+      <div class="theme-toggle-container theme-toggle-header">
+        <button class="theme-toggle" aria-label="Toggle Light / Dark / Auto color theme">
+          <svg class="theme-icon-when-auto-light"><use href="#svg-sun-with-moon"></use></svg>
+          <svg class="theme-icon-when-auto-dark"><use href="#svg-moon-with-sun"></use></svg>
+          <svg class="theme-icon-when-dark"><use href="#svg-moon"></use></svg>
+          <svg class="theme-icon-when-light"><use href="#svg-sun"></use></svg>
+        </button>
+      </div>
+      <label class="toc-overlay-icon toc-header-icon" for="__toc">
+        <span class="icon"><svg><use href="#svg-toc"></use></svg></span>
+      </label>
+    </div>
+  </header>
+  <aside class="sidebar-drawer">
+    <div class="sidebar-container">
+      
+      <div class="sidebar-sticky"><a class="sidebar-brand" href="../index.html">
+  
+  <span class="sidebar-brand-text">Luv_finder</span>
+  
+</a><form class="sidebar-search-container" method="get" action="../search.html" role="search">
+  <input class="sidebar-search" placeholder="Search" name="q" aria-label="Search">
+  <input type="hidden" name="check_keywords" value="yes">
+  <input type="hidden" name="area" value="default">
+</form>
+<div id="searchbox"></div><div class="sidebar-scroll"><div class="sidebar-tree">
+  <p class="caption" role="heading"><span class="caption-text">Getting started</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../installation.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../quickstart.html">Quickstart</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../method.html">How it works</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Guides</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../guides/mosaics.html">Mosaics and the primary beam</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../guides/catalogue.html">Catalogue and line fit</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../guides/configuration.html">Configuration</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Reference</span></p>
+<ul class="current">
+<li class="toctree-l1 has-children"><a class="reference internal" href="../tutorials.html">Tutorials</a><input aria-label="Toggle navigation of Tutorials" class="toctree-checkbox" id="toctree-checkbox-1" name="toctree-checkbox-1" role="switch" type="checkbox"/><label for="toctree-checkbox-1"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../tutorials/simulate-mock-observation.html">Simulate a mock line observation</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../tutorials/simulate-mock-observation.html#make-mock-observations-using-mockgenerator.py">make mock observations using mockgenerator.py</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../tutorials/find-lines-matched-filter.html">Find lines with the matched filter</a></li>
+</ul>
+</li>
+<li class="toctree-l1 current has-children"><a class="reference internal" href="../api.html">API</a><input aria-label="Toggle navigation of API" checked="" class="toctree-checkbox" id="toctree-checkbox-2" name="toctree-checkbox-2" role="switch" type="checkbox"/><label for="toctree-checkbox-2"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul class="current">
+<li class="toctree-l2"><a class="reference internal" href="luv_finder.data.html">luv_finder.data</a></li>
+<li class="toctree-l2"><a class="reference internal" href="luv_finder.model.html">luv_finder.model</a></li>
+<li class="toctree-l2"><a class="reference internal" href="luv_finder.kernel.html">luv_finder.kernel</a></li>
+<li class="toctree-l2"><a class="reference internal" href="luv_finder.matchedfilter.html">luv_finder.matchedfilter</a></li>
+<li class="toctree-l2"><a class="reference internal" href="luv_finder.imaging.html">luv_finder.imaging</a></li>
+<li class="toctree-l2"><a class="reference internal" href="luv_finder.catalogue.html">luv_finder.catalogue</a></li>
+<li class="toctree-l2"><a class="reference internal" href="luv_finder.fit.html">luv_finder.fit</a></li>
+<li class="toctree-l2"><a class="reference internal" href="luv_finder.mock.html">luv_finder.mock</a></li>
+<li class="toctree-l2 current current-page"><a class="current reference internal" href="#">luv_finder.plotting</a></li>
+<li class="toctree-l2"><a class="reference internal" href="luv_finder.utils.html">luv_finder.utils</a></li>
+</ul>
+</li>
+</ul>
+
+</div>
+</div>
+
+      </div>
+      
+    </div>
+  </aside>
+  <div class="main">
+    <div class="content">
+      <div class="article-container">
+        <a href="#" class="back-to-top muted-link">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+            <path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8v12z"></path>
+          </svg>
+          <span>Back to top</span>
+        </a>
+        <div class="content-icon-container">
+          <div class="view-this-page">
+  <a class="muted-link" href="../_sources/generated/luv_finder.plotting.rst.txt" title="View this page">
+    <svg><use href="#svg-eye"></use></svg>
+    <span class="visually-hidden">View this page</span>
+  </a>
+</div>
+<div class="theme-toggle-container theme-toggle-content">
+            <button class="theme-toggle" aria-label="Toggle Light / Dark / Auto color theme">
+              <svg class="theme-icon-when-auto-light"><use href="#svg-sun-with-moon"></use></svg>
+              <svg class="theme-icon-when-auto-dark"><use href="#svg-moon-with-sun"></use></svg>
+              <svg class="theme-icon-when-dark"><use href="#svg-moon"></use></svg>
+              <svg class="theme-icon-when-light"><use href="#svg-sun"></use></svg>
+            </button>
+          </div>
+          <label class="toc-overlay-icon toc-content-icon" for="__toc">
+            <span class="icon"><svg><use href="#svg-toc"></use></svg></span>
+          </label>
+        </div>
+        <article role="main" id="furo-main-content">
+          <section id="module-luv_finder.plotting">
+<span id="luv-finder-plotting"></span><h1>luv_finder.plotting<a class="headerlink" href="#module-luv_finder.plotting" title="Link to this heading">¶</a></h1>
+<p>Diagnostic figures shared by the CLI and the test suite.</p>
+<p>Every function takes an output directory and returns the path it wrote, so the
+figures produced by <code class="docutils literal notranslate"><span class="pre">pytest</span> <span class="pre">--plots</span></code> and by the command-line tools are the same
+plots with the same styling.</p>
+<p class="rubric">Functions</p>
+<div class="table-wrapper autosummary longtable docutils container">
+<table class="autosummary longtable docutils align-default">
+<tbody>
+<tr class="row-odd"><td><p><a class="reference internal" href="#luv_finder.plotting.amp_phase_check" title="luv_finder.plotting.amp_phase_check"><code class="xref py py-obj docutils literal notranslate"><span class="pre">amp_phase_check</span></code></a>(data, positions[, ...])</p></td>
+<td><p>Amplitude and phase of the vector-averaged visibility against frequency.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#luv_finder.plotting.contact_sheet" title="luv_finder.plotting.contact_sheet"><code class="xref py py-obj docutils literal notranslate"><span class="pre">contact_sheet</span></code></a>(plots_dir[, title])</p></td>
+<td><p>Write an index.html showing every PNG in <code class="docutils literal notranslate"><span class="pre">plots_dir</span></code>.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#luv_finder.plotting.dirty_maps_check" title="luv_finder.plotting.dirty_maps_check"><code class="xref py py-obj docutils literal notranslate"><span class="pre">dirty_maps_check</span></code></a>(dra, ddec, moment8, ...[, ...])</p></td>
+<td><p>Moment-8 (S/N), continuum (mJy/beam), and the moment-8 with continuum contours.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#luv_finder.plotting.line_maps_check" title="luv_finder.plotting.line_maps_check"><code class="xref py py-obj docutils literal notranslate"><span class="pre">line_maps_check</span></code></a>(maps, cat[, plots_dir, name])</p></td>
+<td><p>Moment-0 map of every fitted line (<a class="reference internal" href="luv_finder.imaging.html#luv_finder.imaging.line_maps" title="luv_finder.imaging.line_maps"><code class="xref py py-func docutils literal notranslate"><span class="pre">luv_finder.imaging.line_maps()</span></code></a>), the fitted position marked.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#luv_finder.plotting.line_spectra_check" title="luv_finder.plotting.line_spectra_check"><code class="xref py py-obj docutils literal notranslate"><span class="pre">line_spectra_check</span></code></a>(cat[, span, plots_dir, name])</p></td>
+<td><p>Each fitted line's spectrum and best fit within <code class="docutils literal notranslate"><span class="pre">span</span></code> FWHM of its centre, both over the fitted peak.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#luv_finder.plotting.mosaic_layout" title="luv_finder.plotting.mosaic_layout"><code class="xref py py-obj docutils literal notranslate"><span class="pre">mosaic_layout</span></code></a>(offsets, primary_beam[, ...])</p></td>
+<td><p>Pointing centres and half-power primary beams in the dataset's sky frame.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#luv_finder.plotting.noise_check" title="luv_finder.plotting.noise_check"><code class="xref py py-obj docutils literal notranslate"><span class="pre">noise_check</span></code></a>(mf[, plots_dir, name])</p></td>
+<td><p>Response statistics of the data against its jackknife and a unit Gaussian.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#luv_finder.plotting.pointings_check" title="luv_finder.plotting.pointings_check"><code class="xref py py-obj docutils literal notranslate"><span class="pre">pointings_check</span></code></a>(freqs_ghz, pointings, ...[, ...])</p></td>
+<td><p>One position seen through several pointings of a mosaic, and the combination.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#luv_finder.plotting.reliability_check" title="luv_finder.plotting.reliability_check"><code class="xref py py-obj docutils literal notranslate"><span class="pre">reliability_check</span></code></a>(cat[, plots_dir, name])</p></td>
+<td><p>Counts, likelihood ratio and fidelity of a catalogue against the jackknife, its noise reference.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#luv_finder.plotting.response_check" title="luv_finder.plotting.response_check"><code class="xref py py-obj docutils literal notranslate"><span class="pre">response_check</span></code></a>(mf[, plots_dir, name, line_ghz])</p></td>
+<td><p>Matched-filter response of the best grid point, with the jackknife overlaid.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#luv_finder.plotting.response_shape_check" title="luv_finder.plotting.response_shape_check"><code class="xref py py-obj docutils literal notranslate"><span class="pre">response_shape_check</span></code></a>(nc, result[, peaks, ...])</p></td>
+<td><p>The null correlation rho of the response against what bright lines actually look like.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#luv_finder.plotting.responses_check" title="luv_finder.plotting.responses_check"><code class="xref py py-obj docutils literal notranslate"><span class="pre">responses_check</span></code></a>(freqs, curves, title[, ...])</p></td>
+<td><p>Several S/N spectra on one axis, e.g. the phase centre against the source positions.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#luv_finder.plotting.scan_check" title="luv_finder.plotting.scan_check"><code class="xref py py-obj docutils literal notranslate"><span class="pre">scan_check</span></code></a>(x, curves, xlabel, title[, ...])</p></td>
+<td><p>Peak S/N against one trial parameter, e.g. template size, width or position angle.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#luv_finder.plotting.snr_map" title="luv_finder.plotting.snr_map"><code class="xref py py-obj docutils literal notranslate"><span class="pre">snr_map</span></code></a>(mf[, plots_dir, name, marks])</p></td>
+<td><p>Peak S/N over channels, widths and sizes at every (dra, ddec) of the grid.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#luv_finder.plotting.source_size_check" title="luv_finder.plotting.source_size_check"><code class="xref py py-obj docutils literal notranslate"><span class="pre">source_size_check</span></code></a>(freqs, expected, noisy, ...)</p></td>
+<td><p>Response at the true source position: noiseless expectation and one noisy draw.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#luv_finder.plotting.spectrum_check" title="luv_finder.plotting.spectrum_check"><code class="xref py py-obj docutils literal notranslate"><span class="pre">spectrum_check</span></code></a>(data, dra, ddec[, model, ...])</p></td>
+<td><p>Real and imaginary visibility spectra: data, jackknife and model.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#luv_finder.plotting.uv_profile" title="luv_finder.plotting.uv_profile"><code class="xref py py-obj docutils literal notranslate"><span class="pre">uv_profile</span></code></a>(datasets, dra, ddec, models, freq_ghz)</p></td>
+<td><p>Visibility amplitude against uv distance at one channel, data binned and model envelopes.</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<dl class="py function">
+<dt class="sig sig-object py" id="luv_finder.plotting.amp_phase_check">
+<span class="sig-prename descclassname"><span class="pre">luv_finder.plotting.</span></span><span class="sig-name descname"><span class="pre">amp_phase_check</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">positions</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">plots_dir</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'plots'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">name</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'amp_phase'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">line_ghz</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/luv_finder/plotting.html#amp_phase_check"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#luv_finder.plotting.amp_phase_check" title="Link to this definition">¶</a></dt>
+<dd><p>Amplitude and phase of the vector-averaged visibility against frequency.</p>
+<p><code class="docutils literal notranslate"><span class="pre">positions</span></code> maps a label to a (dra, ddec) the visibilities are phase-shifted onto first.
+On a source the phase stays near zero across its line and the amplitude rises; elsewhere the
+phase wanders and the amplitude is the noise floor.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="luv_finder.plotting.contact_sheet">
+<span class="sig-prename descclassname"><span class="pre">luv_finder.plotting.</span></span><span class="sig-name descname"><span class="pre">contact_sheet</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">plots_dir</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.15)"><span class="pre">str</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">title</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.15)"><span class="pre">str</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">'Luv_finder</span> <span class="pre">diagnostics'</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.15)"><span class="pre">str</span></a></span></span><a class="reference internal" href="../_modules/luv_finder/plotting.html#contact_sheet"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#luv_finder.plotting.contact_sheet" title="Link to this definition">¶</a></dt>
+<dd><p>Write an index.html showing every PNG in <code class="docutils literal notranslate"><span class="pre">plots_dir</span></code>.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="luv_finder.plotting.dirty_maps_check">
+<span class="sig-prename descclassname"><span class="pre">luv_finder.plotting.</span></span><span class="sig-name descname"><span class="pre">dirty_maps_check</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">dra</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">ddec</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">moment8</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">continuum</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">sigma</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">plots_dir</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'plots'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">name</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'dirty_maps'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">marks</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/luv_finder/plotting.html#dirty_maps_check"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#luv_finder.plotting.dirty_maps_check" title="Link to this definition">¶</a></dt>
+<dd><p>Moment-8 (S/N), continuum (mJy/beam), and the moment-8 with continuum contours.</p>
+<p>Takes the output of <a class="reference internal" href="luv_finder.imaging.html#luv_finder.imaging.dirty_maps" title="luv_finder.imaging.dirty_maps"><code class="xref py py-func docutils literal notranslate"><span class="pre">luv_finder.imaging.dirty_maps()</span></code></a> on the <code class="docutils literal notranslate"><span class="pre">dra</span> <span class="pre">x</span> <span class="pre">ddec</span></code> grid.
+Contours are at -3 (dashed) and 3, 5, 10, 20, 50 times the continuum noise <code class="docutils literal notranslate"><span class="pre">sigma</span></code>, a scalar
+or a per-pixel map shaped like <code class="docutils literal notranslate"><span class="pre">continuum</span></code> (a mosaic’s noise varies across the field).
+NaN pixels, outside every primary beam, are left blank. The colour scales are robust to a few
+extreme pixels: continuum 1st to 99th percentile of the well-covered area (noise within twice
+its minimum), moment-8 0 to 99.9th percentile.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="luv_finder.plotting.line_maps_check">
+<span class="sig-prename descclassname"><span class="pre">luv_finder.plotting.</span></span><span class="sig-name descname"><span class="pre">line_maps_check</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">maps</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">cat</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">plots_dir</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'plots'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">name</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'line_maps'</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/luv_finder/plotting.html#line_maps_check"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#luv_finder.plotting.line_maps_check" title="Link to this definition">¶</a></dt>
+<dd><p>Moment-0 map of every fitted line (<a class="reference internal" href="luv_finder.imaging.html#luv_finder.imaging.line_maps" title="luv_finder.imaging.line_maps"><code class="xref py py-func docutils literal notranslate"><span class="pre">luv_finder.imaging.line_maps()</span></code></a>), the fitted position marked.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="luv_finder.plotting.line_spectra_check">
+<span class="sig-prename descclassname"><span class="pre">luv_finder.plotting.</span></span><span class="sig-name descname"><span class="pre">line_spectra_check</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">cat</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">span</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">3.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">plots_dir</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'plots'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">name</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'line_spectra'</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/luv_finder/plotting.html#line_spectra_check"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#luv_finder.plotting.line_spectra_check" title="Link to this definition">¶</a></dt>
+<dd><p>Each fitted line’s spectrum and best fit within <code class="docutils literal notranslate"><span class="pre">span</span></code> FWHM of its centre, both over the fitted peak.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="luv_finder.plotting.mosaic_layout">
+<span class="sig-prename descclassname"><span class="pre">luv_finder.plotting.</span></span><span class="sig-name descname"><span class="pre">mosaic_layout</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">offsets</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">primary_beam</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">plots_dir</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'plots'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">name</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'mosaic'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">marks</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/luv_finder/plotting.html#mosaic_layout"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#luv_finder.plotting.mosaic_layout" title="Link to this definition">¶</a></dt>
+<dd><p>Pointing centres and half-power primary beams in the dataset’s sky frame.</p>
+<p><code class="docutils literal notranslate"><span class="pre">offsets</span></code> maps a field id to its phase centre (dra, ddec) in arcsec; <code class="docutils literal notranslate"><span class="pre">primary_beam</span></code> is the
+beam FWHM in arcsec.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="luv_finder.plotting.noise_check">
+<span class="sig-prename descclassname"><span class="pre">luv_finder.plotting.</span></span><span class="sig-name descname"><span class="pre">noise_check</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">mf</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">plots_dir</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'plots'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">name</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'noise'</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/luv_finder/plotting.html#noise_check"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#luv_finder.plotting.noise_check" title="Link to this definition">¶</a></dt>
+<dd><p>Response statistics of the data against its jackknife and a unit Gaussian.</p>
+<p>Left: the distribution of the response over all grid points and channels. Right: how many
+of them exceed a threshold, which is what a detection threshold has to be calibrated on.
+Neighbouring grid points and channels are correlated, so the counts are not independent.
+NaN entries (positions outside every primary beam of a mosaic) are dropped.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="luv_finder.plotting.pointings_check">
+<span class="sig-prename descclassname"><span class="pre">luv_finder.plotting.</span></span><span class="sig-name descname"><span class="pre">pointings_check</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">freqs_ghz</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">pointings</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">combined</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">beam</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">plots_dir</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'plots'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">name</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'pointings'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">line_ghz</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/luv_finder/plotting.html#pointings_check"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#luv_finder.plotting.pointings_check" title="Link to this definition">¶</a></dt>
+<dd><p>One position seen through several pointings of a mosaic, and the combination.</p>
+<p><code class="docutils literal notranslate"><span class="pre">pointings</span></code> maps a label to a dict with <code class="docutils literal notranslate"><span class="pre">distance</span></code> (arcsec from that pointing’s centre),
+<code class="docutils literal notranslate"><span class="pre">pb</span></code> (primary beam at the line) and <code class="docutils literal notranslate"><span class="pre">flux</span></code> [Jy, primary-beam corrected], <code class="docutils literal notranslate"><span class="pre">error</span></code> [Jy]
+and <code class="docutils literal notranslate"><span class="pre">snr</span></code> over <code class="docutils literal notranslate"><span class="pre">freqs_ghz</span></code> (NaN where the pointing does not cover the position);
+<code class="docutils literal notranslate"><span class="pre">combined</span></code> has <code class="docutils literal notranslate"><span class="pre">flux</span></code>, <code class="docutils literal notranslate"><span class="pre">error</span></code> and <code class="docutils literal notranslate"><span class="pre">snr</span></code>; <code class="docutils literal notranslate"><span class="pre">beam</span></code> is (offsets, response) of the
+primary beam at the line. Left: where each pointing sits on the beam, hollow if it never
+covers the position. Middle: flux density with the combined <code class="docutils literal notranslate"><span class="pre">+-</span></code> 1 sigma band. Right: S/N,
+which the beam correction leaves unchanged. Pointings that never cover are left out of both.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="luv_finder.plotting.reliability_check">
+<span class="sig-prename descclassname"><span class="pre">luv_finder.plotting.</span></span><span class="sig-name descname"><span class="pre">reliability_check</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">cat</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">plots_dir</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'plots'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">name</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'reliability'</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/luv_finder/plotting.html#reliability_check"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#luv_finder.plotting.reliability_check" title="Link to this definition">¶</a></dt>
+<dd><p>Counts, likelihood ratio and fidelity of a catalogue against the jackknife, its noise reference.</p>
+<p><code class="docutils literal notranslate"><span class="pre">cat</span></code> is the output of <a class="reference internal" href="luv_finder.catalogue.html#luv_finder.catalogue.catalogue" title="luv_finder.catalogue.catalogue"><code class="xref py py-func docutils literal notranslate"><span class="pre">luv_finder.catalogue.catalogue()</span></code></a> (its <code class="docutils literal notranslate"><span class="pre">meta</span></code> holds what is
+plotted, so a subset of its rows works too). Left: cumulative group counts N(&gt;= S/N) of the
+data, the jackknife and the negated data (a diagnostic only), with the detected rows on the
+data curve. Middle: the likelihood ratio N_data / N_jackknife at every data group, a lower
+limit (caret) where no jackknife group is as bright, against the threshold <code class="docutils literal notranslate"><span class="pre">k</span></code> and the
+lowest S/N above it. Right: the binned fidelity <code class="docutils literal notranslate"><span class="pre">1</span> <span class="pre">-</span> <span class="pre">N_jackknife</span> <span class="pre">/</span> <span class="pre">N_data</span></code> with its erf fit
+and the S/N where that reaches <code class="docutils literal notranslate"><span class="pre">fidelity_min</span></code>. The fit and the thresholds are left out where
+they are NaN.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="luv_finder.plotting.response_check">
+<span class="sig-prename descclassname"><span class="pre">luv_finder.plotting.</span></span><span class="sig-name descname"><span class="pre">response_check</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">mf</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">plots_dir</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'plots'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">name</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'filter_response'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">line_ghz</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/luv_finder/plotting.html#response_check"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#luv_finder.plotting.response_check" title="Link to this definition">¶</a></dt>
+<dd><p>Matched-filter response of the best grid point, with the jackknife overlaid.</p>
+<p>The y axis is signal-to-noise, so the peak height is the line’s S/N.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="luv_finder.plotting.response_shape_check">
+<span class="sig-prename descclassname"><span class="pre">luv_finder.plotting.</span></span><span class="sig-name descname"><span class="pre">response_shape_check</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">nc</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">result</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">peaks</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">()</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">plots_dir</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'plots'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">name</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'response_shape'</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/luv_finder/plotting.html#response_shape_check"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#luv_finder.plotting.response_shape_check" title="Link to this definition">¶</a></dt>
+<dd><p>The null correlation rho of the response against what bright lines actually look like.</p>
+<p><code class="docutils literal notranslate"><span class="pre">nc</span></code> is a <a class="reference internal" href="luv_finder.catalogue.html#luv_finder.catalogue.ResponseCorrelation" title="luv_finder.catalogue.ResponseCorrelation"><code class="xref py py-class docutils literal notranslate"><span class="pre">ResponseCorrelation</span></code></a> measured on <code class="docutils literal notranslate"><span class="pre">result</span></code>,
+<code class="docutils literal notranslate"><span class="pre">peaks</span></code> a sequence of <code class="docutils literal notranslate"><span class="pre">(i,</span> <span class="pre">j,</span> <span class="pre">t,</span> <span class="pre">k)</span></code> indices into <code class="docutils literal notranslate"><span class="pre">result.snr</span></code>. Top row: rho over position
+lags for the first template with its half-power ellipse and rho = 0 contour; rho over channel
+lags per template (solid) against the white-channel analytic <code class="docutils literal notranslate"><span class="pre">exp(-k^2</span> <span class="pre">/</span> <span class="pre">4</span> <span class="pre">s^2)</span></code> of a Gaussian
+template (dashed); rho between templates with, for templates differing only in width, the
+analytic <code class="docutils literal notranslate"><span class="pre">sqrt(2</span> <span class="pre">W1</span> <span class="pre">W2</span> <span class="pre">/</span> <span class="pre">(W1^2</span> <span class="pre">+</span> <span class="pre">W2^2))</span></code> in parentheses. Bottom row (if <code class="docutils literal notranslate"><span class="pre">peaks</span></code>): cuts of
+<code class="docutils literal notranslate"><span class="pre">snr</span> <span class="pre">/</span> <span class="pre">snr_peak</span></code> through each peak along dra, ddec and channels, against the expectation
+<code class="docutils literal notranslate"><span class="pre">E[snr(p)]</span> <span class="pre">=</span> <span class="pre">(S/N)_peak</span> <span class="pre">rho(p</span> <span class="pre">-</span> <span class="pre">p_peak)</span></code> (thick, per template), within the lags of <code class="docutils literal notranslate"><span class="pre">nc</span></code>.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="luv_finder.plotting.responses_check">
+<span class="sig-prename descclassname"><span class="pre">luv_finder.plotting.</span></span><span class="sig-name descname"><span class="pre">responses_check</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">freqs</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">curves</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">title</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">plots_dir</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'plots'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">name</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'responses'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">line_ghz</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/luv_finder/plotting.html#responses_check"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#luv_finder.plotting.responses_check" title="Link to this definition">¶</a></dt>
+<dd><p>Several S/N spectra on one axis, e.g. the phase centre against the source positions.</p>
+<p><code class="docutils literal notranslate"><span class="pre">curves</span></code> maps a legend label to a response with one value per frequency in <code class="docutils literal notranslate"><span class="pre">freqs</span></code> (GHz).</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="luv_finder.plotting.scan_check">
+<span class="sig-prename descclassname"><span class="pre">luv_finder.plotting.</span></span><span class="sig-name descname"><span class="pre">scan_check</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">x</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">curves</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">xlabel</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">title</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">truth</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">plots_dir</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'plots'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">name</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'scan'</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/luv_finder/plotting.html#scan_check"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#luv_finder.plotting.scan_check" title="Link to this definition">¶</a></dt>
+<dd><p>Peak S/N against one trial parameter, e.g. template size, width or position angle.</p>
+<p><code class="docutils literal notranslate"><span class="pre">curves</span></code> maps a label to the peak S/N at every value of <code class="docutils literal notranslate"><span class="pre">x</span></code>; <code class="docutils literal notranslate"><span class="pre">truth</span></code> marks the
+injected value.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="luv_finder.plotting.snr_map">
+<span class="sig-prename descclassname"><span class="pre">luv_finder.plotting.</span></span><span class="sig-name descname"><span class="pre">snr_map</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">mf</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">plots_dir</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'plots'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">name</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'snr_map'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">marks</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/luv_finder/plotting.html#snr_map"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#luv_finder.plotting.snr_map" title="Link to this definition">¶</a></dt>
+<dd><p>Peak S/N over channels, widths and sizes at every (dra, ddec) of the grid.</p>
+<p>The data and, when it was run, the jackknife are shown side by side on one colour scale.
+<code class="docutils literal notranslate"><span class="pre">marks</span></code> maps a label to a (dra, ddec) position to circle, e.g. an injected source. Positions
+where the response is NaN (outside every primary beam of a mosaic) are left blank.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="luv_finder.plotting.source_size_check">
+<span class="sig-prename descclassname"><span class="pre">luv_finder.plotting.</span></span><span class="sig-name descname"><span class="pre">source_size_check</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">freqs</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">expected</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">noisy</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">declared</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">title</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">plots_dir</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'plots'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">name</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'source_size'</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/luv_finder/plotting.html#source_size_check"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#luv_finder.plotting.source_size_check" title="Link to this definition">¶</a></dt>
+<dd><p>Response at the true source position: noiseless expectation and one noisy draw.</p>
+<p><code class="docutils literal notranslate"><span class="pre">declared</span></code> is the S/N the mock was calibrated to; a filter matched to the
+source reaches it with the expectation curve.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="luv_finder.plotting.spectrum_check">
+<span class="sig-prename descclassname"><span class="pre">luv_finder.plotting.</span></span><span class="sig-name descname"><span class="pre">spectrum_check</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dra</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">ddec</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">model</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">plots_dir</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'plots'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">name</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'spectrum'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">line_ghz</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/luv_finder/plotting.html#spectrum_check"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#luv_finder.plotting.spectrum_check" title="Link to this definition">¶</a></dt>
+<dd><p>Real and imaginary visibility spectra: data, jackknife and model.</p>
+<p>The data are shown at the reference direction and phase-shifted onto (<code class="docutils literal notranslate"><span class="pre">dra</span></code>, <code class="docutils literal notranslate"><span class="pre">ddec</span></code>);
+the jackknife and the model (a source component) only shifted. A real source is flat at
+the reference and peaks once shifted; the jackknife should stay consistent with zero.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="luv_finder.plotting.uv_profile">
+<span class="sig-prename descclassname"><span class="pre">luv_finder.plotting.</span></span><span class="sig-name descname"><span class="pre">uv_profile</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">datasets</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dra</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">ddec</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">models</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">freq_ghz</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">plots_dir</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'plots'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">name</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'uv_profile'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">bins</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">25</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/luv_finder/plotting.html#uv_profile"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#luv_finder.plotting.uv_profile" title="Link to this definition">¶</a></dt>
+<dd><p>Visibility amplitude against uv distance at one channel, data binned and model envelopes.</p>
+<p><code class="docutils literal notranslate"><span class="pre">datasets</span></code> and <code class="docutils literal notranslate"><span class="pre">models</span></code> map a label to a single-window <a class="reference internal" href="luv_finder.data.html#luv_finder.data.DataHandler" title="luv_finder.data.DataHandler"><code class="xref py py-class docutils literal notranslate"><span class="pre">DataHandler</span></code></a>
+and a source component. Each dataset is phase-shifted onto (<code class="docutils literal notranslate"><span class="pre">dra</span></code>, <code class="docutils literal notranslate"><span class="pre">ddec</span></code>) and scaled by
+its least-squares flux against the model envelope, so only the shapes are compared: a
+resolved source fades on long baselines.</p>
+</dd></dl>
+
+</section>
+
+        </article>
+      </div>
+      <footer>
+        
+        <div class="related-pages">
+          <a class="next-page" href="luv_finder.utils.html">
+              <div class="page-info">
+                <div class="context">
+                  <span>Next</span>
+                </div>
+                <div class="title">luv_finder.utils</div>
+              </div>
+              <svg class="furo-related-icon"><use href="#svg-arrow-right"></use></svg>
+            </a>
+          <a class="prev-page" href="luv_finder.mock.html">
+              <svg class="furo-related-icon"><use href="#svg-arrow-right"></use></svg>
+              <div class="page-info">
+                <div class="context">
+                  <span>Previous</span>
+                </div>
+                
+                <div class="title">luv_finder.mock</div>
+                
+              </div>
+            </a>
+        </div>
+        <div class="bottom-of-page">
+          <div class="left-details">
+            <div class="copyright">
+                Copyright &#169; 2026, Joshiwa van Marrewijk
+            </div>
+            Made with <a href="https://www.sphinx-doc.org/">Sphinx</a> and <a class="muted-link" href="https://pradyunsg.me">@pradyunsg</a>'s
+            
+            <a href="https://github.com/pradyunsg/furo">Furo</a>
+            
+          </div>
+          <div class="right-details">
+            
+          </div>
+        </div>
+        
+      </footer>
+    </div>
+    <aside class="toc-drawer">
+      
+      
+      <div class="toc-sticky toc-scroll">
+        <div class="toc-title-container">
+          <span class="toc-title">
+            On this page
+          </span>
+        </div>
+        <div class="toc-tree-container">
+          <div class="toc-tree">
+            <ul>
+<li><a class="reference internal" href="#">luv_finder.plotting</a><ul>
+<li><a class="reference internal" href="#luv_finder.plotting.amp_phase_check"><code class="docutils literal notranslate"><span class="pre">amp_phase_check()</span></code></a></li>
+<li><a class="reference internal" href="#luv_finder.plotting.contact_sheet"><code class="docutils literal notranslate"><span class="pre">contact_sheet()</span></code></a></li>
+<li><a class="reference internal" href="#luv_finder.plotting.dirty_maps_check"><code class="docutils literal notranslate"><span class="pre">dirty_maps_check()</span></code></a></li>
+<li><a class="reference internal" href="#luv_finder.plotting.line_maps_check"><code class="docutils literal notranslate"><span class="pre">line_maps_check()</span></code></a></li>
+<li><a class="reference internal" href="#luv_finder.plotting.line_spectra_check"><code class="docutils literal notranslate"><span class="pre">line_spectra_check()</span></code></a></li>
+<li><a class="reference internal" href="#luv_finder.plotting.mosaic_layout"><code class="docutils literal notranslate"><span class="pre">mosaic_layout()</span></code></a></li>
+<li><a class="reference internal" href="#luv_finder.plotting.noise_check"><code class="docutils literal notranslate"><span class="pre">noise_check()</span></code></a></li>
+<li><a class="reference internal" href="#luv_finder.plotting.pointings_check"><code class="docutils literal notranslate"><span class="pre">pointings_check()</span></code></a></li>
+<li><a class="reference internal" href="#luv_finder.plotting.reliability_check"><code class="docutils literal notranslate"><span class="pre">reliability_check()</span></code></a></li>
+<li><a class="reference internal" href="#luv_finder.plotting.response_check"><code class="docutils literal notranslate"><span class="pre">response_check()</span></code></a></li>
+<li><a class="reference internal" href="#luv_finder.plotting.response_shape_check"><code class="docutils literal notranslate"><span class="pre">response_shape_check()</span></code></a></li>
+<li><a class="reference internal" href="#luv_finder.plotting.responses_check"><code class="docutils literal notranslate"><span class="pre">responses_check()</span></code></a></li>
+<li><a class="reference internal" href="#luv_finder.plotting.scan_check"><code class="docutils literal notranslate"><span class="pre">scan_check()</span></code></a></li>
+<li><a class="reference internal" href="#luv_finder.plotting.snr_map"><code class="docutils literal notranslate"><span class="pre">snr_map()</span></code></a></li>
+<li><a class="reference internal" href="#luv_finder.plotting.source_size_check"><code class="docutils literal notranslate"><span class="pre">source_size_check()</span></code></a></li>
+<li><a class="reference internal" href="#luv_finder.plotting.spectrum_check"><code class="docutils literal notranslate"><span class="pre">spectrum_check()</span></code></a></li>
+<li><a class="reference internal" href="#luv_finder.plotting.uv_profile"><code class="docutils literal notranslate"><span class="pre">uv_profile()</span></code></a></li>
+</ul>
+</li>
+</ul>
+
+          </div>
+        </div>
+      </div>
+      
+      
+    </aside>
+  </div>
+</div><script src="../_static/documentation_options.js?v=5929fcd5"></script>
+    <script src="../_static/doctools.js?v=fd6eb6e6"></script>
+    <script src="../_static/sphinx_highlight.js?v=6ffebe34"></script>
+    <script src="../_static/scripts/furo.js?v=46bd48cc"></script>
+    <script src="../_static/clipboard.min.js?v=a7894cd8"></script>
+    <script src="../_static/copybutton.js?v=f281be69"></script>
+    <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+    </body>
+</html>
