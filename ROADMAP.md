@@ -180,9 +180,10 @@ Open:
   brightest jackknife group it is therefore just `N_data`: 1 for the brightest data
   group, rising to the faintest, so the reliability figures (carets) show the most
   secure lines with the smallest ratio. Detection is unaffected (a lower limit
-  passes), but the value should go to infinity there, or better be finite from the
-  noise model: `N_data / N_tail(>= S/N)` with the Gaussian tail the fidelity already
-  fits, which grows with S/N.
+  passes). Wanted: those groups are detections with an unconstrained ratio
+  (`likelihood_lower_limit`), whose lower limit is the last value that did not
+  diverge, `N_data(>= s_jk) / 1` at the brightest jackknife group `s_jk`, the same
+  for all of them, plotted as carets at that value.
 - **Fidelity per template width.** ASPECS computes the fidelity per kernel width:
   narrow templates have more independent trials than broad ones at the same S/N.
   The catalogue pools all templates. Its noise is a Gaussian tail fitted to the
