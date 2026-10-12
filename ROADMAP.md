@@ -175,6 +175,14 @@ Open:
   collapse below one channel, to a width of 4 km/s with an unbounded error. A lower
   bound on the width near the channel width, or the channel response in the model,
   would stop it.
+- **Likelihood ratio above the brightest jackknife group.** `likelihood` returns
+  `N_data / max(N_jk, 1)`, flagged as a lower limit where `N_jk = 0`. Above the
+  brightest jackknife group it is therefore just `N_data`: 1 for the brightest data
+  group, rising to the faintest, so the reliability figures (carets) show the most
+  secure lines with the smallest ratio. Detection is unaffected (a lower limit
+  passes), but the value should go to infinity there, or better be finite from the
+  noise model: `N_data / N_tail(>= S/N)` with the Gaussian tail the fidelity already
+  fits, which grows with S/N.
 - **Fidelity per template width.** ASPECS computes the fidelity per kernel width:
   narrow templates have more independent trials than broad ones at the same S/N.
   The catalogue pools all templates. Its noise is a Gaussian tail fitted to the
