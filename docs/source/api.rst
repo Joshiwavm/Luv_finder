@@ -13,4 +13,5 @@ API
    luv_finder.catalogue
    luv_finder.fit
    luv_finder.mock
+   luv_finder.plotting
    luv_finder.utils

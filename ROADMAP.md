@@ -173,6 +173,40 @@ against a matched template. Worth measuring the penalty on a simulated arc befor
 choosing, since the answer decides whether this needs new model classes or only a
 caveat in the catalogue.
 
+## 4. Publication
+
+Two papers, submitted together (JOSS supports co-publication with a methods paper):
+
+| Paper | Venue | Content |
+|---|---|---|
+| Methods | A&A, regular paper (2024 impact factor 6.1) | The method; validation on simulations and on ASPECS; SPT-CL J0459-4947 as the application |
+| Software | JOSS, 1-2 pages | Summary, statement of need, design; cites the methods paper for the math |
+
+Considered and set aside: RASTI (impact factor 2.5); an A&A Letter (four main-body
+pages since April 2025, and it needs a timely result); an AAS journal with JOSS's
+joint review.
+
+The methods paper validates on ASPECS, the cleanest test: public data with a published
+blind catalogue (Gonzalez-Lopez et al. 2019). It then compares the SPT-CL J0459 Band 3
+mosaic (14 lines) and Band 1 with our published by-eye list. Before submitting:
+
+- the ASPECS comparison: recovered, new and missed lines, and the S/N and flux ratios;
+- completeness, LSRK frequencies and joint fits of neighbouring lines (section 2.2);
+- the Band 1 search and the joint Band 1 and Band 3 identification (section 2.3).
+
+JOSS gates, all needed at submission:
+
+- More than six months of public, iterative development. The history starts on
+  2026-09-22, so late March 2027 at the earliest.
+- Research use, shown by the methods paper on arXiv.
+- Tagged releases with an archived DOI (Zenodo).
+- `CHANGELOG.md`, `CONTRIBUTING.md` and `CITATION.cff` (in place).
+- An AI usage disclosure that the author confirms.
+
+Both drafts live in Notion: the method chapter on the Luv-finder page, and the JOSS
+article as its subpage. The `notion-sync` skill (`.claude/skills/notion-sync/`) keeps
+them in step with `main`.
+
 ## Longer term
 
 - **Merge with [alma-data-prep](https://github.com/Joshiwavm/alma-data-prep).**

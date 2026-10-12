@@ -27,6 +27,7 @@ pygments_style = "sphinx"
 pygments_dark_style = "monokai"
 
 autosummary_generate = True
+autodoc_default_options = {"members": True}  # document every member on its module page, so references resolve
 numpydoc_show_class_members = False
 autodoc_mock_imports = ["casatools", "casatasks", "casadata"]
 nbsphinx_execute = "never"  # tutorials need CASA + mock data; commit them executed

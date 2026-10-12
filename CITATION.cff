@@ -1,0 +1,25 @@
+cff-version: 1.2.0
+message: "If you use Luv_finder in your research, please cite it as below."
+title: "Luv_finder: blind spectral-line search in interferometric visibilities"
+abstract: >-
+  A matched filter for blind spectral-line searches in the uv plane. A Gaussian line
+  template is matched against the visibilities over a grid of positions, source shapes and
+  line widths, with the response in signal-to-noise units and a jackknife of the data as the
+  noise reference; mosaics are corrected for the primary beam and combined, and candidates
+  are catalogued and fitted in the visibilities.
+type: software
+authors:
+  - given-names: Joshiwa
+    name-particle: van
+    family-names: Marrewijk
+    email: joshiwa01@gmail.com
+version: 0.2.0
+license: MIT
+repository-code: "https://github.com/Joshiwavm/Luv_finder"
+url: "https://joshiwavm.github.io/Luv_finder/"
+keywords:
+  - astronomy
+  - radio interferometry
+  - ALMA
+  - spectral lines
+  - matched filter
