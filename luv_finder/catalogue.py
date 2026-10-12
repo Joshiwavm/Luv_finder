@@ -216,10 +216,17 @@ def groups(snr: np.ndarray, result: SearchResult, nc: ResponseCorrelation, floor
 
 
 def likelihood(snr_data, snr_noise) -> tuple[np.ndarray, np.ndarray]:
-    """``N_data(>= gamma) / N_noise(>= gamma)`` of peak counts at every data S/N (Vio & Andreani 2021)."""
+    """``N_data(>= gamma) / N_noise(>= gamma)`` of peak counts at every data S/N (Vio & Andreani 2021).
+
+    Above the brightest noise group the ratio diverges; those groups get its last finite value,
+    ``N_data(>= that group) / 1``, as a lower limit (flagged in the second array).
+    """
     snr_data, snr_noise = np.asarray(snr_data, dtype=float), np.asarray(snr_noise, dtype=float)
     n_data, n_noise = (x.size - np.searchsorted(np.sort(x), snr_data) for x in (snr_data, snr_noise))
-    return n_data / np.maximum(n_noise, 1), n_noise == 0
+    lower = n_noise == 0
+    ratio = n_data / np.maximum(n_noise, 1)
+    ratio[lower] = np.sum(snr_data >= snr_noise.max(initial=-np.inf))
+    return ratio, lower
 
 
 def fidelity(snr_data, snr_noise, floor: float, step: float = 0.25) -> tuple[np.ndarray, tuple, dict]:
@@ -290,8 +297,8 @@ def catalogue(result: SearchResult, ref=None, floor: float = 4.0, k: float = 3.0
     data are grouped (:func:`groups`) on the filter's S/N (see the module docstring). Each data
     group gets the likelihood ratio and the fidelity against the jackknife's groups
     (:func:`likelihood`, :func:`fidelity`). A group passes the likelihood ratio if
-    ``Lambda >= k`` or no jackknife group is as bright: there ``Lambda`` is only a lower limit,
-    bounded by the number of brighter data groups. It is ``detected`` if it passes and its
+    ``Lambda >= k`` or no jackknife group is as bright: there ``Lambda`` diverges, and its lower
+    limit is the last finite value, at the brightest jackknife group. It is ``detected`` if it passes and its
     fidelity is at least ``fidelity_min``, or the likelihood alone if the fidelity could not be
     fitted. Nothing is clipped: the candidates are ``cat[cat["detected"]]``.
 

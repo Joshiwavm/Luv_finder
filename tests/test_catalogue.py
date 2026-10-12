@@ -225,21 +225,27 @@ def test_likelihood_of_noise_is_one():
     data, noise = _tail(rng, 3000), _tail(rng, 3000)
     ratio, lower = likelihood(data, noise)
     n_data, n_noise = _counts(data, data), _counts(noise, data)
-    np.testing.assert_array_equal(ratio, n_data / np.maximum(n_noise, 1))
     np.testing.assert_array_equal(lower, n_noise == 0)
+    np.testing.assert_array_equal(ratio[~lower], (n_data / n_noise)[~lower])
     moderate = n_noise >= 100
     assert moderate.sum() > 1000
     assert np.all(np.abs(ratio - 1)[moderate] < 4 * np.sqrt(1 / n_data + 1 / n_noise)[moderate])
 
 
 def test_likelihood_of_lines_is_large():
+    """Above the brightest noise group every line gets the last finite ratio, N_data there over 1, as a lower limit."""
     rng = np.random.default_rng(5)
     noise = _tail(rng, 3000)
     data = np.concatenate([_tail(rng, 3000), rng.uniform(6.0, 12.0, 60)])
     ratio, lower = likelihood(data, noise)
     np.testing.assert_array_equal(lower, data > noise.max())
-    np.testing.assert_array_equal(ratio[lower], _counts(data, data[lower]))
+    assert lower.sum() > 20 and np.all(ratio[lower] == _counts(data, [noise.max()])[0])
     assert np.all(ratio[(data >= 7.5) & (data <= 10.0)] > 10)
+
+
+def test_likelihood_without_noise_groups():
+    ratio, lower = likelihood([4.5, 5.0, 6.0], [])
+    assert lower.all() and np.all(ratio == 3)
 
 
 def _gaussian_tail(rng, n, sigma, floor=4.0):
