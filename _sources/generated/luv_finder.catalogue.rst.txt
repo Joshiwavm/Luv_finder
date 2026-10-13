@@ -9,6 +9,7 @@
    .. autosummary::
    
       UNITS
+      SEARCH_META
    
    .. rubric:: Functions
 
@@ -16,10 +17,10 @@
    
       catalogue
       fidelity
-      fidelity_curve
       groups
       jackknife_spread
       likelihood
+      merge_catalogues
       response_correlation
    
    .. rubric:: Classes

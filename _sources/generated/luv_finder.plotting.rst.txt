@@ -25,4 +25,5 @@
       source_size_check
       spectrum_check
       uv_profile
+      weights_check
    

@@ -10,27 +10,33 @@
    
       CHUNK_ARRAYS
       READ_BLOCK
+      MAX_GAP
+      CHANNEL_BLOCK
    
    .. rubric:: Functions
 
    .. autosummary::
    
-      channel_correlation
+      channel_noise
       fields_in
       iter_chunks
       load
       pair_weight
+      reweighted
       sky_direction
       sky_offset
       stokes_i
       target_selection
+      weight_scale
       write_npz
    
    .. rubric:: Classes
 
    .. autosummary::
    
+      ChannelNoise
       Chunk
       DataHandler
       Metadata
+      WeightScale
    

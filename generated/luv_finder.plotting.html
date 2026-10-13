@@ -323,6 +323,9 @@ plots with the same styling.</p>
 <tr class="row-odd"><td><p><a class="reference internal" href="#luv_finder.plotting.uv_profile" title="luv_finder.plotting.uv_profile"><code class="xref py py-obj docutils literal notranslate"><span class="pre">uv_profile</span></code></a>(datasets, dra, ddec, models, freq_ghz)</p></td>
 <td><p>Visibility amplitude against uv distance at one channel, data binned and model envelopes.</p></td>
 </tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#luv_finder.plotting.weights_check" title="luv_finder.plotting.weights_check"><code class="xref py py-obj docutils literal notranslate"><span class="pre">weights_check</span></code></a>(chunks, labels[, plots_dir, ...])</p></td>
+<td><p>Do the weights predict the scatter? Re V at the phase centre per channel, its spread and <code class="docutils literal notranslate"><span class="pre">&lt;1/w&gt;^1/2</span></code>.</p></td>
+</tr>
 </tbody>
 </table>
 </div>
@@ -403,11 +406,12 @@ which the beam correction leaves unchanged. Pointings that never cover are left 
 <p><code class="docutils literal notranslate"><span class="pre">cat</span></code> is the output of <a class="reference internal" href="luv_finder.catalogue.html#luv_finder.catalogue.catalogue" title="luv_finder.catalogue.catalogue"><code class="xref py py-func docutils literal notranslate"><span class="pre">luv_finder.catalogue.catalogue()</span></code></a> (its <code class="docutils literal notranslate"><span class="pre">meta</span></code> holds what is
 plotted, so a subset of its rows works too). Left: cumulative group counts N(&gt;= S/N) of the
 data, the jackknife and the negated data (a diagnostic only), with the detected rows on the
-data curve. Middle: the likelihood ratio N_data / N_jackknife at every data group, a lower
-limit (caret) where no jackknife group is as bright, against the threshold <code class="docutils literal notranslate"><span class="pre">k</span></code> and the
-lowest S/N above it. Right: the binned fidelity <code class="docutils literal notranslate"><span class="pre">1</span> <span class="pre">-</span> <span class="pre">N_jackknife</span> <span class="pre">/</span> <span class="pre">N_data</span></code> with its erf fit
-and the S/N where that reaches <code class="docutils literal notranslate"><span class="pre">fidelity_min</span></code>. The fit and the thresholds are left out where
-they are NaN.</p>
+data curve, and the Gaussian tail fitted to the jackknife’s. Middle: the likelihood ratio
+N_data / N_jackknife at every data group, a lower limit (caret) where no jackknife group is as
+bright, against the threshold <code class="docutils literal notranslate"><span class="pre">k</span></code> and the lowest S/N above it. Right: the binned fidelity
+<code class="docutils literal notranslate"><span class="pre">1</span> <span class="pre">-</span> <span class="pre">N_jackknife</span> <span class="pre">/</span> <span class="pre">N_data</span></code>, the fidelity from the jackknife’s tail and the lowest S/N reaching
+<code class="docutils literal notranslate"><span class="pre">fidelity_min</span></code>, and both against the negated data (as ASPECS measures it) for comparison. The
+tails and the thresholds are left out where they are NaN.</p>
 </dd></dl>
 
 <dl class="py function">
@@ -480,6 +484,18 @@ the reference and peaks once shifted; the jackknife should stay consistent with 
 and a source component. Each dataset is phase-shifted onto (<code class="docutils literal notranslate"><span class="pre">dra</span></code>, <code class="docutils literal notranslate"><span class="pre">ddec</span></code>) and scaled by
 its least-squares flux against the model envelope, so only the shapes are compared: a
 resolved source fades on long baselines.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="luv_finder.plotting.weights_check">
+<span class="sig-prename descclassname"><span class="pre">luv_finder.plotting.</span></span><span class="sig-name descname"><span class="pre">weights_check</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">chunks</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">labels</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">plots_dir</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'plots'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">name</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'weights'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">n_points</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">200000</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">seed</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">pooled</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">()</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/luv_finder/plotting.html#weights_check"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#luv_finder.plotting.weights_check" title="Link to this definition">¶</a></dt>
+<dd><p>Do the weights predict the scatter? Re V at the phase centre per channel, its spread and <code class="docutils literal notranslate"><span class="pre">&lt;1/w&gt;^1/2</span></code>.</p>
+<p>One panel per chunk (one field and window, e.g. with the measurement set’s weights and reweighted), each
+with a random <code class="docutils literal notranslate"><span class="pre">n_points</span></code> of the visibilities, the measured spread (median and robust sigma per channel)
+and the spread the weights predict; below, the measured over the predicted spread per channel, from
+<code class="docutils literal notranslate"><span class="pre">Re</span> <span class="pre">V</span> <span class="pre">sqrt(w)</span></code>, which is 1 where the weights hold. The sky is in V too, which is fine for a faint field.
+The ratio scatters by <code class="docutils literal notranslate"><span class="pre">1.166</span> <span class="pre">/</span> <span class="pre">sqrt(N)</span></code> per channel (shaded), so one field ripples; <code class="docutils literal notranslate"><span class="pre">pooled</span></code>, the
+window’s chunks of every field, tests the reweighting, which is fitted per scan over them all.</p>
 </dd></dl>
 
 </section>
@@ -557,6 +573,7 @@ resolved source fades on long baselines.</p>
 <li><a class="reference internal" href="#luv_finder.plotting.source_size_check"><code class="docutils literal notranslate"><span class="pre">source_size_check()</span></code></a></li>
 <li><a class="reference internal" href="#luv_finder.plotting.spectrum_check"><code class="docutils literal notranslate"><span class="pre">spectrum_check()</span></code></a></li>
 <li><a class="reference internal" href="#luv_finder.plotting.uv_profile"><code class="docutils literal notranslate"><span class="pre">uv_profile()</span></code></a></li>
+<li><a class="reference internal" href="#luv_finder.plotting.weights_check"><code class="docutils literal notranslate"><span class="pre">weights_check()</span></code></a></li>
 </ul>
 </li>
 </ul>
