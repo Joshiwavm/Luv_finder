@@ -584,7 +584,7 @@ def reliability_check(cat, plots_dir="plots", name="reliability"):
         ax.yaxis.set_major_formatter(plain)
         ax.yaxis.set_minor_formatter(plain)
         ax.legend(fontsize=8)
-    fid.legend(fontsize=8, loc="upper left", framealpha=0.9)
+    fid.legend(fontsize=8, loc="lower right", framealpha=0.9)
     fig.suptitle(f"{detected.size} of {len(data)} data groups detected")
     return _save(fig, plots_dir, name)
 
