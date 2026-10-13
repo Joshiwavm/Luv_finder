@@ -143,6 +143,50 @@ Open:
   those, so this compares that simple image-plane method with the full fit; the
   moment-0 maps (`imaging.line_maps`) show which lines are extended, where a
   spectrum misses flux.
+- **Atmospheric lines.** Atmospheric lines make some channels noisier than a
+  weight per spectral window says: ozone at 1.2 mm (231.3, 235.7, 237.1, 239.1 GHz
+  and more above 240 GHz) and the 118.75 GHz O2 wing at the top of Band 3. With
+  `statwt chanbin="spw"` the S/N there is overestimated in the data and the jackknife
+  alike; in ASPECS 1.2 mm the excess is 1.5-3.4x in power and changes by a factor of
+  two between execution blocks. Done: the weights are measured on reading per
+  (scan, channel) from integrations of a baseline <= 450 s apart, any field
+  (`weight_scale`, 99% of the rows paired at 1.2 mm), and divided by it. Per scan,
+  because the 237.15 GHz ozone core also changes between the scans of a block, by
+  +-8% in power in 3 of 8 blocks (chi^2/dof 2.4-7.4 at the line peak; clean channels
+  1.0). With the weights as read, false peaks gathered on the ozone lines (3-12x
+  the chance rate at S/N >= 5); corrected per channel, they no longer do.
+- **Narrow features that change in time.** The robust check of `weight_scale` exceeds
+  5 sigma in ASPECS 3 mm spw 6, 7, 9 and 11. In spw 9 (20.7 sigma) it is two channels
+  at 108.88 GHz in two execution blocks, with heavy-tailed pair differences on many
+  baselines (the top 1% of pairs carry 11% of `sum w z^2`, twice the Gaussian share):
+  interference or a spur. The mean-based scale down-weights those cells by their
+  real variance; flagging the (scan, channel) cells the check marks would be cleaner.
+- **Jackknife of sparsely sampled fields.** A mosaic field seen once per visit
+  (ASPECS 1.2 mm: 9-14 integrations per window, days to months apart) pairs fewer
+  rows than one tracked for hours: the per-baseline pairing keeps 67-74% of them
+  (98% at 3 mm), down from 33-42% when integrations were paired by their index in
+  time. Partners far apart in hour angle cancel the sky less well; the continuum
+  fit removes leaked continuum, but a bright line could leak. Check the leakage on
+  a mock observed the same way. At 1.2 mm the data hold 4-9% more groups than the
+  jackknife at S/N 4-5.5, while the negated data match the data: a pair sits at the
+  mean of its partners' uv, which differ when they are months apart. Compare with a
+  jackknife that keeps one partner's uv.
+- **Fit across overlapping windows.** Windows that overlap in frequency are combined
+  in the search, but `fit_line` uses one window per pointing, so a line in the
+  ASPECS 3 mm double-tuned range is fitted with one tuning's data.
+- **Channel response.** The template is a Gaussian sampled at the channel centres;
+  Hanning smoothing and channel averaging broaden a line a few channels wide, and
+  windows with different correlator setups then see slightly different peaks. The
+  fit has the same gap: a line two channels wide (ASPECS 3mm.08, 50 km/s) can
+  collapse below one channel, to a width of 4 km/s with an unbounded error. A lower
+  bound on the width near the channel width, or the channel response in the model,
+  would stop it.
+- **Fidelity per template width.** ASPECS computes the fidelity per kernel width:
+  narrow templates have more independent trials than broad ones at the same S/N.
+  The catalogue pools all templates. Its noise is a Gaussian tail fitted to the
+  jackknife groups, as ASPECS fits its negatives; an erf fitted to the binned
+  fidelity failed at 1.2 mm, where the jackknife deficit near the floor (above)
+  held the low bins at 0.05 and set the threshold at S/N 7.9 instead of 6.7.
 - **A fit that absorbs its neighbours.** The candidate at 85.857 GHz, 16-31 MHz
   from two detected lines, is no longer detected (fidelity 0.43), but when it was
   its fit ran to a 1818 km/s line 101 MHz off the peak (chi^2_red 3.5, 10.8

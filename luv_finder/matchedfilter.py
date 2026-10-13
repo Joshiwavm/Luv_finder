@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import dataclasses
 import os
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from functools import partial
 from itertools import product
@@ -25,7 +25,7 @@ import jax.numpy as jnp
 import numpy as np
 from tqdm import tqdm
 
-from .data import Chunk, DataHandler, fields_in, load
+from .data import ChannelNoise, Chunk, DataHandler, fields_in, load
 from .kernel import _blocks, limit_cores
 from .model import C_KMS, FWHM_TO_SIGMA, Gaussian, Model, covariance
 from .utils import ARCSEC, primary_beam, primary_beam_radius
@@ -35,10 +35,10 @@ GRID_KEYS = ("dra", "ddec", *TEMPLATE_KEYS)
 
 
 @partial(jax.jit, static_argnames="order")
-def _spectral(sig, weight, freq, widths, rho, order=None):
-    """S/N ``(n_shape, n_width, n_dra, n_ddec, n_chan)`` and peak error ``(n_shape, n_width, n_chan)``."""
-    spread = freq[None, :, None] * widths[:, None, None] * FWHM_TO_SIGMA / C_KMS
-    profile = jnp.exp(-0.5 * ((freq[None, None, :] - freq[None, :, None]) / spread) ** 2)
+def _spectral(sig, weight, freq, centres, widths, rho, order=None):
+    """S/N ``(n_shape, n_width, n_dra, n_ddec, n_centre)`` and peak error ``(n_shape, n_width, n_centre)``."""
+    spread = centres[None, :, None] * widths[:, None, None] * FWHM_TO_SIGMA / C_KMS
+    profile = jnp.exp(-0.5 * ((freq[None, None, :] - centres[None, :, None]) / spread) ** 2)
     num = jnp.einsum("wim,msab->swabi", profile, sig)
     var = jnp.einsum("wim,ms->swi", profile**2, weight)
     h = jnp.broadcast_to(profile, (weight.shape[1], *profile.shape))
@@ -63,6 +63,17 @@ def _spectral(sig, weight, freq, widths, rho, order=None):
     var_c = jnp.where(covered, var_c, 1.0)
     error = jnp.where(covered, jnp.sqrt(var_c) / jnp.where(covered, var, 1.0), jnp.nan)
     return num * jnp.where(covered, 1 / jnp.sqrt(var_c), 0.0)[:, :, None, None, :], error
+
+
+def _centres(chunks: Sequence[Chunk]) -> np.ndarray:
+    """Trial line frequencies: a lattice at the finest channel width from the lowest channel, through every window."""
+    low = min(c.freq[0] for c in chunks)
+    step = min((np.diff(c.freq).min() for c in chunks if c.freq.size > 1), default=1.0)
+    k = [
+        np.arange(np.ceil((c.freq[0] - low) / step - 1e-6), np.floor((c.freq[-1] - low) / step + 1e-6) + 1)
+        for c in chunks
+    ]
+    return low + step * np.unique(np.concatenate(k))
 
 
 def _one_field(data: DataHandler) -> None:
@@ -187,61 +198,83 @@ def pb_corrected(result: SearchResult, data: DataHandler, pb_limit: float = 0.2)
     return correct(result)
 
 
-def combine_pointings(results: Sequence[SearchResult]) -> SearchResult:
-    """Combine the PB-corrected searches of a mosaic's pointings on the union of their grids."""
-    first = results[0]
-    for r in results[1:]:
-        for k in TEMPLATE_KEYS:
-            if not _same(r.axes[k], first.axes[k]):
-                raise ValueError(
-                    f"the pointings were searched with different {k} templates: {first.axes[k]}, {r.axes[k]}"
-                )
-    _check_freqs([r.freqs for r in results])
-    dra, ira = _union_lattice([r.axes["dra"] for r in results], "dra")
-    ddec, idec = _union_lattice([r.axes["ddec"] for r in results], "ddec")
+@dataclass(eq=False)
+class _Mosaic:
+    """Inverse-variance sums of PB-corrected pointings on the union of their lattices, ``coverage`` squared."""
 
-    wsum = np.zeros((len(dra), len(ddec), *first.snr.shape[2:]))
-    wflux = np.zeros_like(wsum)
-    coverage = np.zeros((len(dra), len(ddec), len(first.freqs)))
-    for r, i, j in zip(results, ira, idec, strict=True):
-        at = np.ix_(i, j)
+    axes: dict
+    freqs: np.ndarray
+    w: np.ndarray
+    wflux: np.ndarray
+    coverage: np.ndarray
+    jackknife: _Mosaic | None
+
+    @classmethod
+    def of(cls, r: SearchResult) -> _Mosaic:
         w = np.nan_to_num(r.error**-2.0)
-        wsum[at] += w
-        wflux[at] += w * np.nan_to_num(r.flux)
-        coverage[at] += r.coverage**2
-    wsum = np.where(wsum > 0, wsum, np.nan)
-    flux, error = wflux / wsum, 1 / np.sqrt(wsum)
+        jackknife = None if r.jackknife is None else cls.of(r.jackknife)
+        return cls(dict(r.axes), r.freqs, w, w * np.nan_to_num(r.flux), r.coverage**2, jackknife)
 
-    jackknives = [r.jackknife for r in results]
-    return SearchResult(
-        axes={"dra": dra.tolist(), "ddec": ddec.tolist(), **{k: first.axes[k] for k in TEMPLATE_KEYS}},
-        freqs=first.freqs,
-        snr=flux / error,
-        flux=flux,
-        error=error,
-        coverage=np.sqrt(coverage),
-        jackknife=combine_pointings(jackknives) if all(j is not None for j in jackknives) else None,
-    )
+    def add(self, other: _Mosaic) -> None:
+        """Add another pointing in place; the lattice grows only where it reaches beyond."""
+        for k in TEMPLATE_KEYS:
+            if not _same(other.axes[k], self.axes[k]):
+                raise ValueError(
+                    f"the pointings were searched with different {k} templates: {self.axes[k]}, {other.axes[k]}"
+                )
+        _check_freqs([self.freqs, other.freqs])
+        dra, (i, ira) = _union_lattice([self.axes["dra"], other.axes["dra"]], "dra")
+        ddec, (j, idec) = _union_lattice([self.axes["ddec"], other.axes["ddec"]], "ddec")
+        for name in ("w", "wflux", "coverage"):
+            total = getattr(self, name)
+            if total.shape[:2] != (dra.size, ddec.size):
+                grown = np.zeros((dra.size, ddec.size, *total.shape[2:]))
+                grown[np.ix_(i, j)] = total
+                setattr(self, name, total := grown)
+            total[np.ix_(ira, idec)] += getattr(other, name)
+        self.axes |= {"dra": dra.tolist(), "ddec": ddec.tolist()}
+        if self.jackknife is None or other.jackknife is None:
+            self.jackknife = None
+        else:
+            self.jackknife.add(other.jackknife)
+
+    def result(self) -> SearchResult:
+        w = np.where(self.w > 0, self.w, np.nan)
+        flux, error = self.wflux / w, 1 / np.sqrt(w)
+        jackknife = None if self.jackknife is None else self.jackknife.result()
+        return SearchResult(self.axes, self.freqs, flux / error, flux, error, np.sqrt(self.coverage), jackknife)
+
+
+def combine_pointings(results: Iterable[SearchResult]) -> SearchResult:
+    """Combine the PB-corrected searches of a mosaic's pointings on the union of their grids, one at a time."""
+    mosaic = None
+    for r in results:
+        if mosaic is None:
+            mosaic = _Mosaic.of(r)
+        else:
+            mosaic.add(_Mosaic.of(r))
+    return mosaic.result()
 
 
 class MatchedFilter(_Grid):
-    """S/N of one field over the ``Model.grid`` axes; ``channel_correlation``: "measure", None or ``{spw: rho}``."""
+    """S/N of one field over the ``Model.grid`` axes; ``channel_noise``: "measure", None or ``{spw: ChannelNoise}``."""
 
     def __init__(
         self,
         data: DataHandler,
         mod: Model,
         continuum_order: int | None = 2,
-        channel_correlation: str | dict | None = "measure",
+        channel_noise: str | dict | None = "measure",
     ):
-        if isinstance(channel_correlation, str) and channel_correlation != "measure":
-            raise ValueError(f'channel_correlation must be "measure", None or a dict, got {channel_correlation!r}')
+        if isinstance(channel_noise, str) and channel_noise != "measure":
+            raise ValueError(f'channel_noise must be "measure", None or a dict, got {channel_noise!r}')
         _one_field(data)
         self.data = data
         self.continuum_order = continuum_order
-        self.channel_correlation = channel_correlation
-        self.correlation: dict[int, np.ndarray] = {}
+        self.channel_noise = channel_noise
+        self.noise: dict[int, ChannelNoise] = {}
         self.axes = self._grid_axes(mod)
+        self.freqs = _centres(data.chunks)
         self.result: SearchResult | None = None
 
     @staticmethod
@@ -258,11 +291,6 @@ class MatchedFilter(_Grid):
         return {k: np.atleast_1d(grid.get(k, own[k])).astype(float).tolist() for k in GRID_KEYS}
 
     @property
-    def freqs(self) -> np.ndarray:
-        """Channel frequencies in Hz."""
-        return self.data.freqs
-
-    @property
     def response(self) -> np.ndarray | None:
         return None if self.result is None else self.result.response
 
@@ -273,10 +301,7 @@ class MatchedFilter(_Grid):
     def run(self, jackknife: bool = False, cores: int | None = None) -> None:
         """Fill ``result`` and, with ``jackknife``, ``result.jackknife`` on the same grid, on ``cores`` cores."""
         limit_cores(cores)
-        if self.channel_correlation == "measure":
-            self.correlation = self.data.channel_correlation()
-        else:
-            self.correlation = {k: np.asarray(v, dtype=float) for k, v in (self.channel_correlation or {}).items()}
+        self.noise = self.data.channel_noise() if self.channel_noise == "measure" else dict(self.channel_noise or {})
         self.result = self._search(self.data)
         if jackknife:
             self.result.jackknife = self._search(self.data.jackknife())
@@ -285,23 +310,31 @@ class MatchedFilter(_Grid):
         axes = {k: np.asarray(v) for k, v in self.axes.items()}
         bmin, bmaj, pa = (np.asarray(s) for s in zip(*product(axes["bmin"], axes["bmaj"], axes["pa"]), strict=True))
         cov = covariance(bmaj * ARCSEC, bmin * ARCSEC, pa)
+        # windows that overlap in frequency add by inverse variance, (n_shape, n_width[, n_dra, n_ddec], n_centre)
+        w = np.zeros((bmin.size, len(axes["width"]), self.freqs.size))
+        wflux = np.zeros((*w.shape[:2], len(axes["dra"]), len(axes["ddec"]), self.freqs.size))
+        tol = 1e-3 * np.diff(self.freqs).min() if self.freqs.size > 1 else 1.0
         with jax.enable_x64(True):
-            windows = [self._window(c, axes, cov) for c in tqdm(data.chunks, desc="Windows", leave=False)]
-        snr, error = zip(*windows, strict=True)
-        # (n_shape, n_width, n_dra, n_ddec, n_chan) and (n_shape, n_width, n_chan)
-        snr, error = np.concatenate(snr, axis=-1), np.concatenate(error, axis=-1)
+            for c in tqdm(data.chunks, desc="Windows", leave=False):
+                at = np.flatnonzero((self.freqs > c.freq[0] - tol) & (self.freqs < c.freq[-1] + tol))
+                snr, error = self._window(c, axes, cov, self.freqs[at])
+                inverse = np.nan_to_num(error**-2.0)
+                w[..., at] += inverse
+                wflux[..., at] += inverse[:, :, None, None] * snr * np.nan_to_num(error)[:, :, None, None]
+        error = np.where(w > 0, 1 / np.sqrt(np.where(w > 0, w, 1.0)), np.nan)
+        snr = wflux * np.nan_to_num(error)[:, :, None, None]
         snr = snr.transpose(2, 3, 0, 1, 4).reshape(*snr.shape[2:4], -1, snr.shape[-1])
         error = np.broadcast_to(error.reshape(-1, error.shape[-1]), snr.shape)
         coverage = np.broadcast_to(1.0, (*snr.shape[:2], snr.shape[-1]))
-        return SearchResult(dict(self.axes), data.freqs, snr, snr * error, error, coverage)
+        return SearchResult(dict(self.axes), self.freqs, snr, snr * error, error, coverage)
 
-    def _window(self, chunk: Chunk, axes: dict, cov: tuple) -> tuple:
-        """S/N and error of one window."""
+    def _window(self, chunk: Chunk, axes: dict, cov: tuple, centres: np.ndarray) -> tuple:
+        """S/N and error of one window at ``centres``."""
         snr = []
-        widths, freq = jnp.asarray(axes["width"]), jnp.asarray(chunk.freq)
-        rho = jnp.asarray(self.correlation.get(chunk.spw, np.ones(1)))
+        rho = jnp.asarray(self.noise[chunk.spw].rho if chunk.spw in self.noise else np.ones(1))
+        freq, centres, widths = jnp.asarray(chunk.freq), jnp.asarray(centres), jnp.asarray(axes["width"])
         for n, collapsed in _blocks(chunk, axes["dra"], axes["ddec"], cov):
-            block, error = _spectral(*collapsed, freq, widths, rho, order=self.continuum_order)
+            block, error = _spectral(*collapsed, freq, centres, widths, rho, order=self.continuum_order)
             snr.append(np.asarray(block)[:, :, :n])
         return np.concatenate(snr, axis=2), np.asarray(error)
 
@@ -370,13 +403,16 @@ def search_pointings(
     pb_limit: float = 0.2,
     **filter_kwargs,
 ) -> SearchResult:
-    """Search every field of a measurement set or NPZ and combine the pointings on one sky grid."""
-    results = []
-    for field in fields_in(path):
-        data = load(path, [field])
-        grid = build_grid(data, {**(grid_cfg or {}), "pb_limit": pb_limit})
-        mf = MatchedFilter(data, grid_model(grid), **filter_kwargs)
-        mf.run(jackknife=jackknife, cores=cores)
-        results.append(pb_corrected(mf.result, data, pb_limit))
-        del data, mf  # free this field's visibilities before loading the next
-    return combine_pointings(results) if len(results) > 1 else results[0]
+    """Search every field of a measurement set or NPZ and combine the pointings on one sky grid as they come."""
+
+    def pointings():
+        for field in fields_in(path):
+            data = load(path, [field])
+            grid = build_grid(data, {**(grid_cfg or {}), "pb_limit": pb_limit})
+            mf = MatchedFilter(data, grid_model(grid), **filter_kwargs)
+            mf.run(jackknife=jackknife, cores=cores)
+            result = pb_corrected(mf.result, data, pb_limit)
+            del data, mf  # free this field before loading the next
+            yield result
+
+    return combine_pointings(pointings())

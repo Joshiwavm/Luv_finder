@@ -43,16 +43,16 @@ def _mock_npz(name: str) -> tuple[Path, Path]:
         mock.run_all()
         NPZ_DIR.mkdir(parents=True, exist_ok=True)
         DataHandler(mock.ms_noisy).to_npz(str(noisy))
-        DataHandler(mock.ms_noiseless).to_npz(str(clean))
+        DataHandler(mock.ms_noiseless, reweight=False).to_npz(str(clean))
     return noisy, clean
 
 
-def _response(data, grid_cfg, correlation):
+def _response(data, grid_cfg, noise):
     comp = Gaussian()
     comp.grid = build_grid(data, grid_cfg)
     mod = Model()
     mod.addcomponent(comp)
-    mf = MatchedFilter(data, mod, continuum_order=None, channel_correlation=correlation)
+    mf = MatchedFilter(data, mod, continuum_order=None, channel_noise=noise)
     mf.run()
     return mf
 
@@ -72,11 +72,11 @@ def test_recovers_declared_snr(name, request):
     assert np.array_equal(signal.time, chunk.time)
     clean = DataHandler(chunks=[dataclasses.replace(chunk, X=chunk.w * signal.vis)], metadata=noisy.metadata)
 
-    # the noise model, channel correlation included, is the noisy data's: a noiseless jackknife
+    # the noise model, per-channel noise and correlation, is the noisy data's: a noiseless jackknife
     # holds only the signal's residual between integrations, smooth in frequency
-    correlation = noisy.channel_correlation()
-    expected = _response(clean, grid_cfg, correlation)
-    drawn = _response(noisy, grid_cfg, correlation)
+    noise = noisy.channel_noise()
+    expected = _response(clean, grid_cfg, noise)
+    drawn = _response(noisy, grid_cfg, noise)
     peak = expected.response[0].max()
 
     if request.config.getoption("--plots"):

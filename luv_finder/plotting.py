@@ -8,6 +8,7 @@ plots with the same styling.
 from __future__ import annotations
 
 import os
+import warnings
 
 import matplotlib
 
@@ -290,7 +291,9 @@ def amp_phase_check(data, positions, plots_dir="plots", name="amp_phase", line_g
     for label, (dra, ddec) in positions.items():
         spectrum = data.spectrum(dra, ddec)
         amp.plot(freqs, 1e3 * np.abs(spectrum), lw=1.2, label=label)
-        phase.plot(freqs, np.degrees(np.angle(spectrum)), ".", ms=4, label=label)
+        deg = np.degrees(np.angle(spectrum))
+        wrap = np.flatnonzero(np.abs(np.diff(deg)) > 180) + 1  # no line across the +-180 wrap
+        phase.plot(np.insert(freqs, wrap, np.nan), np.insert(deg, wrap, np.nan), ".-", ms=4, lw=0.8, label=label)
     for ax in (amp, phase):
         if line_ghz is not None:
             ax.axvline(line_ghz, c="C3", ls="--", lw=0.8)
@@ -509,15 +512,17 @@ def reliability_check(cat, plots_dir="plots", name="reliability"):
     ``cat`` is the output of :func:`luv_finder.catalogue.catalogue` (its ``meta`` holds what is
     plotted, so a subset of its rows works too). Left: cumulative group counts N(>= S/N) of the
     data, the jackknife and the negated data (a diagnostic only), with the detected rows on the
-    data curve. Middle: the likelihood ratio N_data / N_jackknife at every data group, a lower
-    limit (caret) where no jackknife group is as bright, against the threshold ``k`` and the
-    lowest S/N above it. Right: the binned fidelity ``1 - N_jackknife / N_data`` with its erf fit
-    and the S/N where that reaches ``fidelity_min``. The fit and the thresholds are left out where
-    they are NaN.
+    data curve, and the Gaussian tail fitted to the jackknife's. Middle: the likelihood ratio
+    N_data / N_jackknife at every data group, a lower limit (caret) where no jackknife group is as
+    bright, against the threshold ``k`` and the lowest S/N above it. Right: the binned fidelity
+    ``1 - N_jackknife / N_data``, the fidelity from the jackknife's tail and the lowest S/N reaching
+    ``fidelity_min``, and both against the negated data (as ASPECS measures it) for comparison. The
+    tails and the thresholds are left out where they are NaN.
     """
     from matplotlib.ticker import LogFormatter
+    from scipy import special
 
-    from .catalogue import fidelity_curve, likelihood
+    from .catalogue import fidelity, likelihood
 
     meta = cat.meta
     floor, k, fidelity_min = meta["floor"], meta["k"], meta["fidelity_min"]
@@ -532,6 +537,11 @@ def reliability_check(cat, plots_dir="plots", name="reliability"):
         shown = n > 0
         counts.step(np.r_[floor, values][shown], n[shown], where="pre", label=f"{label} ({len(values)})", **style)
     counts.plot(detected, _count_above(data, detected), "o", c="C3", ms=6, label=f"detected ({detected.size})")
+    amplitude, sigma = meta["noise_amplitude"], meta["noise_sigma"]
+    if np.isfinite([amplitude, sigma]).all():
+        x = np.linspace(*xlim, 200)
+        counts.plot(x, amplitude * special.erfc(x / (np.sqrt(2) * sigma)), c="C1",
+                    label=rf"jackknife tail, $\sigma$ = {sigma:.3f}")  # fmt: skip
     counts.set_ylim(bottom=0.7)
     counts.set_ylabel(r"Groups with S/N $\geq$ abscissa")
 
@@ -546,12 +556,17 @@ def reliability_check(cat, plots_dir="plots", name="reliability"):
     fid.errorbar(
         bins["snr"], bins["fidelity"], bins["error"], fmt="o", c="k", ecolor="0.6", ms=4, capsize=2, label="binned"
     )
-    centre, sigma = meta["fidelity_centre"], meta["fidelity_sigma"]
-    if np.isfinite([centre, sigma]).all():
-        x = np.linspace(*xlim, 200)
-        fid.plot(
-            x, fidelity_curve(x, centre, sigma), c="C1", label=rf"erf fit, C = {centre:.2f}, $\sigma$ = {sigma:.2f}"
-        )
+    fid.plot(bins["snr"], bins["model"], ".-", c="C1", label="from the jackknife's tail")
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        values, (_, s_neg), bins_neg = fidelity(data, negative, floor)
+    fid.plot(bins_neg["snr"], bins_neg["fidelity"], "s", mfc="none", c="0.45", ms=4,
+             label="binned, against the negated data")  # fmt: skip
+    if np.isfinite(s_neg):
+        passing = data[values >= fidelity_min]
+        at = passing.min() if passing.size else np.nan
+        label = rf"from the negated data's tail ($\sigma$ = {s_neg:.3f}); {fidelity_min:g} at S/N {at:.2f}"
+        fid.plot(bins_neg["snr"], bins_neg["model"], ".--", c="0.45", label=label)
     fid.axhline(fidelity_min, c="C3", ls="--", lw=1, label=f"fidelity_min = {fidelity_min:g}")
     fid.set_ylim(-0.05, 1.05)
     fid.set_ylabel(r"Fidelity 1 $-$ N$_{jackknife}$ / N$_{data}$")
@@ -569,8 +584,83 @@ def reliability_check(cat, plots_dir="plots", name="reliability"):
         ax.yaxis.set_major_formatter(plain)
         ax.yaxis.set_minor_formatter(plain)
         ax.legend(fontsize=8)
-    fid.legend(fontsize=8, loc="lower right", framealpha=0.9)
+    fid.legend(fontsize=8, loc="upper left", framealpha=0.9)
     fig.suptitle(f"{detected.size} of {len(data)} data groups detected")
+    return _save(fig, plots_dir, name)
+
+
+def _whitened(chunks):
+    """``Re V sqrt(w)`` per channel over ``chunks`` of one window, unflagged: unit variance where the weights hold."""
+    zs = [np.where(c.w > 0, c.vis.real * np.sqrt(c.w), np.nan) for c in chunks]
+    return [x[np.isfinite(x)] for x in np.concatenate(zs, axis=1)]
+
+
+def _noise_ratio(z):
+    """Robust sigma per channel of whitened samples ``z`` and its counting error, ``1.166 / sqrt(N)`` for a MAD."""
+    from scipy import stats
+
+    sigma = np.array([stats.median_abs_deviation(x, scale="normal") if x.size else np.nan for x in z])
+    return sigma, 1.166 / np.sqrt(np.maximum([x.size for x in z], 1))
+
+
+def _ratio_line(ax, ghz, z, label, **style):
+    ratio, error = _noise_ratio(z)
+    (line,) = ax.plot(ghz, ratio, lw=1, label=label, **style)
+    ax.fill_between(ghz, 1 - error, 1 + error, color=line.get_color(), alpha=0.2, lw=0)
+    return ratio
+
+
+def weights_check(chunks, labels, plots_dir="plots", name="weights", n_points=200_000, seed=0, pooled=()):
+    """Do the weights predict the scatter? Re V at the phase centre per channel, its spread and ``<1/w>^1/2``.
+
+    One panel per chunk (one field and window, e.g. with the measurement set's weights and reweighted), each
+    with a random ``n_points`` of the visibilities, the measured spread (median and robust sigma per channel)
+    and the spread the weights predict; below, the measured over the predicted spread per channel, from
+    ``Re V sqrt(w)``, which is 1 where the weights hold. The sky is in V too, which is fine for a faint field.
+    The ratio scatters by ``1.166 / sqrt(N)`` per channel (shaded), so one field ripples; ``pooled``, the
+    window's chunks of every field, tests the reweighting, which is fitted per scan over them all.
+    """
+    from scipy import stats
+
+    rng, ratios = np.random.default_rng(seed), []
+    fig, axes = plt.subplots(
+        len(chunks) + 1, 1, figsize=(11, 3.1 * len(chunks) + 2.6), sharex=True,
+        gridspec_kw={"height_ratios": [3] * len(chunks) + [2]},
+    )  # fmt: skip
+    for ax, c, label in zip(axes[:-1], chunks, labels, strict=True):
+        ghz, re, ok = c.freq / 1e9, c.vis.real, c.w > 0
+        chan, row = np.nonzero(ok)
+        pick = rng.choice(chan.size, min(n_points, chan.size), replace=False)
+        ax.plot(ghz[chan[pick]], 1e3 * re[chan[pick], row[pick]], ",", c="0.6", rasterized=True,
+                label=f"visibilities ({pick.size} of {chan.size} shown)")  # fmt: skip
+        centre = np.array([np.median(r[o]) if o.any() else np.nan for r, o in zip(re, ok, strict=True)])
+        spread = np.array([stats.median_abs_deviation(r[o], scale="normal") if o.any() else np.nan
+                           for r, o in zip(re, ok, strict=True)])  # fmt: skip
+        predicted = np.sqrt([np.mean(1 / w[o]) if o.any() else np.nan for w, o in zip(c.w, ok, strict=True)])
+        ax.fill_between(ghz, 1e3 * (centre - spread), 1e3 * (centre + spread), color="C0", alpha=0.35,
+                        label="measured spread: median ± 1σ per channel")  # fmt: skip
+        predicts = r"spread the weights predict: $\pm\langle 1/w\rangle^{1/2}$"
+        for sign, text in ((1, predicts), (-1, None)):
+            ax.plot(ghz, 1e3 * sign * predicted, "--", c="C1", label=text)
+        z = _whitened([c])
+        overall = stats.median_abs_deviation(np.concatenate(z), scale="normal")
+        ax.text(0.01, 0.04, f"measured / predicted σ = {overall:.2f}", transform=ax.transAxes, fontsize=9,
+                bbox=dict(fc="white", ec="0.7"))  # fmt: skip
+        ax.set_ylim(-5e3 * np.nanmedian(predicted), 5e3 * np.nanmedian(predicted))
+        ax.set_ylabel("Re V at phase centre [mJy]")
+        ax.set_title(f"{label}: field {c.field}, spw {c.spw}", fontsize=10)
+        ax.legend(fontsize=8, loc="upper right", markerscale=20)
+        ratios.append(_ratio_line(axes[-1], ghz, z, label))
+    if len(pooled):
+        ratios.append(
+            _ratio_line(axes[-1], pooled[0].freq / 1e9, _whitened(pooled), f"all {len(pooled)} fields", c="k")
+        )
+    every = np.concatenate(ratios)
+    lo, hi = np.nanmin(every), np.nanmax(every)
+    axes[-1].set_ylim(lo - 0.1 * (hi - lo), hi + 0.1 * (hi - lo))  # edge channels' bands would set the scale
+    axes[-1].axhline(1, c="0.4", lw=0.8)
+    axes[-1].set(xlabel="channel frequency [GHz]", ylabel="measured / predicted σ")
+    axes[-1].legend(fontsize=8)
     return _save(fig, plots_dir, name)
 
 

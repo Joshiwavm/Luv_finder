@@ -4,6 +4,7 @@ import json
 import numpy as np
 import pytest
 from astropy.table import Table
+from scipy import special, stats
 
 from luv_finder import MatchedFilter
 from luv_finder.catalogue import (
@@ -13,6 +14,7 @@ from luv_finder.catalogue import (
     groups,
     jackknife_spread,
     likelihood,
+    merge_catalogues,
     response_correlation,
 )
 from luv_finder.data import sky_offset
@@ -223,40 +225,53 @@ def test_likelihood_of_noise_is_one():
     data, noise = _tail(rng, 3000), _tail(rng, 3000)
     ratio, lower = likelihood(data, noise)
     n_data, n_noise = _counts(data, data), _counts(noise, data)
-    np.testing.assert_array_equal(ratio, n_data / np.maximum(n_noise, 1))
     np.testing.assert_array_equal(lower, n_noise == 0)
+    np.testing.assert_array_equal(ratio[~lower], (n_data / n_noise)[~lower])
     moderate = n_noise >= 100
     assert moderate.sum() > 1000
     assert np.all(np.abs(ratio - 1)[moderate] < 4 * np.sqrt(1 / n_data + 1 / n_noise)[moderate])
 
 
 def test_likelihood_of_lines_is_large():
+    """Above the brightest noise group every line gets the last finite ratio, N_data there over 1, as a lower limit."""
     rng = np.random.default_rng(5)
     noise = _tail(rng, 3000)
     data = np.concatenate([_tail(rng, 3000), rng.uniform(6.0, 12.0, 60)])
     ratio, lower = likelihood(data, noise)
     np.testing.assert_array_equal(lower, data > noise.max())
-    np.testing.assert_array_equal(ratio[lower], _counts(data, data[lower]))
+    assert lower.sum() > 20 and np.all(ratio[lower] == _counts(data, [noise.max()])[0])
     assert np.all(ratio[(data >= 7.5) & (data <= 10.0)] > 10)
 
 
-def test_fidelity_fits_the_crossover():
-    """Real lines of uniform density m over noise of density N / s exp(-(snr - 4) / s) match at 4 + s ln(N / (s m))."""
+def test_likelihood_without_noise_groups():
+    ratio, lower = likelihood([4.5, 5.0, 6.0], [])
+    assert lower.all() and np.all(ratio == 3)
+
+
+def _gaussian_tail(rng, n, sigma, floor=4.0):
+    """Group S/N of noise: a Gaussian tail of width ``sigma`` above ``floor``."""
+    return stats.truncnorm.rvs(floor / sigma, np.inf, scale=sigma, size=n, random_state=rng)
+
+
+def test_fidelity_from_the_noise_tail():
+    """The tail's width comes back, and data 5% above the noise near the floor (as at 1.2 mm) leave lines at 1."""
     rng = np.random.default_rng(6)
-    n_noise, scale, density = 20000, 0.5, 400
-    data = np.concatenate([_tail(rng, n_noise, scale), rng.uniform(4.0, 10.0, 6 * density)])
-    values, (centre, sigma), bins = fidelity(data, _tail(rng, n_noise, scale), floor=4.0)
-    assert centre == pytest.approx(4 + scale * np.log(n_noise / (scale * density)), abs=0.3)
-    assert 0.3 < sigma < 2.0
-    assert np.all(values[data > 9.0] > 0.95)
+    noise = _gaussian_tail(rng, 20000, 1.1)
+    data = np.concatenate([_gaussian_tail(rng, 21000, 1.1), rng.uniform(4.0, 10.0, 600)])
+    values, (amplitude, sigma), bins = fidelity(data, noise, floor=4.0)
+    assert sigma == pytest.approx(1.1, rel=0.03)
+    assert amplitude * special.erfc(4.0 / (np.sqrt(2) * sigma)) == pytest.approx(noise.size)
+    assert np.all(values[data > 7.0] > 0.95) and np.all(values[data < 4.5] < 0.2)
+    centre = 4.0 + 0.25 * ((data - 4.0) // 0.25 + 0.5)
+    np.testing.assert_array_equal(values, bins["model"][np.searchsorted(bins["snr"], centre - 0.1)])
     assert bins["n_data"].sum() == data.size
     np.testing.assert_allclose((bins["snr"] - 4.0) / 0.25 % 1, 0.5)
 
 
-def test_fidelity_needs_three_bins():
+def test_fidelity_needs_three_noise_groups():
     with pytest.warns(UserWarning, match="too few"):
-        values, fit, bins = fidelity([4.1, 4.2, 4.6], [4.05], floor=4.0)
-    assert np.isnan(values).all() and np.isnan(fit).all()
+        values, fit, bins = fidelity([4.1, 4.2, 4.6], [4.05, 4.3], floor=4.0)
+    assert np.isnan(values).all() and np.isnan(fit).all() and np.isnan(bins["model"]).all()
     assert bins["n_data"].tolist() == [2, 1] and bins["n_noise"].tolist() == [1, 0]
 
 
@@ -288,3 +303,11 @@ def test_catalogue_of_the_fixture(data, truth, tmp_path):
         np.testing.assert_array_equal(back[name], cat[name])
     assert back["line_flux"].unit == "Jy km / s"
     assert json.dumps(dict(back.meta), sort_keys=True) == json.dumps(dict(cat.meta), sort_keys=True)
+
+    one, two = merge_catalogues([cat]), merge_catalogues([back, cat])
+    for name in ("snr", "likelihood", "fidelity", "detected"):
+        np.testing.assert_array_equal(one[name], cat[name])
+    assert two["id"].tolist() == list(range(1, 2 * len(cat) + 1)) and len(two.meta["parts"]) == 2
+    assert sorted(two.meta["snr_jackknife"]) == sorted(2 * cat.meta["snr_jackknife"])
+    counted = ~cat["likelihood_lower_limit"]
+    np.testing.assert_allclose(two["likelihood"][::2][counted], cat["likelihood"][counted], rtol=1e-12)

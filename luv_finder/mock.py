@@ -337,7 +337,7 @@ class MockObservation:
         """
         from .data import DataHandler
 
-        clean = DataHandler(self.ms_noiseless)
+        clean = DataHandler(self.ms_noiseless, reweight=False)
         noisy = DataHandler(self.ms_noisy)
         out = []
         for src in self.sources:

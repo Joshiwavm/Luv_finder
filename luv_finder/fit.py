@@ -19,7 +19,7 @@ from astropy.table import Table
 from scipy import linalg, optimize
 
 from .data import Chunk, DataHandler, load, sky_direction
-from .data import channel_correlation as measure_correlation
+from .data import channel_noise as measure_noise
 from .kernel import DATA_POWERS, WEIGHT_POWERS, limit_cores, on_device, point_moments
 from .model import C_KMS, FWHM_TO_SIGMA, covariance, rotated
 from .utils import primary_beam
@@ -192,16 +192,13 @@ def fit_line(
     pa: float = 0.0,
     continuum_order: int | None = 2,
     pb_limit: float = 0.2,
-    channel_correlation: str | dict | None = "measure",
+    channel_noise: str | dict | None = "measure",
 ) -> dict:
     """Fit one line, started from the matched filter's position, template shape (sigma, arcsec) and width."""
     chunks = _window_chunks(data, dra, ddec, freq_ghz * 1e9, pb_limit)
-    rho = (
-        measure_correlation(chunks)
-        if channel_correlation == "measure"
-        else (channel_correlation or {}).get(chunks[0].spw)
-    )
+    noise = measure_noise(chunks) if channel_noise == "measure" else (channel_noise or {}).get(chunks[0].spw)
     dish, freq = data.metadata.dish_diameter, np.asarray(chunks[0].freq, dtype=float)
+    rho = None if noise is None else noise.rho
     n_continuum = 0 if continuum_order is None else continuum_order + 1
 
     with jax.enable_x64(True):
@@ -327,8 +324,8 @@ def fit_lines(data: DataHandler | str, cat: Table, rows=None, cores: int | None 
     limit_cores(cores)
     if not isinstance(data, DataHandler):
         data = load(data)
-    if kwargs.get("channel_correlation", "measure") == "measure":
-        kwargs["channel_correlation"] = data.channel_correlation()
+    if kwargs.get("channel_noise", "measure") == "measure":
+        kwargs["channel_noise"] = data.channel_noise()
     if rows is None:
         rows = cat["detected"] if "detected" in cat.colnames else np.ones(len(cat), dtype=bool)
     out = cat.copy()

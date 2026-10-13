@@ -1,4 +1,5 @@
 import dataclasses
+import warnings
 
 import numpy as np
 import pytest
@@ -10,13 +11,15 @@ from luv_finder.data import (
     CHUNK_ARRAYS,
     Chunk,
     Metadata,
-    channel_correlation,
+    channel_noise,
     fields_in,
     load,
     pair_weight,
+    reweighted,
     sky_direction,
     sky_offset,
     stokes_i,
+    weight_scale,
 )
 from luv_finder.utils import X_HALF, C, primary_beam, primary_beam_fwhm, primary_beam_radius
 
@@ -34,9 +37,9 @@ def _chunk(times, baselines, values=None, n_chan=3, field=0, spw=0, freq0=40e9):
         np.ones(times.size),
         times,
         np.asarray(baselines),
+        np.zeros(times.size, dtype=int),
         vis.copy(),
-        np.ones(times.size),
-        np.zeros(vis.shape, dtype=bool),
+        np.ones(vis.shape, dtype=np.float32),
     )
 
 
@@ -153,18 +156,19 @@ def test_stokes_i_combines_hands_and_flags():
     weight = np.array([[1.0, 1.0, 0.0], [3.0, 1.0, 1.0]])
     flag = np.zeros((2, 2, 3), dtype=bool)
     flag[1, 0, 1] = True  # one hand of channel 0, row 1
-    vis, w_row, flagged = stokes_i(data, weight, flag)
+    vis, w = stokes_i(data, weight, flag)
     assert np.allclose(vis, 2.0)
-    assert np.allclose(w_row, [3.0, 2.0, 0.0])  # 4 w_a w_b / (w_a + w_b); 0 when a hand has no weight
-    assert flagged.tolist() == [[False, True, False], [False, False, False]]
+    # 4 w_a w_b / (w_a + w_b) per row; 0 when a hand has no weight or is flagged
+    assert np.allclose(w, [[3.0, 0.0, 0.0], [3.0, 2.0, 0.0]])
+    spectrum = np.broadcast_to(weight[:, None, :], (2, 2, 3))
+    assert np.allclose(stokes_i(data, spectrum, flag)[1], w)
 
 
 def test_spectrum_is_the_weighted_mean():
     chunk = _chunk([0, 0, 1], [0, 1, 0])
-    flag = np.zeros_like(chunk.flag)
-    flag[1, 0] = True
-    w_row = np.array([1.0, 2.0, 3.0])
-    chunk = dataclasses.replace(chunk, X=np.where(flag, 0.0, w_row) * (2.0 + 1.0j), w_row=w_row, flag=flag)
+    w = np.broadcast_to(np.array([1.0, 2.0, 3.0], dtype=np.float32), chunk.w.shape).copy()
+    w[1, 0] = 0.0
+    chunk = dataclasses.replace(chunk, X=w * (2.0 + 1.0j), w=w)
     assert np.allclose(DataHandler(chunks=[chunk]).spectrum(), 2.0 + 1.0j)
 
 
@@ -183,7 +187,15 @@ def test_jackknife_splits_by_integration_not_randomly():
     jacked = _chunk(np.repeat(np.arange(nt), nb), np.tile(np.arange(nb), nt)).jackknife()
     # pairs (0,1), (2,3), (4,5) -> 0.5 * (even - odd) = -0.5 everywhere, with weight 2
     assert np.allclose(jacked.vis, -0.5)
-    assert np.allclose(jacked.w_row, 2.0)
+    assert np.allclose(jacked.w, 2.0)
+
+
+def test_jackknife_pairs_each_baseline_in_time_order():
+    """A mosaic field seen at different times per baseline: every baseline pairs its own integrations."""
+    times = [0, 5, 9, 1, 2, 2.5]
+    baselines = [0, 0, 0, 1, 1, 2]  # baseline 0 at 0, 5, 9; baseline 1 at 1, 2; baseline 2 once
+    jacked = _chunk(times, baselines, values=np.array(times, dtype=float)).jackknife()
+    assert sorted(zip(jacked.baseline, jacked.vis[0], strict=True)) == [(0, -2.5), (1, -0.5)]
 
 
 def test_jackknife_pairs_rows_by_baseline():
@@ -212,20 +224,96 @@ def _noise_chunk(n_chan=32, n_row=20000, smooth=True, spw=0, seed=0):
     return dataclasses.replace(chunk, X=noise)
 
 
-def test_channel_correlation_of_hanning_noise():
-    rho = channel_correlation([_noise_chunk()])
-    assert rho.size == 3 and rho == pytest.approx(HANNING, abs=0.01)
+def test_channel_noise_of_hanning_noise():
+    """Hanning-smoothed unit noise has 3/8 of the power its weights say, correlated 2/3 and 1/6 at lags 1 and 2."""
+    noise = channel_noise([_noise_chunk()])
+    assert noise.scale == pytest.approx(np.full(32, 0.375), rel=0.05)
+    assert noise.rho.size == 3 and noise.rho == pytest.approx(HANNING, abs=0.01)
 
 
-@pytest.mark.parametrize(
-    "chunk", [_noise_chunk(smooth=False), _chunk(np.arange(100), np.zeros(100, dtype=int), values=np.ones(100))]
-)
-def test_channel_correlation_of_independent_or_no_noise(chunk):
-    """White noise has no significant lag, and a noiseless (constant) signal leaves nothing to measure."""
-    assert channel_correlation([chunk]).tolist() == [1.0]
+def test_channel_noise_finds_the_noisy_channels():
+    """Channels with twice the noise the weights say have a scale of 4, the others 1; white noise has no lag."""
+    chunk = _noise_chunk(smooth=False)
+    X = chunk.X.copy()
+    X[5:8] *= 2
+    noise = channel_noise([dataclasses.replace(chunk, X=X)])
+    expected = np.ones(32)
+    expected[5:8] = 4.0
+    assert noise.scale == pytest.approx(expected, rel=0.05) and noise.rho.tolist() == [1.0]
 
 
-def test_channel_correlation_per_spectral_window():
+def test_channel_noise_needs_noise():
+    with pytest.raises(ValueError, match="no noise"):
+        channel_noise([_chunk(np.arange(100), np.zeros(100, dtype=int), values=np.ones(100))])
+
+
+def test_channel_noise_per_spectral_window():
     data = DataHandler(chunks=[_noise_chunk(spw=0), _noise_chunk(smooth=False, spw=1, seed=1)], metadata=None)
-    rho = data.channel_correlation()
-    assert sorted(rho) == [0, 1] and rho[0].size == 3 and rho[1].tolist() == [1.0]
+    noise = data.channel_noise()
+    assert sorted(noise) == [0, 1] and noise[0].rho.size == 3 and noise[1].rho.tolist() == [1.0]
+
+
+def _two_scans(seed=0):
+    """Two scans of one baseline, 30 s integrations; noise 2x the weights in scan 1, channels 0-1."""
+    rng = np.random.default_rng(seed)
+    n = 40000
+    chunk = _chunk(np.arange(n) * 30.0, np.zeros(n, dtype=int), n_chan=4)
+    scan = (np.arange(n) >= n // 2).astype(int)
+    sigma = np.ones((4, n))
+    sigma[:2, scan == 1] = 2.0
+    noise = sigma * (rng.standard_normal((4, n)) + 1j * rng.standard_normal((4, n)))
+    return dataclasses.replace(chunk, scan=scan, X=noise)
+
+
+def test_weight_scale_per_scan_and_channel():
+    """The noise power over the weights, measured per scan and channel; the robust check agrees."""
+    ws = weight_scale([_two_scans()])
+    expected = np.ones((2, 4))
+    expected[1, :2] = 4.0
+    assert ws.scans.tolist() == [0, 1]
+    assert ws.scale == pytest.approx(expected, rel=0.05)
+    assert ws.check == pytest.approx(ws.scale, rel=0.05)
+    assert ws.error == pytest.approx(np.full((2, 4), 1.04 / 100), rel=0.01)
+
+
+def test_reweighted_weights_match_the_noise():
+    chunk = reweighted([_two_scans()])[0]
+    assert chunk.w.dtype == np.float32
+    assert np.allclose(chunk.vis, _two_scans().X, rtol=1e-6)
+    assert channel_noise([chunk]).scale == pytest.approx(np.ones(4), rel=0.05)
+
+
+def test_weight_scale_pairs_integrations_close_in_time_across_fields():
+    """A mosaic field seen once per visit pairs with the next field's integration of the same baseline."""
+    a = dataclasses.replace(_two_scans(), field=0, scan=np.zeros(40000, dtype=int))
+    rows = {k: getattr(a, k) for k in ("u", "v", "time", "baseline", "scan")}
+    fields = [
+        dataclasses.replace(a, field=f, X=a.X[:, f::2], w=a.w[:, f::2], **{k: v[f::2] for k, v in rows.items()})
+        for f in (0, 1)
+    ]
+    assert weight_scale(fields).scale == pytest.approx(weight_scale([a]).scale, rel=1e-12)
+
+
+def test_weight_scale_measures_a_scan_of_one_integration():
+    """Its integration pairs with a neighbouring scan's, and that pair counts in both scans."""
+    chunk = _two_scans()
+    scan = np.repeat([0, 1, 2], [20001, 1, 19998])
+    ws = weight_scale([dataclasses.replace(chunk, scan=scan)])
+    assert ws.scans.tolist() == [0, 1, 2] and np.all(ws.scale[1] > 0)
+
+
+def test_weight_scale_of_a_channel_flagged_throughout():
+    """Nothing to measure there: scale 1, no error, and no warning on the way."""
+    chunk = _two_scans()
+    w = chunk.w.copy()
+    w[3] = 0
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        ws = weight_scale([dataclasses.replace(chunk, X=chunk.X * w, w=w)])
+    assert np.all(ws.scale[:, 3] == 1) and np.isnan(ws.error[:, 3]).all()
+
+
+def test_weight_scale_needs_close_integrations():
+    far = _chunk(np.arange(10) * 1000.0, np.zeros(10, dtype=int))
+    with pytest.raises(ValueError, match="within 450 s"):
+        weight_scale([far])
