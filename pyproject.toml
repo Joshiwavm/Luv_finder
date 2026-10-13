@@ -59,6 +59,9 @@ Documentation = "https://joshiwavm.github.io/Luv_finder/"
 [tool.setuptools.packages.find]
 include = ["luv_finder*"]
 
+[tool.setuptools.package-data]
+luv_finder = ["*.mplstyle"]
+
 [tool.ruff]
 line-length = 120
 target-version = "py312"

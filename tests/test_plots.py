@@ -5,10 +5,10 @@ at. The numerical checks live in the other test modules.
 """
 
 import warnings
-from pathlib import Path
 from types import SimpleNamespace
 
 import numpy as np
+from matplotlib.figure import Figure
 
 from luv_finder import Gaussian, MatchedFilter, Model
 from luv_finder.data import reweighted
@@ -29,7 +29,7 @@ def test_spectrum_per_source(data, truth, plots):
             nu_center=src["line"]["mean"] * 1e9,
             width=src["line"]["width"],
         )
-        path = spectrum_check(
+        fig = spectrum_check(
             data,
             dra,
             ddec,
@@ -38,7 +38,7 @@ def test_spectrum_per_source(data, truth, plots):
             name=f"spectrum_src{i}",
             line_ghz=src["line"]["mean"],
         )
-        assert path.endswith(".png")
+        assert isinstance(fig, Figure)
 
 
 def test_response_figure(data, truth, plots):
@@ -56,10 +56,8 @@ def test_response_figure(data, truth, plots):
     mod.addcomponent(g)
     mf = MatchedFilter(data, mod)
     mf.run(jackknife=True)
-    path = response_check(
-        mf, plots_dir=str(plots), name="filter_response", line_ghz=truth["sources"][0]["line"]["mean"]
-    )
-    assert path.endswith(".png")
+    fig = response_check(mf, plots_dir=str(plots), name="filter_response", line_ghz=truth["sources"][0]["line"]["mean"])
+    assert isinstance(fig, Figure)
 
 
 def test_search_figures(data, truth, plots):
@@ -74,8 +72,8 @@ def test_search_figures(data, truth, plots):
     mf = MatchedFilter(data, mod)
     mf.run(jackknife=True)
     marks = {f"line {s['line']['mean']} GHz": s["position"] for s in truth["sources"]}
-    assert snr_map(mf, plots_dir=str(plots), name="snr_map", marks=marks).endswith(".png")
-    assert noise_check(mf, plots_dir=str(plots), name="noise").endswith(".png")
+    assert isinstance(snr_map(mf, plots_dir=str(plots), name="snr_map", marks=marks), Figure)
+    assert isinstance(noise_check(mf, plots_dir=str(plots), name="noise"), Figure)
 
     points = {"phase centre": (0.0, 0.0), **{k: tuple(v) for k, v in marks.items()}}
     single = Gaussian()
@@ -85,8 +83,8 @@ def test_search_figures(data, truth, plots):
     pick = MatchedFilter(data, mod)
     pick.run()
     rows = {k: pick.response[i * (len(points) + 1)] for i, k in enumerate(points)}  # the (dra_i, ddec_i) diagonal
-    path = responses_check(pick.frequencies(), rows, "Phase centre vs sources", plots_dir=str(plots))
-    assert path.endswith(".png")
+    fig = responses_check(pick.frequencies(), rows, "Phase centre vs sources", plots_dir=str(plots))
+    assert isinstance(fig, Figure)
 
 
 def test_layout_and_scan_figures(data, plots):
@@ -94,13 +92,13 @@ def test_layout_and_scan_figures(data, plots):
 
     pb = data.metadata.primarybeamsize()
     offsets = {0: (0.0, 0.0), 1: (-17.0, -30.0), 2: (17.0, -30.0)}
-    assert mosaic_layout(offsets, pb, plots_dir=str(plots), marks={"line": (2.0, 20.5)}).endswith(".png")
+    assert isinstance(mosaic_layout(offsets, pb, plots_dir=str(plots), marks={"line": (2.0, 20.5)}), Figure)
     models = {"point": Gaussian(), "2 arcsec": Gaussian(bmin=2.0, bmaj=2.0)}
-    path = uv_profile({k: data for k in models}, 4.25, 23.5, models, 39.9, plots_dir=str(plots))
-    assert path.endswith(".png")
+    fig = uv_profile({k: data for k in models}, 4.25, 23.5, models, 39.9, plots_dir=str(plots))
+    assert isinstance(fig, Figure)
     x = np.linspace(0, 4, 9)
-    assert scan_check(x, {"demo": np.exp(-((x - 2) ** 2))}, "size", "scan", truth=2.0, plots_dir=str(plots)).endswith(
-        ".png"
+    assert isinstance(
+        scan_check(x, {"demo": np.exp(-((x - 2) ** 2))}, "size", "scan", truth=2.0, plots_dir=str(plots)), Figure
     )
 
 
@@ -110,10 +108,12 @@ def test_amp_phase_and_dirty_map_figures(data, truth, plots):
 
     marks = {f"line {s['line']['mean']} GHz": s["position"] for s in truth["sources"]}
     positions = {"phase centre": (0.0, 0.0), **marks}
-    assert amp_phase_check(data, positions, plots_dir=str(plots), line_ghz=39.9).endswith(".png")
+    assert isinstance(amp_phase_check(data, positions, plots_dir=str(plots), line_ghz=39.9), Figure)
     axis = np.arange(-40.0, 40.1, 1.5)
     moment8, continuum, sigma = dirty_maps(data, axis, axis)
-    assert dirty_maps_check(axis, axis, moment8, continuum, sigma, plots_dir=str(plots), marks=marks).endswith(".png")
+    assert isinstance(
+        dirty_maps_check(axis, axis, moment8, continuum, sigma, plots_dir=str(plots), marks=marks), Figure
+    )
 
 
 def _circle_mask(axis, radius):
@@ -152,8 +152,8 @@ def test_pointings_figure(plots):
         "error": 1 / np.sqrt(np.nansum(weight, axis=0)),
     }
     combined["snr"] = combined["flux"] / combined["error"]
-    path = pointings_check(freqs, pointings, combined, beam, plots_dir=str(plots), line_ghz=line_ghz)
-    assert path.endswith(".png")
+    fig = pointings_check(freqs, pointings, combined, beam, plots_dir=str(plots), line_ghz=line_ghz)
+    assert isinstance(fig, Figure)
 
 
 def test_dirty_maps_with_noise_map(plots):
@@ -169,8 +169,8 @@ def test_dirty_maps_with_noise_map(plots):
     outside = ~_circle_mask(axis, 35)
     for image in (sigma, moment8, continuum):
         image[outside] = np.nan
-    path = dirty_maps_check(axis, axis, moment8, continuum, sigma, plots_dir=str(plots), name="dirty_maps_noise_map")
-    assert path.endswith(".png")
+    fig = dirty_maps_check(axis, axis, moment8, continuum, sigma, plots_dir=str(plots), name="dirty_maps_noise_map")
+    assert isinstance(fig, Figure)
 
 
 def test_search_figures_with_nan(plots):
@@ -186,8 +186,8 @@ def test_search_figures_with_nan(plots):
         response[outside] = np.nan
         responses.append(response)
     mf = SimpleNamespace(axes={"dra": axis, "ddec": axis}, response=responses[0], response_jackknife=responses[1])
-    assert snr_map(mf, plots_dir=str(plots), name="snr_map_nan", marks={"x": (5.0, 5.0)}).endswith(".png")
-    assert noise_check(mf, plots_dir=str(plots), name="noise_nan").endswith(".png")
+    assert isinstance(snr_map(mf, plots_dir=str(plots), name="snr_map_nan", marks={"x": (5.0, 5.0)}), Figure)
+    assert isinstance(noise_check(mf, plots_dir=str(plots), name="noise_nan"), Figure)
 
 
 def test_response_shape_figure(plots):
@@ -225,8 +225,8 @@ def test_response_shape_figure(plots):
     for t in range(len(widths)):
         i, j, k = np.unravel_index(result.snr[:, :, t].argmax(), shape)
         peaks.append((i, j, t, k))
-    path = response_shape_check(nc, result, peaks, plots_dir=str(plots))
-    assert Path(path).is_file()
+    fig = response_shape_check(nc, result, peaks, plots_dir=str(plots))
+    assert isinstance(fig, Figure)
 
 
 def _reliability_catalogue(data, jackknife, negative, floor=4.0, k=3.0, fidelity_min=0.6):
@@ -260,13 +260,70 @@ def test_reliability_figure(plots):
     nothing["detected"] = False
     empty = _reliability_catalogue(np.array([]), np.array([]), np.array([]))
     for name, cat in (("normal", normal), ("nan_fit", nan_fit), ("nothing", nothing), ("empty", empty)):
-        path = reliability_check(cat, plots_dir=str(plots), name=f"reliability_{name}")
-        assert Path(path).is_file()
+        fig = reliability_check(cat, plots_dir=str(plots), name=f"reliability_{name}")
+        assert isinstance(fig, Figure)
 
 
 def test_weights_figure(data, plots):
     """The scatter of the visibilities against the spread their weights predict, as read, reweighted and pooled."""
     (chunk,) = data.chunks
     fixed = reweighted([chunk])
-    path = weights_check([chunk, fixed[0]], ["as stored", "reweighted"], plots_dir=str(plots), pooled=fixed * 2)
-    assert path.endswith(".png")
+    fig = weights_check([chunk, fixed[0]], ["as stored", "reweighted"], plots_dir=str(plots), pooled=fixed * 2)
+    assert isinstance(fig, Figure)
+
+
+def test_figures_are_saved_only_when_asked(tmp_path):
+    """A figure is returned either way; ``<plots_dir>/<name>.png`` is written only with a ``plots_dir``."""
+    from luv_finder.plotting import scan_check
+
+    x = np.arange(5.0)
+    assert isinstance(scan_check(x, {"a": x}, "x", "title"), Figure)
+    assert not list(tmp_path.iterdir())
+    scan_check(x, {"a": x}, "x", "title", plots_dir=str(tmp_path), name="scan")
+    assert (tmp_path / "scan.png").is_file()
+
+
+def test_style_is_scoped():
+    """The package style applies inside :func:`style` and the plotting functions, not outside."""
+    import matplotlib.pyplot as plt
+    from matplotlib.markers import TICKUP
+
+    from luv_finder.plotting import scan_check, style
+
+    before = plt.rcParams["xtick.direction"]
+    with style():
+        assert plt.rcParams["xtick.direction"] == "in"
+    fig = scan_check(np.arange(3.0), {"a": np.arange(3.0)}, "x", "t")
+    assert plt.rcParams["xtick.direction"] == before
+    assert fig.axes[0].xaxis.get_major_ticks()[0].tick1line.get_marker() == TICKUP  # bottom ticks point in
+
+
+def test_peak_snr_map(plots):
+    """Two units on lattices of different steps, combined by their maximum on the finer one."""
+    from luv_finder.plotting import peak_snr_map
+
+    rng = np.random.default_rng(1)
+    coarse, fine = np.arange(-30.0, 30.1, 1.0), np.arange(-20.0, 20.01, 0.6)
+    maps = [(x, x, np.abs(rng.normal(0, 1.5, (x.size, x.size)))) for x in (coarse, fine)]
+    maps[1][2][40, 30] = 9.0
+    marks = {"#1": (fine[40], fine[30])}
+    fig = peak_snr_map(maps, marks=marks, plots_dir=str(plots), name="peak_snr")
+    assert isinstance(fig, Figure)
+    (mesh,) = fig.axes[0].collections
+    assert np.nanmax(mesh.get_array()) == 9.0
+
+
+def test_filter_responses(plots):
+    """Groups from two units, with their own frequencies and widths, and the jackknife."""
+    from luv_finder.plotting import filter_responses
+
+    rng = np.random.default_rng(2)
+    freqs = [np.linspace(97e9, 99e9, 300), np.linspace(230e9, 232e9, 120)]
+    widths = [np.array([100.0, 300.0, 500.0])] * 2
+    snr, jk = [], []
+    for f in freqs:
+        line = np.exp(-0.5 * ((f - f.mean()) / (2e-4 * f.mean())) ** 2)
+        snr.append(rng.normal(0, 1, (3, f.size)) + np.array([[5.0], [7.0], [6.0]]) * line)
+        jk.append(rng.normal(0, 1, (3, f.size)))
+    fig = filter_responses(freqs, snr, widths, ["#1", "#2"], jk=jk, plots_dir=str(plots), name="filter_responses")
+    assert isinstance(fig, Figure) and len([ax for ax in fig.axes if ax.lines]) == 2

@@ -100,3 +100,12 @@ def test_window_units_join_windows_that_overlap():
     }
     assert window_units(freqs) == [[0, 1], [2], [3]]
     assert unit_name([14, 15, 17]) == "spw14+15+17"
+
+
+def test_run_plots_come_from_saved_products(run):
+    from matplotlib.figure import Figure
+
+    for figure in (run.plot.reliability, run.plot.spectra, run.plot.maps, run.plot.responses, run.plot.snr_map):
+        assert isinstance(figure(plots_dir=False), Figure)
+    with pytest.raises(ValueError, match="no weight scales"):
+        run.diagnostics(plots_dir=False)

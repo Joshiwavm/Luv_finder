@@ -4,10 +4,13 @@ from __future__ import annotations
 
 import argparse
 
-import numpy as np
-import yaml
+import matplotlib
 
-from ..catalogue import catalogue
+matplotlib.use("Agg")  # the CLI only writes figures
+import numpy as np  # noqa: E402
+import yaml  # noqa: E402
+
+from ..catalogue import catalogue  # noqa: E402
 from ..data import fields_in, load
 from ..fit import fit_lines
 from ..matchedfilter import MatchedFilter, SearchResult, build_grid, grid_model, pb_corrected, search_pointings

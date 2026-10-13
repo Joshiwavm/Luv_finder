@@ -1,34 +1,58 @@
-"""Diagnostic figures shared by the CLI and the test suite.
+"""Diagnostic figures shared by the CLI, the run products and the test suite.
 
-Every function takes an output directory and returns the path it wrote, so the
-figures produced by ``pytest --plots`` and by the command-line tools are the same
-plots with the same styling.
+Every function returns its :class:`~matplotlib.figure.Figure` and writes ``<plots_dir>/<name>.png`` only
+when ``plots_dir`` is given, so a notebook shows the figure and a script or ``pytest --plots`` saves the
+same plot. Figures are built without pyplot (nothing to close, never shown twice in a notebook) and
+inside :func:`style`, the package's matplotlib style, which leaves the caller's rcParams alone.
 """
 
 from __future__ import annotations
 
+import functools
 import os
 import warnings
+from pathlib import Path
 
-import matplotlib
+import matplotlib.pyplot as plt
+import numpy as np
+from matplotlib.figure import Figure
+from matplotlib.patches import Circle
 
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt  # noqa: E402
-import numpy as np  # noqa: E402
+from .model import C_KMS
 
-from .model import C_KMS  # noqa: E402
+#: The package's matplotlib style file.
+STYLE = Path(__file__).with_name("luv.mplstyle")
 
 
-def _save(fig, plots_dir: str, name: str) -> str:
-    os.makedirs(plots_dir, exist_ok=True)
-    path = os.path.join(plots_dir, name if name.endswith(".png") else name + ".png")
+def style():
+    """The Luv_finder figure style as a context manager: ``with style(): ...``."""
+    return plt.style.context(STYLE)
+
+
+def _styled(func):
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        with style():
+            return func(*args, **kwargs)
+
+    return wrapper
+
+
+def _subplots(nrows=1, ncols=1, figsize=None, **kwargs):
+    fig = Figure(figsize=figsize)
+    return fig, fig.subplots(nrows, ncols, **kwargs)
+
+
+def _save(fig: Figure, plots_dir: str | None, name: str) -> Figure:
     fig.tight_layout()
-    fig.savefig(path, dpi=110)
-    plt.close(fig)
-    return path
+    if plots_dir is not None:
+        os.makedirs(plots_dir, exist_ok=True)
+        fig.savefig(os.path.join(plots_dir, name if name.endswith(".png") else name + ".png"))
+    return fig
 
 
-def spectrum_check(data, dra, ddec, model=None, plots_dir="plots", name="spectrum", line_ghz=None):
+@_styled
+def spectrum_check(data, dra, ddec, model=None, plots_dir=None, name="spectrum", line_ghz=None):
     """Real and imaginary visibility spectra: data, jackknife and model.
 
     The data are shown at the reference direction and phase-shifted onto (``dra``, ``ddec``);
@@ -44,7 +68,7 @@ def spectrum_check(data, dra, ddec, model=None, plots_dir="plots", name="spectru
     if model is not None:
         curves.append(("model, shifted", data.spectrum(dra, ddec, model), {"c": "C2", "lw": 1.2, "alpha": 0.8}))
 
-    fig, axes = plt.subplots(2, 1, sharex=True, figsize=(7.5, 6.5))
+    fig, axes = _subplots(2, 1, sharex=True, figsize=(7.5, 6.5))
     for ax, part, label in zip(axes, (np.real, np.imag), ("Re", "Im"), strict=True):
         ax.axhline(0, c="gray", ls="--", lw=0.8)
         for curve, spectrum, style in curves:
@@ -58,14 +82,15 @@ def spectrum_check(data, dra, ddec, model=None, plots_dir="plots", name="spectru
     return _save(fig, plots_dir, name)
 
 
-def response_check(mf, plots_dir="plots", name="filter_response", line_ghz=None):
+@_styled
+def response_check(mf, plots_dir=None, name="filter_response", line_ghz=None):
     """Matched-filter response of the best grid point, with the jackknife overlaid.
 
     The y axis is signal-to-noise, so the peak height is the line's S/N.
     """
     freqs = mf.frequencies()
     best = mf.response[mf.best_index]
-    fig, ax = plt.subplots(figsize=(8, 4))
+    fig, ax = _subplots(figsize=(8, 4))
     ax.axhline(0, ls="--", c="gray", lw=0.8)
     for level in (3, 5):
         ax.axhline(level, ls=":", c="C3", lw=0.8)
@@ -92,36 +117,38 @@ def response_check(mf, plots_dir="plots", name="filter_response", line_ghz=None)
     return _save(fig, plots_dir, name)
 
 
-def source_size_check(freqs, expected, noisy, declared, title, plots_dir="plots", name="source_size"):
+@_styled
+def source_size_check(freqs, expected, noisy, declared, title, plots_dir=None, name="source_size"):
     """Response at the true source position: noiseless expectation and one noisy draw.
 
     ``declared`` is the S/N the mock was calibrated to; a filter matched to the
     source reaches it with the expectation curve.
     """
-    fig, ax = plt.subplots(figsize=(8, 4))
+    fig, ax = _subplots(figsize=(8, 4))
     ax.axhline(0, ls="--", c="gray", lw=0.8)
-    ax.axhline(declared, ls=":", c="C3", lw=1, label=f"declared S/N {declared:g}")
-    ax.plot(freqs, expected, lw=1.8, label=f"expected (peak {np.max(expected):.2f})")
-    ax.plot(freqs, noisy, lw=1, alpha=0.8, label=f"noisy draw (peak {np.max(noisy):.2f})")
+    ax.axhline(declared, ls=":", c="C3", lw=1, label="declared S/N")
+    ax.plot(freqs, expected, lw=1.8, label="expected")
+    ax.plot(freqs, noisy, lw=1, alpha=0.8, label="noisy draw")
     ax.set_xlabel("Frequency [GHz]")
     ax.set_ylabel("Matched-filter S/N")
-    ax.set_title(title)
+    ax.set_title(f"{title}: declared {declared:g}, expected {np.max(expected):.2f}, drawn {np.max(noisy):.2f}")
     ax.legend(fontsize=8)
     return _save(fig, plots_dir, name)
 
 
-def responses_check(freqs, curves, title, plots_dir="plots", name="responses", line_ghz=None):
+@_styled
+def responses_check(freqs, curves, title, plots_dir=None, name="responses", line_ghz=None):
     """Several S/N spectra on one axis, e.g. the phase centre against the source positions.
 
     ``curves`` maps a legend label to a response with one value per frequency in ``freqs`` (GHz).
     """
-    fig, ax = plt.subplots(figsize=(8, 4))
+    fig, ax = _subplots(figsize=(8, 4))
     ax.axhline(0, ls="--", c="gray", lw=0.8)
     ax.axhline(5, ls=":", c="C3", lw=0.8)
     if line_ghz is not None:
         ax.axvline(line_ghz, c="C3", ls="--", lw=0.8)
     for label, response in curves.items():
-        ax.plot(freqs, response, lw=1.4, label=f"{label} (peak {np.max(response):.1f})")
+        ax.plot(freqs, response, lw=1.4, label=label)
     ax.set_xlabel("Frequency [GHz]")
     ax.set_ylabel("Matched-filter S/N")
     ax.set_title(title)
@@ -149,7 +176,8 @@ def _mark(ax, marks):
         ax.annotate(label, (dra, ddec), xytext=(8, 8), textcoords="offset points", fontsize=8, c="C3")
 
 
-def snr_map(mf, plots_dir="plots", name="snr_map", marks=None):
+@_styled
+def snr_map(mf, plots_dir=None, name="snr_map", marks=None):
     """Peak S/N over channels, widths and sizes at every (dra, ddec) of the grid.
 
     The data and, when it was run, the jackknife are shown side by side on one colour scale.
@@ -162,7 +190,7 @@ def snr_map(mf, plots_dir="plots", name="snr_map", marks=None):
         panels["jackknife"] = mf.response_jackknife
     peaks = {k: _nanmax(r.reshape(len(dra), len(ddec), -1), axis=-1) for k, r in panels.items()}
     vmax = max(_nanmax(p) for p in peaks.values())
-    fig, axes = plt.subplots(1, len(peaks), figsize=(5.2 * len(peaks), 4.6), squeeze=False)
+    fig, axes = _subplots(1, len(peaks), figsize=(5.2 * len(peaks), 4.6), squeeze=False)
     for ax, (label, peak) in zip(axes[0], peaks.items(), strict=True):
         mesh = ax.pcolormesh(dra, ddec, peak.T, shading="nearest", vmin=0, vmax=vmax, cmap="magma")
         fig.colorbar(mesh, ax=ax, label="peak S/N")
@@ -172,15 +200,16 @@ def snr_map(mf, plots_dir="plots", name="snr_map", marks=None):
     return _save(fig, plots_dir, name)
 
 
-def mosaic_layout(offsets, primary_beam, plots_dir="plots", name="mosaic", marks=None):
+@_styled
+def mosaic_layout(offsets, primary_beam, plots_dir=None, name="mosaic", marks=None):
     """Pointing centres and half-power primary beams in the dataset's sky frame.
 
     ``offsets`` maps a field id to its phase centre (dra, ddec) in arcsec; ``primary_beam`` is the
     beam FWHM in arcsec.
     """
-    fig, ax = plt.subplots(figsize=(5.5, 5.5))
+    fig, ax = _subplots(figsize=(5.5, 5.5))
     for field, (dra, ddec) in offsets.items():
-        ax.add_patch(plt.Circle((dra, ddec), primary_beam / 2, fill=False, lw=1, color="C0", alpha=0.7))
+        ax.add_patch(Circle((dra, ddec), primary_beam / 2, fill=False, lw=1, color="C0", alpha=0.7))
         ax.text(dra, ddec, str(field), ha="center", va="center", fontsize=10, color="C0")
     _mark(ax, marks)
     extent = np.abs(np.array(list(offsets.values()))).max() + primary_beam / 2
@@ -191,7 +220,8 @@ def mosaic_layout(offsets, primary_beam, plots_dir="plots", name="mosaic", marks
     return _save(fig, plots_dir, name)
 
 
-def noise_check(mf, plots_dir="plots", name="noise"):
+@_styled
+def noise_check(mf, plots_dir=None, name="noise"):
     """Response statistics of the data against its jackknife and a unit Gaussian.
 
     Left: the distribution of the response over all grid points and channels. Right: how many
@@ -203,11 +233,10 @@ def noise_check(mf, plots_dir="plots", name="noise"):
 
     panels = {"data": mf.response, "jackknife": mf.response_jackknife}
     panels = {k: v[np.isfinite(v)] for k, v in panels.items() if v is not None}
-    fig, (left, right) = plt.subplots(1, 2, figsize=(11, 4))
+    fig, (left, right) = _subplots(1, 2, figsize=(11, 4))
     bins = np.linspace(-7, 7, 141)
     for i, (label, values) in enumerate(panels.items()):
-        left.hist(values, bins=bins, density=True, histtype="step", lw=1.4, color=f"C{i}",
-                  label=f"{label}: std {values.std():.2f}")  # fmt: skip
+        left.hist(values, bins=bins, density=True, histtype="step", lw=1.4, color=f"C{i}", label=label)
         thresholds = np.linspace(0, 8, 81)
         right.semilogy(thresholds, [(values > t).sum() for t in thresholds], color=f"C{i}", label=label)
     x = np.linspace(-7, 7, 300)
@@ -216,6 +245,7 @@ def noise_check(mf, plots_dir="plots", name="noise"):
     left.set_ylim(1e-6, 1)
     left.set_xlabel("Matched-filter S/N")
     left.set_ylabel("Density")
+    left.set_title("std " + ", ".join(f"{label} {values.std():.2f}" for label, values in panels.items()))
     left.legend(fontsize=8)
     n = next(iter(panels.values())).size
     right.semilogy(thresholds, n * norm.sf(thresholds), "k--", lw=1, label="unit Gaussian, independent")
@@ -226,7 +256,8 @@ def noise_check(mf, plots_dir="plots", name="noise"):
     return _save(fig, plots_dir, name)
 
 
-def uv_profile(datasets, dra, ddec, models, freq_ghz, plots_dir="plots", name="uv_profile", bins=25):
+@_styled
+def uv_profile(datasets, dra, ddec, models, freq_ghz, plots_dir=None, name="uv_profile", bins=25):
     """Visibility amplitude against uv distance at one channel, data binned and model envelopes.
 
     ``datasets`` and ``models`` map a label to a single-window :class:`~luv_finder.data.DataHandler`
@@ -234,7 +265,7 @@ def uv_profile(datasets, dra, ddec, models, freq_ghz, plots_dir="plots", name="u
     its least-squares flux against the model envelope, so only the shapes are compared: a
     resolved source fades on long baselines.
     """
-    fig, ax = plt.subplots(figsize=(7, 4.5))
+    fig, ax = _subplots(figsize=(7, 4.5))
     for i, (label, data) in enumerate(datasets.items()):
         (chunk,) = data.chunks
         k = int(np.argmin(np.abs(chunk.freq / 1e9 - freq_ghz)))
@@ -261,13 +292,14 @@ def uv_profile(datasets, dra, ddec, models, freq_ghz, plots_dir="plots", name="u
     return _save(fig, plots_dir, name)
 
 
-def scan_check(x, curves, xlabel, title, truth=None, plots_dir="plots", name="scan"):
+@_styled
+def scan_check(x, curves, xlabel, title, truth=None, plots_dir=None, name="scan"):
     """Peak S/N against one trial parameter, e.g. template size, width or position angle.
 
     ``curves`` maps a label to the peak S/N at every value of ``x``; ``truth`` marks the
     injected value.
     """
-    fig, ax = plt.subplots(figsize=(7, 4))
+    fig, ax = _subplots(figsize=(7, 4))
     for label, y in curves.items():
         ax.plot(x, y, "o-", ms=3, lw=1.4, label=label)
     if truth is not None:
@@ -279,7 +311,8 @@ def scan_check(x, curves, xlabel, title, truth=None, plots_dir="plots", name="sc
     return _save(fig, plots_dir, name)
 
 
-def amp_phase_check(data, positions, plots_dir="plots", name="amp_phase", line_ghz=None):
+@_styled
+def amp_phase_check(data, positions, plots_dir=None, name="amp_phase", line_ghz=None):
     """Amplitude and phase of the vector-averaged visibility against frequency.
 
     ``positions`` maps a label to a (dra, ddec) the visibilities are phase-shifted onto first.
@@ -287,7 +320,7 @@ def amp_phase_check(data, positions, plots_dir="plots", name="amp_phase", line_g
     phase wanders and the amplitude is the noise floor.
     """
     freqs = data.freqs / 1e9
-    fig, (amp, phase) = plt.subplots(2, 1, sharex=True, figsize=(7.5, 6))
+    fig, (amp, phase) = _subplots(2, 1, sharex=True, figsize=(7.5, 6))
     for label, (dra, ddec) in positions.items():
         spectrum = data.spectrum(dra, ddec)
         amp.plot(freqs, 1e3 * np.abs(spectrum), lw=1.2, label=label)
@@ -308,7 +341,8 @@ def amp_phase_check(data, positions, plots_dir="plots", name="amp_phase", line_g
     return _save(fig, plots_dir, name)
 
 
-def dirty_maps_check(dra, ddec, moment8, continuum, sigma, plots_dir="plots", name="dirty_maps", marks=None):
+@_styled
+def dirty_maps_check(dra, ddec, moment8, continuum, sigma, plots_dir=None, name="dirty_maps", marks=None):
     """Moment-8 (S/N), continuum (mJy/beam), and the moment-8 with continuum contours.
 
     Takes the output of :func:`luv_finder.imaging.dirty_maps` on the ``dra x ddec`` grid.
@@ -321,7 +355,7 @@ def dirty_maps_check(dra, ddec, moment8, continuum, sigma, plots_dir="plots", na
     dra, ddec = np.asarray(dra), np.asarray(ddec)
     noise = f"noise {1e6 * sigma:.1f}" if np.ndim(sigma) == 0 else f"noise from {1e6 * np.nanmin(sigma):.1f}"
     snr = continuum / sigma
-    fig, axes = plt.subplots(1, 3, figsize=(16, 4.8))
+    fig, axes = _subplots(1, 3, figsize=(16, 4.8))
     continuum_mjy = 1e3 * continuum
     moment8_limits = (0, np.nanpercentile(moment8, 99.9))
     covered = np.where(sigma <= 2 * np.nanmin(sigma), continuum_mjy, np.nan)
@@ -342,7 +376,8 @@ def dirty_maps_check(dra, ddec, moment8, continuum, sigma, plots_dir="plots", na
     return _save(fig, plots_dir, name)
 
 
-def pointings_check(freqs_ghz, pointings, combined, beam, plots_dir="plots", name="pointings", line_ghz=None):
+@_styled
+def pointings_check(freqs_ghz, pointings, combined, beam, plots_dir=None, name="pointings", line_ghz=None):
     """One position seen through several pointings of a mosaic, and the combination.
 
     ``pointings`` maps a label to a dict with ``distance`` (arcsec from that pointing's centre),
@@ -355,7 +390,7 @@ def pointings_check(freqs_ghz, pointings, combined, beam, plots_dir="plots", nam
     """
     freqs = np.asarray(freqs_ghz)
     unused = {label for label, p in pointings.items() if np.isnan(p["flux"]).all()}
-    fig, (beam_ax, flux_ax, snr_ax) = plt.subplots(1, 3, figsize=(16, 4.5))
+    fig, (beam_ax, flux_ax, snr_ax) = _subplots(1, 3, figsize=(16, 4.5))
     beam_ax.plot(*beam, c="k", lw=1.2)
     for i, (label, p) in enumerate(pointings.items()):
         face = "none" if label in unused else f"C{i}"
@@ -371,13 +406,13 @@ def pointings_check(freqs_ghz, pointings, combined, beam, plots_dir="plots", nam
     snr_ax.axhline(0, ls="--", c="gray", lw=0.8)
     snr_ax.axhline(5, ls=":", c="C3", lw=0.8)
     curves = {**pointings, "combined": combined}
-    for ax, key, scale, fmt in ((flux_ax, "flux", 1e3, "{:.3g} mJy"), (snr_ax, "snr", 1, "{:.1f}")):
+    for ax, key, scale in ((flux_ax, "flux", 1e3), (snr_ax, "snr", 1)):
         for i, (label, p) in enumerate(curves.items()):
             if label in unused:
                 continue
             y = scale * np.asarray(p[key])
             style = dict(c="k", lw=2.2) if p is combined else dict(c=f"C{i}", lw=1)
-            ax.plot(freqs, y, label=f"{label} (peak {fmt.format(_nanmax(y))})", **style)
+            ax.plot(freqs, y, label=label, **style)
         if line_ghz is not None:
             ax.axvline(line_ghz, c="C3", ls="--", lw=0.8)
         ax.set_xlabel("Frequency [GHz]")
@@ -387,7 +422,7 @@ def pointings_check(freqs_ghz, pointings, combined, beam, plots_dir="plots", nam
     flux_ax.set_ylabel("Primary-beam corrected flux density [mJy]")
     snr_ax.set_ylabel("S/N")
     flux_ax.set_title(r"Flux density, combined $\pm 1\sigma$")
-    snr_ax.set_title("S/N per pointing and combined")
+    snr_ax.set_title(f"S/N per pointing and combined: peak {_nanmax(np.asarray(combined['snr'])):.1f}")
     return _save(fig, plots_dir, name)
 
 
@@ -407,7 +442,8 @@ def _templates(result):
     return parts, shapes, np.array([c[-1] for c in combos])
 
 
-def response_shape_check(nc, result, peaks=(), plots_dir="plots", name="response_shape"):
+@_styled
+def response_shape_check(nc, result, peaks=(), plots_dir=None, name="response_shape"):
     """The null correlation rho of the response against what bright lines actually look like.
 
     ``nc`` is a :class:`~luv_finder.catalogue.ResponseCorrelation` measured on ``result``,
@@ -427,7 +463,7 @@ def response_shape_check(nc, result, peaks=(), plots_dir="plots", name="response
     names, n_t = [", ".join(p) for p in parts], len(parts)
     nu, dnu = np.median(result.freqs), np.median(np.abs(np.diff(result.freqs)))
     chan_width = nu * widths / C_KMS / dnu
-    fig, axes = plt.subplots(2 if len(peaks) else 1, 3, figsize=(16, 4.8 * (2 if len(peaks) else 1)), squeeze=False)
+    fig, axes = _subplots(2 if len(peaks) else 1, 3, figsize=(16, 4.8 * (2 if len(peaks) else 1)), squeeze=False)
     sky, spectral, matrix = axes[0]
 
     mesh = sky.pcolormesh(nc.lags_ra, nc.lags_dec, nc.spatial[0].T, shading="nearest", cmap="RdBu_r", vmin=-1, vmax=1)
@@ -443,13 +479,12 @@ def response_shape_check(nc, result, peaks=(), plots_dir="plots", name="response
     spectral.plot([], [], "k--", lw=1, label="white channels, analytic")
     for t in range(n_t):
         sigma = chan_width[t] * FWHM_TO_SIGMA
-        hwhm = f"HWHM {nc.spectral_hwhm[t]:.2f} ch = {nc.spectral_hwhm_kms[t]:.0f} km/s"
-        spectral.plot(lag, nc.spectral[t], "o-", ms=3, c=f"C{t}", label=f"{names[t]}: {hwhm}")
+        spectral.plot(lag, nc.spectral[t], "o-", ms=3, c=f"C{t}", label=names[t])
         spectral.plot(fine, np.exp(-(fine**2) / (4 * sigma**2)), "--", lw=1, c=f"C{t}")
     spectral.axhline(0, c="gray", ls="--", lw=0.8)
     spectral.set_xlabel("Channel lag")
     spectral.set_ylabel(r"$\rho$")
-    spectral.set_title("Spectral correlation")
+    spectral.set_title("Spectral correlation, HWHM " + ", ".join(f"{h:.0f}" for h in nc.spectral_hwhm_kms) + " km/s")
     spectral.legend(fontsize=8)
 
     matrix.imshow(nc.templates, cmap="RdBu_r", vmin=-1, vmax=1)
@@ -506,7 +541,8 @@ def _count_above(values, at):
     return len(values) - np.searchsorted(values, at)
 
 
-def reliability_check(cat, plots_dir="plots", name="reliability"):
+@_styled
+def reliability_check(cat, plots_dir=None, name="reliability"):
     """Counts, likelihood ratio and fidelity of a catalogue against the jackknife, its noise reference.
 
     ``cat`` is the output of :func:`luv_finder.catalogue.catalogue` (its ``meta`` holds what is
@@ -530,18 +566,17 @@ def reliability_check(cat, plots_dir="plots", name="reliability"):
     detected = np.asarray(cat["snr"])[np.asarray(cat["detected"], dtype=bool)]
     xlim = (floor, data.max(initial=floor) + 0.5)
 
-    fig, (counts, ratio, fid) = plt.subplots(1, 3, figsize=(16, 4.5))
+    fig, (counts, ratio, fid) = _subplots(1, 3, figsize=(16, 4.5))
     styles = {"data": dict(c="k"), "jackknife": dict(c="C0"), "negated data": dict(c="0.5", ls="--")}
     for (label, style), values in zip(styles.items(), (data, jackknife, negative), strict=True):
         n = np.r_[len(values), _count_above(values, values)]
         shown = n > 0
-        counts.step(np.r_[floor, values][shown], n[shown], where="pre", label=f"{label} ({len(values)})", **style)
-    counts.plot(detected, _count_above(data, detected), "o", c="C3", ms=6, label=f"detected ({detected.size})")
+        counts.step(np.r_[floor, values][shown], n[shown], where="pre", label=label, **style)
+    counts.plot(detected, _count_above(data, detected), "o", c="C3", ms=6, label="detected")
     amplitude, sigma = meta["noise_amplitude"], meta["noise_sigma"]
     if np.isfinite([amplitude, sigma]).all():
         x = np.linspace(*xlim, 200)
-        counts.plot(x, amplitude * special.erfc(x / (np.sqrt(2) * sigma)), c="C1",
-                    label=rf"jackknife tail, $\sigma$ = {sigma:.3f}")  # fmt: skip
+        counts.plot(x, amplitude * special.erfc(x / (np.sqrt(2) * sigma)), c="C1", label="jackknife tail")
     counts.set_ylim(bottom=0.7)
     counts.set_ylabel(r"Groups with S/N $\geq$ abscissa")
 
@@ -549,32 +584,39 @@ def reliability_check(cat, plots_dir="plots", name="reliability"):
     for is_limit, marker, label in ((False, "o", r"$\Lambda$"), (True, "^", "lower limit")):
         use = lower == is_limit
         ratio.plot(data[use], value[use], marker, c="k", mfc="none" if is_limit else "k", ms=5, ls="", label=label)
-    ratio.axhline(k, c="C3", ls="--", lw=1, label=f"k = {k:g}")
+    ratio.axhline(k, c="C3", ls="--", lw=1, label="k")
     ratio.set_ylabel(r"Likelihood ratio $\Lambda$ = N$_{data}$ / N$_{jackknife}$")
 
     bins = meta["fidelity_bins"]
     fid.errorbar(
         bins["snr"], bins["fidelity"], bins["error"], fmt="o", c="k", ecolor="0.6", ms=4, capsize=2, label="binned"
     )
-    fid.plot(bins["snr"], bins["model"], ".-", c="C1", label="from the jackknife's tail")
+    fid.plot(bins["snr"], bins["model"], ".-", c="C1", label="jackknife tail")
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         values, (_, s_neg), bins_neg = fidelity(data, negative, floor)
     fid.plot(bins_neg["snr"], bins_neg["fidelity"], "s", mfc="none", c="0.45", ms=4,
-             label="binned, against the negated data")  # fmt: skip
+             label="binned, negated")  # fmt: skip
     if np.isfinite(s_neg):
-        passing = data[values >= fidelity_min]
-        at = passing.min() if passing.size else np.nan
-        label = rf"from the negated data's tail ($\sigma$ = {s_neg:.3f}); {fidelity_min:g} at S/N {at:.2f}"
-        fid.plot(bins_neg["snr"], bins_neg["model"], ".--", c="0.45", label=label)
-    fid.axhline(fidelity_min, c="C3", ls="--", lw=1, label=f"fidelity_min = {fidelity_min:g}")
+        fid.plot(bins_neg["snr"], bins_neg["model"], ".--", c="0.45", label="negated tail")
+    fid.axhline(fidelity_min, c="C3", ls="--", lw=1, label="fidelity_min")
     fid.set_ylim(-0.05, 1.05)
     fid.set_ylabel(r"Fidelity 1 $-$ N$_{jackknife}$ / N$_{data}$")
 
     for ax, key in ((ratio, "snr_likelihood"), (fid, "snr_fidelity")):
         if np.isfinite(meta[key]):
-            ax.axvline(meta[key], c="C3", ls=":", lw=1, label=f"threshold at S/N {meta[key]:.2f}")
-    for ax, title in zip((counts, ratio, fid), ("Cumulative counts", "Likelihood ratio", "Fidelity"), strict=True):
+            ax.axvline(meta[key], c="C3", ls=":", lw=1, label="threshold")
+    passing = data[values >= fidelity_min] if np.isfinite(s_neg) else np.array([])
+    titles = (
+        f"Counts: {len(data)} data, {len(jackknife)} jackknife, {len(negative)} negated"
+        + (rf"; tail $\sigma$ {sigma:.3f}" if np.isfinite(sigma) else ""),
+        rf"Likelihood ratio: $\Lambda \geq$ {k:g}"
+        + (f" from S/N {meta['snr_likelihood']:.2f}" if np.isfinite(meta["snr_likelihood"]) else ""),
+        f"Fidelity: {fidelity_min:g}"
+        + (f" at S/N {meta['snr_fidelity']:.2f}" if np.isfinite(meta["snr_fidelity"]) else "")
+        + (f" (negated {passing.min():.2f})" if passing.size else ""),
+    )
+    for ax, title in zip((counts, ratio, fid), titles, strict=True):
         ax.set_title(title)
         ax.set_xlim(xlim)
         ax.set_xlabel("S/N")
@@ -610,7 +652,8 @@ def _ratio_line(ax, ghz, z, label, **style):
     return ratio
 
 
-def weights_check(chunks, labels, plots_dir="plots", name="weights", n_points=200_000, seed=0, pooled=()):
+@_styled
+def weights_check(chunks, labels, plots_dir=None, name="weights", n_points=200_000, seed=0, pooled=()):
     """Do the weights predict the scatter? Re V at the phase centre per channel, its spread and ``<1/w>^1/2``.
 
     One panel per chunk (one field and window, e.g. with the measurement set's weights and reweighted), each
@@ -623,7 +666,7 @@ def weights_check(chunks, labels, plots_dir="plots", name="weights", n_points=20
     from scipy import stats
 
     rng, ratios = np.random.default_rng(seed), []
-    fig, axes = plt.subplots(
+    fig, axes = _subplots(
         len(chunks) + 1, 1, figsize=(11, 3.1 * len(chunks) + 2.6), sharex=True,
         gridspec_kw={"height_ratios": [3] * len(chunks) + [2]},
     )  # fmt: skip
@@ -632,14 +675,14 @@ def weights_check(chunks, labels, plots_dir="plots", name="weights", n_points=20
         chan, row = np.nonzero(ok)
         pick = rng.choice(chan.size, min(n_points, chan.size), replace=False)
         ax.plot(ghz[chan[pick]], 1e3 * re[chan[pick], row[pick]], ",", c="0.6", rasterized=True,
-                label=f"visibilities ({pick.size} of {chan.size} shown)")  # fmt: skip
+                label="visibilities")  # fmt: skip
         centre = np.array([np.median(r[o]) if o.any() else np.nan for r, o in zip(re, ok, strict=True)])
         spread = np.array([stats.median_abs_deviation(r[o], scale="normal") if o.any() else np.nan
                            for r, o in zip(re, ok, strict=True)])  # fmt: skip
         predicted = np.sqrt([np.mean(1 / w[o]) if o.any() else np.nan for w, o in zip(c.w, ok, strict=True)])
         ax.fill_between(ghz, 1e3 * (centre - spread), 1e3 * (centre + spread), color="C0", alpha=0.35,
-                        label="measured spread: median ± 1σ per channel")  # fmt: skip
-        predicts = r"spread the weights predict: $\pm\langle 1/w\rangle^{1/2}$"
+                        label="measured ±1σ")  # fmt: skip
+        predicts = r"weights: $\pm\langle 1/w\rangle^{1/2}$"
         for sign, text in ((1, predicts), (-1, None)):
             ax.plot(ghz, 1e3 * sign * predicted, "--", c="C1", label=text)
         z = _whitened([c])
@@ -648,7 +691,7 @@ def weights_check(chunks, labels, plots_dir="plots", name="weights", n_points=20
                 bbox=dict(fc="white", ec="0.7"))  # fmt: skip
         ax.set_ylim(-5e3 * np.nanmedian(predicted), 5e3 * np.nanmedian(predicted))
         ax.set_ylabel("Re V at phase centre [mJy]")
-        ax.set_title(f"{label}: field {c.field}, spw {c.spw}", fontsize=10)
+        ax.set_title(f"{label}: field {c.field}, spw {c.spw} ({pick.size} of {chan.size} visibilities shown)")
         ax.legend(fontsize=8, loc="upper right", markerscale=20)
         ratios.append(_ratio_line(axes[-1], ghz, z, label))
     if len(pooled):
@@ -684,14 +727,16 @@ def contact_sheet(plots_dir: str, title: str = "Luv_finder diagnostics") -> str:
 
 
 def _panels(n, height, ncol=5):
-    nrow = int(np.ceil(n / ncol))
-    fig, axes = plt.subplots(nrow, ncol, figsize=(3.4 * ncol, height * nrow), squeeze=False)
+    ncol = min(ncol, max(n, 1))
+    nrow = max(1, int(np.ceil(n / ncol)))
+    fig, axes = _subplots(nrow, ncol, figsize=(3.4 * ncol, height * nrow), squeeze=False)
     for ax in axes.flat[n:]:
         ax.axis("off")
     return fig, axes.flat
 
 
-def line_maps_check(maps, cat, plots_dir="plots", name="line_maps"):
+@_styled
+def line_maps_check(maps, cat, plots_dir=None, name="line_maps"):
     """Moment-0 map of every fitted line (:func:`luv_finder.imaging.line_maps`), the fitted position marked."""
     rows = cat[np.isfinite(cat["fit_dra"])]
     fig, axes = _panels(len(rows), 2.9)
@@ -706,7 +751,8 @@ def line_maps_check(maps, cat, plots_dir="plots", name="line_maps"):
     return _save(fig, plots_dir, name)
 
 
-def line_spectra_check(cat, span=3.0, plots_dir="plots", name="line_spectra"):
+@_styled
+def line_spectra_check(cat, span=3.0, plots_dir=None, name="line_spectra"):
     """Each fitted line's spectrum and best fit within ``span`` FWHM of its centre, both over the fitted peak."""
     rows = [r for r in cat if str(r["id"]) in cat.meta.get("spectra", {})]
     fig, axes = _panels(len(rows), 3.2)
@@ -728,4 +774,82 @@ def line_spectra_check(cat, span=3.0, plots_dir="plots", name="line_spectra"):
         ax.set_title(f"#{row['id']}  S/N {row['snr']:.1f}", fontsize=10)
         ax.set_xlabel("frequency [GHz]")
         ax.set_ylabel("flux / fitted peak")
+    return _save(fig, plots_dir, name)
+
+
+def _marks(marks):
+    """``{label: (dra, ddec)}`` from a dict or a catalogue-like table (rows marked ``#id`` at ``dra``, ``ddec``)."""
+    if marks is not None and hasattr(marks, "colnames"):
+        return {f"#{r['id']}": (float(r["dra"]), float(r["ddec"])) for r in marks}
+    return marks
+
+
+@_styled
+def peak_snr_map(maps, marks=None, plots_dir=None, name="peak_snr"):
+    """Peak S/N on the sky from saved maps ``(dra, ddec, peak)`` (one or several), their maximum.
+
+    The units of one band are searched on lattices of different steps (half each one's resolution), so
+    every map is put onto the finest by nearest neighbour; positions no map covers stay blank. ``marks``
+    maps a label to a (dra, ddec), or is a catalogue whose rows are marked ``#id`` at ``dra``, ``ddec``.
+    """
+    if isinstance(maps[0], np.ndarray) and maps[0].ndim == 1:
+        maps = [maps]
+    maps = [(np.asarray(x), np.asarray(y), np.asarray(z)) for x, y, z in maps]
+    step = min(min(np.median(np.diff(x)), np.median(np.diff(y))) for x, y, _ in maps)
+    xs = np.arange(min(x[0] for x, _, _ in maps), max(x[-1] for x, _, _ in maps) + step / 2, step)
+    ys = np.arange(min(y[0] for _, y, _ in maps), max(y[-1] for _, y, _ in maps) + step / 2, step)
+    peak = np.full((xs.size, ys.size), np.nan)
+    for x, y, z in maps:
+        ix, iy = (np.rint((a - b[0]) / np.median(np.diff(b))).astype(int) for a, b in ((xs, x), (ys, y)))
+        inside = np.outer((ix >= 0) & (ix < x.size), (iy >= 0) & (iy < y.size))
+        values = z[np.clip(ix, 0, x.size - 1)][:, np.clip(iy, 0, y.size - 1)]
+        peak = np.fmax(peak, np.where(inside, values, np.nan))
+    fig, ax = _subplots(figsize=(6.4, 5.4))
+    mesh = ax.pcolormesh(xs, ys, peak.T, shading="nearest", vmin=0, cmap="magma", rasterized=True)
+    fig.colorbar(mesh, ax=ax, label="peak S/N")
+    _mark(ax, _marks(marks))
+    _sky_axes(ax)
+    ax.set_title(f"Peak S/N over templates and channels: max {_nanmax(peak):.1f}")
+    return _save(fig, plots_dir, name)
+
+
+def _per_group(x, n, ndim):
+    """``x`` per group: a sequence of ``n``, or one ``ndim``-dimensional array for all (``ndim + 1``: stacked)."""
+    if isinstance(x, np.ndarray):
+        return [x] * n if x.ndim == ndim else list(x)
+    return list(x)
+
+
+@_styled
+def filter_responses(freqs, snr, widths, labels, jk=None, span=3000.0, plots_dir=None, name="filter_responses"):
+    """The matched-filter response of every group: S/N against frequency for each template, one panel each.
+
+    ``freqs[g]`` (Hz), ``widths[g]`` (km/s) and ``snr[g]``, ``jk[g]`` (templates x frequencies) per group, as
+    saved by a run (groups of different units have different frequencies); one shared array is accepted for
+    each too. The best template is drawn thick, the jackknife's response to it in grey, the group's S/N
+    dotted; each panel spans ``span`` km/s around the peak (None: everything).
+    """
+    n = len(labels)
+    freqs, widths = _per_group(freqs, n, 1), _per_group(widths, n, 1)
+    snr = _per_group(snr, n, 2)
+    jk = [None] * n if jk is None else _per_group(jk, n, 2)
+    fig, axes = _panels(n, 2.9)
+    for g, (ax, label) in enumerate(zip(axes, labels, strict=False)):
+        f, s, w = np.asarray(freqs[g]) / 1e9, np.asarray(snr[g]), np.asarray(widths[g])
+        if not np.isfinite(s).any():
+            ax.set_title(f"{label}: no response", fontsize=9)
+            continue
+        t, k = np.unravel_index(np.nanargmax(s), s.shape)
+        near = np.ones(f.size, bool) if span is None else np.abs(f / f[k] - 1) * C_KMS <= span
+        ax.axhline(0, c="0.5", lw=0.5)
+        if jk[g] is not None:
+            ax.plot(f[near], np.asarray(jk[g])[t][near], c="C7", lw=0.8, label="jackknife")
+        for i in range(len(w)):
+            ax.plot(f[near], s[i][near], c=f"C{i}", lw=1.6 if i == t else 0.8, label=f"{w[i]:g} km/s")
+        ax.axhline(s[t, k], c="C3", ls=":", lw=0.8)
+        ax.set_title(f"{label}  S/N {s[t, k]:.1f}", fontsize=9)
+        ax.set_xlabel("frequency [GHz]")
+        ax.set_ylabel("S/N")
+    if n:
+        axes[0].legend(fontsize=6)
     return _save(fig, plots_dir, name)
