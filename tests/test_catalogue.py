@@ -9,6 +9,7 @@ from scipy import special, stats
 from luv_finder import MatchedFilter
 from luv_finder.catalogue import (
     ResponseCorrelation,
+    _reliability,
     catalogue,
     fidelity,
     groups,
@@ -311,3 +312,14 @@ def test_catalogue_of_the_fixture(data, truth, tmp_path):
     assert sorted(two.meta["snr_jackknife"]) == sorted(2 * cat.meta["snr_jackknife"])
     counted = ~cat["likelihood_lower_limit"]
     np.testing.assert_allclose(two["likelihood"][::2][counted], cat["likelihood"][counted], rtol=1e-12)
+
+
+def test_detection_rule_or_contains_and():
+    rng = np.random.default_rng(7)
+    noise = _gaussian_tail(rng, 2000, 1.1)
+    snr = {"data": np.concatenate([_gaussian_tail(rng, 2000, 1.1), rng.uniform(5.0, 8.0, 40)]), "jackknife": noise}
+    snr["negative"] = noise
+    either, both = (_reliability(snr, 4.0, 3.0, 0.6, rule)[0]["detected"] for rule in ("or", "and"))
+    assert both.sum() < either.sum() and np.all(either[both])
+    with pytest.raises(ValueError, match="rule"):
+        _reliability(snr, 4.0, 3.0, 0.6, "xor")
