@@ -155,6 +155,12 @@ Open:
   +-8% in power in 3 of 8 blocks (chi^2/dof 2.4-7.4 at the line peak; clean channels
   1.0). With the weights as read, false peaks gathered on the ozone lines (3-12x
   the chance rate at S/N >= 5); corrected per channel, they no longer do.
+- **Narrow features that change in time.** The robust check of `weight_scale` exceeds
+  5 sigma in ASPECS 3 mm spw 6, 7, 9 and 11. In spw 9 (20.7 sigma) it is two channels
+  at 108.88 GHz in two execution blocks, with heavy-tailed pair differences on many
+  baselines (the top 1% of pairs carry 11% of `sum w z^2`, twice the Gaussian share):
+  interference or a spur. The mean-based scale down-weights those cells by their
+  real variance; flagging the (scan, channel) cells the check marks would be cleaner.
 - **Jackknife of sparsely sampled fields.** A mosaic field seen once per visit
   (ASPECS 1.2 mm: 9-14 integrations per window, days to months apart) pairs fewer
   rows than one tracked for hours: the per-baseline pairing keeps 67-74% of them
