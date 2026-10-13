@@ -11,27 +11,21 @@ Extras
 ------
 
 ``casa``
-   ``casatools`` and ``casatasks``. Needed to read measurement sets and to
-   simulate mocks. Native arm64 wheels exist for Python 3.12 on macOS >= 14.
-   If the import fails with ``Symbol not found: _CRYPTO_calloc``, upgrade the
-   environment's OpenSSL: ``conda install -c conda-forge "openssl>=3.6"``
-   (casatools bundles OpenSSL 3.6 and dyld reuses whichever
-   ``libcrypto.3.dylib`` loads first).
+   ``casatools`` and ``casatasks``, needed to read measurement sets and to simulate
+   mocks. Native arm64 wheels exist for Python 3.12 on macOS >= 14.
 ``dev``
    pytest, ruff, pre-commit, Sphinx.
 
-Reading data and simulating mocks are numpy (and CASA); the matched filter is JAX,
-in float64. Exporting a measurement set to NPZ with ``luv-export`` lets everything
-else run without CASA.
+Reading data and simulating mocks are NumPy (and CASA); the matched filter is JAX, in
+float64. Exporting a measurement set to NPZ with ``luv-export`` lets everything else run
+without CASA.
 
-CASA runtime data
------------------
+CASA setup
+----------
 
-CASA needs a data directory (measures tables, ephemerides, observatory
-positions). The ``casadata`` pip package ships one copy per environment at
-roughly 850 MB each; it is not a dependency of ``casatools`` and this project
-does not install it. Keep a single shared copy instead, maintained by
-casaconfig, and point every environment at it from ``~/.casa/config.py``:
+CASA needs a runtime data directory (measures tables, ephemerides, antenna
+configurations). Keep one shared copy instead of a ``casadata`` package per environment,
+and point every environment at it from ``~/.casa/config.py``:
 
 .. code-block:: python
 
@@ -39,29 +33,11 @@ casaconfig, and point every environment at it from ``~/.casa/config.py``:
    measures_auto_update = True   # small, changes often
    data_auto_update = False      # ~850 MB, update by hand
 
-Antenna configurations come from this directory too, so the repository does not
-vendor any ``.cfg`` files. Cycle 13 requires casarundata 2026.02.19 or newer;
-``luv_finder.mock.resolve_antenna_config`` reports which cycles your copy has if
-the requested one is missing.
+Populate it once with ``python -c "from casaconfig import pull_data; pull_data()"``.
+Cycle 13 antenna configurations need casarundata 2026.02.19 or newer.
 
-Populate or refresh it with:
-
-.. code-block:: bash
-
-   python -c "from casaconfig import pull_data; pull_data()"       # first time
-   python -c "from casaconfig import measures_update; measures_update()"
-   python -c "from casaconfig import data_update; data_update()"
-
-If ``casadata`` is installed alongside this, it shadows ``measurespath`` on the
-data path and CASA warns that the two sets of measures tables differ. Uninstall
-it: ``pip uninstall casadata``.
-
-CASA log files
---------------
-
-``casatools`` and ``casatasks`` write a ``casa-<timestamp>.log`` into the working
-directory as soon as they are imported. :mod:`luv_finder._casa` presets the
-casaconfig log path so these land in ``logs/`` instead, which is gitignored. Set
-``LUV_CASA_LOG_DIR`` to send them elsewhere. Reach CASA through
-``luv_finder._casa.tools()`` / ``tasks()``; importing it directly re-creates the
-clutter, because the destination is fixed at the first CASA import.
+- If ``import casatools`` fails with ``Symbol not found: _CRYPTO_calloc``, upgrade the
+  environment's OpenSSL: ``conda install -c conda-forge "openssl>=3.6"``.
+- If ``casadata`` is installed as well, it shadows ``measurespath``: ``pip uninstall casadata``.
+- CASA's ``casa-<timestamp>.log`` files go to ``logs/`` (gitignored; set ``LUV_CASA_LOG_DIR``
+  to change it), as long as CASA is reached through ``luv_finder._casa``.
