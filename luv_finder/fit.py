@@ -316,6 +316,16 @@ def fit_line(
     }
 
 
+def empty_fit(cat: Table) -> Table:
+    """A copy of ``cat`` with the :data:`COLUMNS`, not yet fitted (NaN, 0, False)."""
+    out = cat.copy()
+    for name, unit in COLUMNS.items():
+        dtype = bool if name == "fit_converged" else int if name == "fit_n_pointings" else float
+        out[name] = np.full(len(cat), np.nan if dtype is float else 0, dtype=dtype)
+        out[name].unit = unit
+    return out
+
+
 def fit_lines(data: DataHandler | str, cat: Table, rows=None, cores: int | None = None, **kwargs) -> Table:
     """A copy of ``cat`` with the :data:`COLUMNS` of every ``rows`` line (default the detected); failures warn.
 
@@ -328,11 +338,7 @@ def fit_lines(data: DataHandler | str, cat: Table, rows=None, cores: int | None 
         kwargs["channel_noise"] = data.channel_noise()
     if rows is None:
         rows = cat["detected"] if "detected" in cat.colnames else np.ones(len(cat), dtype=bool)
-    out = cat.copy()
-    for name, unit in COLUMNS.items():
-        dtype = bool if name == "fit_converged" else int if name == "fit_n_pointings" else float
-        out[name] = np.full(len(cat), np.nan if dtype is float else 0, dtype=dtype)
-        out[name].unit = unit
+    out = empty_fit(cat)
     for i in np.flatnonzero(rows):
         start = {k: float(cat[k][i]) for k in START if k in cat.colnames}
         try:
