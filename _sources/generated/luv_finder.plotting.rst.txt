@@ -4,6 +4,13 @@
 .. automodule:: luv_finder.plotting
 
    
+   .. rubric:: Module Attributes
+
+   .. autosummary::
+   
+      STYLE
+      FRAMES
+   
    .. rubric:: Functions
 
    .. autosummary::
@@ -11,10 +18,13 @@
       amp_phase_check
       contact_sheet
       dirty_maps_check
+      filter_responses
       line_maps_check
       line_spectra_check
       mosaic_layout
       noise_check
+      passes
+      peak_snr_map
       pointings_check
       reliability_check
       response_check
@@ -24,6 +34,7 @@
       snr_map
       source_size_check
       spectrum_check
+      style
       uv_profile
       weights_check
    

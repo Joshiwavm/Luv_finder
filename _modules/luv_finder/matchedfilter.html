@@ -615,19 +615,12 @@
 
 <div class="viewcode-block" id="MatchedFilter.plot_response">
 <a class="viewcode-back" href="../../generated/luv_finder.matchedfilter.html#luv_finder.matchedfilter.MatchedFilter.plot_response">[docs]</a>
-    <span class="k">def</span><span class="w"> </span><span class="nf">plot_response</span><span class="p">(</span>
-        <span class="bp">self</span><span class="p">,</span> <span class="n">filename</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">"plots/filter_response.png"</span><span class="p">,</span> <span class="n">show</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span> <span class="n">vline</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
-    <span class="p">):</span>
-<span class="w">        </span><span class="sd">"""Save the best grid point's S/N spectrum (see :mod:`luv_finder.plotting`)."""</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">plot_response</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">filename</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="n">vline</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">"""The best grid point's S/N spectrum, saved to ``filename`` if given (:mod:`luv_finder.plotting`)."""</span>
         <span class="kn">from</span><span class="w"> </span><span class="nn">.plotting</span><span class="w"> </span><span class="kn">import</span> <span class="n">response_check</span>
 
-        <span class="n">plots_dir</span><span class="p">,</span> <span class="n">name</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="n">filename</span><span class="p">)</span>
-        <span class="n">path</span> <span class="o">=</span> <span class="n">response_check</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">plots_dir</span><span class="o">=</span><span class="n">plots_dir</span> <span class="ow">or</span> <span class="s2">"."</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="n">name</span><span class="p">,</span> <span class="n">line_ghz</span><span class="o">=</span><span class="n">vline</span><span class="p">)</span>
-        <span class="k">if</span> <span class="n">show</span><span class="p">:</span>  <span class="c1"># pragma: no cover - interactive only</span>
-            <span class="kn">import</span><span class="w"> </span><span class="nn">matplotlib.pyplot</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">plt</span>
-
-            <span class="n">plt</span><span class="o">.</span><span class="n">show</span><span class="p">()</span>
-        <span class="k">return</span> <span class="n">path</span></div>
+        <span class="n">plots_dir</span><span class="p">,</span> <span class="n">name</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="n">filename</span><span class="p">)</span> <span class="k">if</span> <span class="n">filename</span> <span class="k">else</span> <span class="p">(</span><span class="kc">None</span><span class="p">,</span> <span class="s2">"filter_response"</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">response_check</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">plots_dir</span><span class="o">=</span><span class="p">(</span><span class="n">plots_dir</span> <span class="ow">or</span> <span class="s2">"."</span><span class="p">)</span> <span class="k">if</span> <span class="n">filename</span> <span class="k">else</span> <span class="kc">None</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="n">name</span><span class="p">,</span> <span class="n">line_ghz</span><span class="o">=</span><span class="n">vline</span><span class="p">)</span></div>
 </div>
 
 
