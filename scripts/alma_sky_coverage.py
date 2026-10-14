@@ -14,12 +14,15 @@ merged spw intervals, and the summed bandwidth. ``plot`` draws
   cell: the footprints are rasterised on a fine HEALPix grid (``--nside``, 3.2" pixels by
   default) and the unique covered pixels summed per coarse cell, so repeat visits count once;
 - zooms on a few deep fields with every footprint drawn: ``s_region`` is the half-power circle
-  (``s_fov`` = PB FWHM) of a single pointing and the outline of a mosaic;
+  (``s_fov`` = PB FWHM) of a single pointing and the outline of a mosaic, often non-convex,
+  with ``Not (...)`` holes, or a ``Union`` of disjoint outlines (whose ``s_fov`` spans them all,
+  up to tens of degrees, so areas come from the rasterised outlines, never from ``s_fov``);
 - per band, the unique area and area x bandwidth (the blind-line survey volume before redshift),
   the latter summed over footprints, so a field seen twice in one tuning counts twice.
 
-ALminer pins pyvo 1.2.1, which imports ``cgi`` and fails on Python >= 3.13; on 3.12 it works,
-otherwise ``pip install -U pyvo``. Needs ``healpy`` besides ALminer.
+ALminer pins pyvo 1.2.1, which has no ``DALOverflowWarning`` (a truncated result passes
+silently) and imports ``cgi`` (gone in Python 3.13): ``pip install -U pyvo`` after ALminer;
+its old astroquery also needs ``setuptools<81`` for ``pkg_resources``. Needs ``healpy``.
 """
 
 import argparse
@@ -35,6 +38,7 @@ from astropy.table import Table
 from matplotlib.collections import PatchCollection
 from matplotlib.colors import LogNorm
 from matplotlib.patches import Circle, Polygon
+from matplotlib.path import Path as MplPath
 
 C = 299792458.0  # m/s
 FIELDS = Path("data/archive/alma_fields.ecsv")
@@ -142,39 +146,61 @@ def merge_intervals(spans):
 
 
 def shapes(s_region):
-    """``s_region`` (STC-S: Circle, Polygon, Union of them) as [("circle", ra, dec, r) | ("polygon", ras, decs)]."""
+    """``s_region`` (STC-S: Circle, Polygon, Union of them, ``Not (...)`` holes) as a list of
+    ("circle", ra, dec, r) | ("polygon", ras, decs), with "hole" for a polygon inside ``Not``."""
     out = []
-    for kind, nums in re.findall(r"(circle|polygon)\s+(?:icrs\s+)?([-+\d.eE\s]+)", s_region, flags=re.I):
+    pattern = r"(not\s*\(\s*)?(circle|polygon)\s+(?:icrs\s+)?([-+\d.eE\s]+)"
+    for neg, kind, nums in re.findall(pattern, s_region, flags=re.I):
         x = np.array(nums.split(), dtype=float)
         if kind.lower() == "circle":
             out.append(("circle", *x[:3]))
         else:
-            out.append(("polygon", x[0::2], x[1::2]))
+            out.append(("hole" if neg else "polygon", x[0::2], x[1::2]))
     return out
 
 
-def pixels(fields, nside):
-    """Unique NESTED HEALPix pixels (at ``nside``) inside any footprint of ``fields``."""
-    ids = []
-    for region in fields["s_region"]:
-        for shape in shapes(region):
-            if shape[0] == "circle":
-                _, ra, dec, r = shape
-                vec = hp.ang2vec(ra, dec, lonlat=True)
-                ids.append(hp.query_disc(nside, vec, np.radians(r), nest=True))
-            else:
-                _, ras, decs = shape
-                if np.allclose([ras[0], decs[0]], [ras[-1], decs[-1]]):
-                    ras, decs = ras[:-1], decs[:-1]
-                try:
-                    vec = hp.ang2vec(ras, decs, lonlat=True)
-                    ids.append(hp.query_polygon(nside, vec, nest=True))
-                except (RuntimeError, ValueError):  # non-convex outline: fall back to its bounding circle
-                    centre = SkyCoord(ras.mean(), decs.mean(), unit="deg")
-                    r = centre.separation(SkyCoord(ras, decs, unit="deg")).deg.max()
-                    vec = hp.ang2vec(centre.ra.deg, centre.dec.deg, lonlat=True)
-                    ids.append(hp.query_disc(nside, vec, np.radians(r), nest=True))
-    return np.unique(np.concatenate(ids)) if ids else np.array([], dtype=np.int64)
+def region_pixels(s_region, nside):
+    """NESTED HEALPix pixels (at ``nside``) whose centres fall inside the footprint ``s_region``."""
+    inside, holes = [np.array([], dtype=np.int64)], [np.array([], dtype=np.int64)]
+    for shape in shapes(s_region):
+        if shape[0] == "circle":
+            _, ra, dec, r = shape
+            inside.append(hp.query_disc(nside, hp.ang2vec(ra, dec, lonlat=True), np.radians(r), nest=True))
+        else:
+            (holes if shape[0] == "hole" else inside).append(_polygon_pixels(nside, *shape[1:]))
+    return np.setdiff1d(np.concatenate(inside), np.concatenate(holes))
+
+
+def covered(regions, nside, buffer=2**26):
+    """Unique pixels covered by any of ``regions`` and each region's pixel count; merged
+    every ``buffer`` pixels so overlapping mosaics do not pile up in memory."""
+    ids, pending, npix = np.array([], dtype=np.int64), [], {}
+    for region in regions:
+        pix = region_pixels(region, nside)
+        npix[region] = len(pix)
+        pending.append(pix)
+        if sum(map(len, pending)) > buffer:
+            ids, pending = np.unique(np.concatenate([ids, *pending])), []
+    return np.unique(np.concatenate([ids, *pending])), npix
+
+
+def _polygon_pixels(nside, ras, decs):
+    """Pixels inside a (possibly non-convex) outline: candidates from its bounding disc,
+    kept if inside the outline in the gnomonic projection about its centre."""
+    vec = hp.ang2vec(ras, decs, lonlat=True)
+    centre = vec.mean(axis=0)
+    centre /= np.linalg.norm(centre)
+    radius = np.arccos(np.clip(vec @ centre, -1, 1)).max()
+    ids = hp.query_disc(nside, centre, radius, inclusive=True, nest=True)
+    east = np.cross([0.0, 0.0, 1.0], centre)
+    east /= np.linalg.norm(east)
+    north = np.cross(centre, east)
+
+    def project(v):
+        return np.column_stack([v @ east, v @ north]) / (v @ centre)[:, None]
+
+    keep = MplPath(project(vec)).contains_points(project(np.column_stack(hp.pix2vec(nside, ids, nest=True))))
+    return ids[keep]
 
 
 # ---------------------------------------------------------------- plot
@@ -200,9 +226,10 @@ def plot(
     union, stats = [], {}
     for band in bands:
         sel = fields[fields["band"] == band]
-        ids = pixels(sel, nside)
+        ids, npix = covered(set(sel["s_region"]), nside)
         union.append(ids)
-        stats[band] = (len(sel), len(ids) * pix_area, float(np.sum(_area(sel) * sel["bandwidth"])))
+        area = np.array([npix[r] for r in sel["s_region"]]) * pix_area
+        stats[band] = (len(sel), len(ids) * pix_area, float(np.sum(area * sel["bandwidth"])))
     ids = np.unique(np.concatenate(union))
     area_map = np.bincount(ids >> shift, minlength=hp.nside2npix(nside_map)) * pix_area
 
@@ -219,11 +246,6 @@ def plot(
     fig.savefig(out, dpi=200)
     print(f"-> {out}")
     return fig
-
-
-def _area(fields):
-    """Half-power area of each footprint in arcmin^2, from s_fov (the PB FWHM, or a mosaic's extent)."""
-    return np.pi * (np.asarray(fields["fov"]) * 60 / 2) ** 2
 
 
 def _sky(ax, area_map, nside_map, dec_max, zooms, fig):
@@ -249,8 +271,7 @@ def _sky(ax, area_map, nside_map, dec_max, zooms, fig):
     ax.set_xticks(np.radians(np.arange(-150, 151, 30)))
     ax.set_xticklabels([f"{int(h)}h" for h in (np.arange(150, -151, -30) % 360) / 15])
     ax.grid(True, lw=0.4, alpha=0.5)
-    north = np.radians(np.linspace(dec_max, 90, 31))
-    ax.pcolormesh(ra, north, np.zeros((30, n_ra)), cmap="Greys", vmin=-4, vmax=1, alpha=0.4, lw=0, rasterized=True)
+    ax.fill_between(ra, np.radians(dec_max), np.pi / 2, color="0.88", lw=0, zorder=0)
     ax.set_title(f"HEALPix cells of {hp.nside2resol(nside_map, arcmin=True) / 60:.1f} deg", fontsize=10)
 
 
@@ -261,6 +282,7 @@ def _table(ax, stats, total):
     table = ax.table(
         cellText=rows,
         colLabels=["band", "footprints", "area\n[arcmin$^2$]", "area x BW\n[arcmin$^2$ GHz]"],
+        colWidths=[0.16, 0.24, 0.28, 0.32],
         loc="center",
     )
     table.auto_set_font_size(False)
@@ -281,7 +303,7 @@ def _zoom(ax, fields, name, ra0, dec0, half):
                     _, ra, dec, r = shape
                     x, y = _offset(centre, ra, dec)
                     patches.append(Circle((x[0], y[0]), r * 60))
-                else:
+                elif shape[0] == "polygon":
                     x, y = _offset(centre, shape[1], shape[2])
                     patches.append(Polygon(np.column_stack([x, y])))
         color = BAND_COLORS.get(band, "k")
