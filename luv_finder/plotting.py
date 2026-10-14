@@ -821,13 +821,16 @@ def _per_group(x, n, ndim):
 
 
 @_styled
-def filter_responses(freqs, snr, widths, labels, jk=None, span=3000.0, plots_dir=None, name="filter_responses"):
+def filter_responses(
+    freqs, snr, widths, labels, jk=None, at=None, span=3000.0, plots_dir=None, name="filter_responses"
+):
     """The matched-filter response of every group: S/N against frequency for each template, one panel each.
 
     ``freqs[g]`` (Hz), ``widths[g]`` (km/s) and ``snr[g]``, ``jk[g]`` (templates x frequencies) per group, as
     saved by a run (groups of different units have different frequencies); one shared array is accepted for
-    each too. The best template is drawn thick, the jackknife's response to it in grey, the group's S/N
-    dotted; each panel spans ``span`` km/s around the peak (None: everything).
+    each too. ``at[g]`` (Hz) is the group's own frequency, marked: another line at the same position can be
+    brighter (default: the peak). The best template there is drawn thick, the jackknife's response to it in
+    grey, the group's S/N dotted; each panel spans ``span`` km/s around it (None: everything).
     """
     n = len(labels)
     freqs, widths = _per_group(freqs, n, 1), _per_group(widths, n, 1)
@@ -839,7 +842,12 @@ def filter_responses(freqs, snr, widths, labels, jk=None, span=3000.0, plots_dir
         if not np.isfinite(s).any():
             ax.set_title(f"{label}: no response", fontsize=9)
             continue
-        t, k = np.unravel_index(np.nanargmax(s), s.shape)
+        if at is None:
+            t, k = np.unravel_index(np.nanargmax(s), s.shape)
+        else:
+            k = int(np.argmin(np.abs(f - at[g] / 1e9)))
+            t = int(np.nanargmax(s[:, k]))
+            ax.axvline(f[k], c="C3", lw=0.6, alpha=0.6)
         near = np.ones(f.size, bool) if span is None else np.abs(f / f[k] - 1) * C_KMS <= span
         ax.axhline(0, c="0.5", lw=0.5)
         if jk[g] is not None:

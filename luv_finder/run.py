@@ -446,8 +446,13 @@ class Run:
         return RunPlots(self)
 
     def diagnostics(self, plots_dir=None) -> list:
-        """Do the weights predict the scatter? One figure per unit: as read and reweighted, one field and pooled."""
-        return [self.plot.weights(unit, plots_dir=plots_dir) for unit in self.units if self.export_path(unit).exists()]
+        """Do the weights predict the scatter? :meth:`RunPlots.weights` for every window of every exported unit."""
+        return [
+            self.plot.weights(unit, spw=spw, plots_dir=plots_dir)
+            for unit, spws in self.units.items()
+            if self.export_path(unit).exists()
+            for spw in spws
+        ]
 
 
 class RunPlots:
@@ -492,7 +497,14 @@ class RunPlots:
         freqs, widths, snr, jk = self.run.responses(rows)
         labels = [f"#{r['id']} {r['unit']}" for r in rows]
         return filter_responses(
-            freqs, snr, widths, labels, jk=jk, plots_dir=self._dir(plots_dir), name=f"{which}_responses"
+            freqs,
+            snr,
+            widths,
+            labels,
+            jk=jk,
+            at=np.asarray(rows["freq_ghz"]) * 1e9,
+            plots_dir=self._dir(plots_dir),
+            name=f"{which}_responses",
         )
 
     def snr_map(self, plots_dir=None):
@@ -509,27 +521,24 @@ class RunPlots:
             name="peak_snr",
         )
 
-    def weights(self, unit: str, field: int | None = None, plots_dir=None):
-        """The weights against the scatter in one unit: one field as read and reweighted, and all fields pooled."""
+    def weights(self, unit: str, spw: int | None = None, field: int | None = None, plots_dir=None):
+        """Do the weights predict the scatter? One window of a unit (default its first): one field as read
+        and reweighted, and all fields pooled."""
         from .plotting import weights_check
 
         run = self.run
-        fields = fields_in(str(run.export_path(unit)))
-        field = fields[0] if field is None else field
         pooled = run.chunks(unit)
-        one = [c for c in pooled if c.field == field]
-        raw = run.chunks(unit, [field], as_read=True)
-        windows = [(r, o, [p for p in pooled if p.spw == o.spw]) for r, o in zip(raw, one, strict=True)]
-        return [
-            weights_check(
-                [r, o],
-                ["as read", "reweighted"],
-                plots_dir=self._dir(plots_dir),
-                name=f"weights_{unit}_spw{o.spw:02d}_field{field}",
-                pooled=p,
-            )
-            for r, o, p in windows
-        ]
+        spw = pooled[0].spw if spw is None else spw
+        field = min(c.field for c in pooled if c.spw == spw) if field is None else field
+        (fixed,) = [c for c in pooled if c.spw == spw and c.field == field]
+        (raw,) = [c for c in run.chunks(unit, [field], as_read=True) if c.spw == spw]
+        return weights_check(
+            [raw, fixed],
+            ["as read", "reweighted"],
+            plots_dir=self._dir(plots_dir),
+            name=f"weights_{unit}_spw{spw:02d}_field{field}",
+            pooled=[c for c in pooled if c.spw == spw],
+        )
 
 
 __all__ = ["Run", "RunPlots", "unit_name", "window_units"]
