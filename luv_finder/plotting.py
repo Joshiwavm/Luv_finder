@@ -726,6 +726,32 @@ def contact_sheet(plots_dir: str, title: str = "Luv_finder diagnostics") -> str:
     return path
 
 
+#: Gallery frame of a line that passes only the likelihood ratio, or only the fidelity; both: the plain frame.
+FRAMES = {"likelihood": "k", "fidelity": "0.8"}
+
+
+def passes(cat) -> np.ndarray:
+    """Which reliability test each row passes: ``both``, ``likelihood``, ``fidelity`` or ``none``."""
+    if not {"likelihood", "likelihood_lower_limit", "fidelity"} <= set(cat.colnames) or "k" not in cat.meta:
+        return np.full(len(cat), "both")
+    lr = (np.asarray(cat["likelihood"]) >= cat.meta["k"]) | np.asarray(cat["likelihood_lower_limit"], dtype=bool)
+    fid = np.asarray(cat["fidelity"]) >= cat.meta["fidelity_min"]
+    return np.where(lr & fid, "both", np.where(lr, "likelihood", np.where(fid, "fidelity", "none")))
+
+
+def _frame(ax, passed):
+    """A thick frame around a panel whose line passes only one test (:data:`FRAMES`)."""
+    if passed in FRAMES:
+        for spine in ax.spines.values():
+            spine.set_edgecolor(FRAMES[passed])
+            spine.set_linewidth(3)
+
+
+def _frame_note(fig, passed):
+    if any(p in FRAMES for p in passed):
+        fig.suptitle("thick black frame: likelihood ratio only; thick grey frame: fidelity only", fontsize=9)
+
+
 def _panels(n, height, ncol=5):
     ncol = min(ncol, max(n, 1))
     nrow = max(1, int(np.ceil(n / ncol)))
@@ -739,8 +765,10 @@ def _panels(n, height, ncol=5):
 def line_maps_check(maps, cat, plots_dir=None, name="line_maps"):
     """Moment-0 map of every fitted line (:func:`luv_finder.imaging.line_maps`), the fitted position marked."""
     rows = cat[np.isfinite(cat["fit_dra"])]
+    passed = passes(rows)
     fig, axes = _panels(len(rows), 2.9)
-    for ax, row, (dra, ddec, m0) in zip(axes, rows, maps, strict=False):
+    for ax, row, p, (dra, ddec, m0) in zip(axes, rows, passed, maps, strict=False):
+        _frame(ax, p)
         half = np.diff(dra[:2])[0] / 2
         extent = (dra[0] - half, dra[-1] + half, ddec[0] - half, ddec[-1] + half)
         im = ax.imshow(m0.T, origin="lower", extent=extent, cmap="magma")
@@ -748,15 +776,18 @@ def line_maps_check(maps, cat, plots_dir=None, name="line_maps"):
         fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04, label="Jy/beam km/s")
         _sky_axes(ax)
         ax.set_title(f"#{row['id']}  {row['fit_freq_ghz']:.3f} GHz", fontsize=10)
+    _frame_note(fig, passed)
     return _save(fig, plots_dir, name)
 
 
 @_styled
 def line_spectra_check(cat, span=3.0, plots_dir=None, name="line_spectra"):
     """Each fitted line's spectrum and best fit within ``span`` FWHM of its centre, both over the fitted peak."""
-    rows = [r for r in cat if str(r["id"]) in cat.meta.get("spectra", {})]
+    keep = np.array([str(i) in cat.meta.get("spectra", {}) for i in cat["id"]], dtype=bool)
+    rows, passed = [r for r, k in zip(cat, keep, strict=True) if k], passes(cat)[keep]
     fig, axes = _panels(len(rows), 3.2)
-    for ax, row in zip(axes, rows, strict=False):
+    for ax, row, p in zip(axes, rows, passed, strict=False):
+        _frame(ax, p)
         sp = {k: np.asarray(v) for k, v in cat.meta["spectra"][str(row["id"])].items()}
         near = np.abs(sp["freq_ghz"] / row["fit_freq_ghz"] - 1) * C_KMS <= span * row["fit_width"]
         f, peak = sp["freq_ghz"][near], row["fit_peak"]
@@ -774,6 +805,7 @@ def line_spectra_check(cat, span=3.0, plots_dir=None, name="line_spectra"):
         ax.set_title(f"#{row['id']}  S/N {row['snr']:.1f}", fontsize=10)
         ax.set_xlabel("frequency [GHz]")
         ax.set_ylabel("flux / fitted peak")
+    _frame_note(fig, passed)
     return _save(fig, plots_dir, name)
 
 
@@ -822,7 +854,7 @@ def _per_group(x, n, ndim):
 
 @_styled
 def filter_responses(
-    freqs, snr, widths, labels, jk=None, at=None, span=3000.0, plots_dir=None, name="filter_responses"
+    freqs, snr, widths, labels, jk=None, at=None, passed=None, span=3000.0, plots_dir=None, name="filter_responses"
 ):
     """The matched-filter response of every group: S/N against frequency for each template, one panel each.
 
@@ -830,14 +862,17 @@ def filter_responses(
     saved by a run (groups of different units have different frequencies); one shared array is accepted for
     each too. ``at[g]`` (Hz) is the group's own frequency, marked: another line at the same position can be
     brighter (default: the peak). The best template there is drawn thick, the jackknife's response to it in
-    grey, the group's S/N dotted; each panel spans ``span`` km/s around it (None: everything).
+    grey, the group's S/N dotted; each panel spans ``span`` km/s around it (None: everything). ``passed[g]``
+    (see :func:`passes`) frames a group that passes only one reliability test.
     """
     n = len(labels)
     freqs, widths = _per_group(freqs, n, 1), _per_group(widths, n, 1)
     snr = _per_group(snr, n, 2)
     jk = [None] * n if jk is None else _per_group(jk, n, 2)
+    passed = ["both"] * n if passed is None else list(passed)
     fig, axes = _panels(n, 2.9)
     for g, (ax, label) in enumerate(zip(axes, labels, strict=False)):
+        _frame(ax, passed[g])
         f, s, w = np.asarray(freqs[g]) / 1e9, np.asarray(snr[g]), np.asarray(widths[g])
         if not np.isfinite(s).any():
             ax.set_title(f"{label}: no response", fontsize=9)
@@ -860,4 +895,5 @@ def filter_responses(
         ax.set_ylabel("S/N")
     if n:
         axes[0].legend(fontsize=6)
+    _frame_note(fig, passed)
     return _save(fig, plots_dir, name)

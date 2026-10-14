@@ -491,7 +491,7 @@ class RunPlots:
 
     def responses(self, which: str = "detected", plots_dir=None):
         """Filter response (S/N against frequency, every template) at each detection, with the jackknife's."""
-        from .plotting import filter_responses
+        from .plotting import filter_responses, passes
 
         rows = self._rows(which)
         freqs, widths, snr, jk = self.run.responses(rows)
@@ -503,6 +503,7 @@ class RunPlots:
             labels,
             jk=jk,
             at=np.asarray(rows["freq_ghz"]) * 1e9,
+            passed=passes(rows),
             plots_dir=self._dir(plots_dir),
             name=f"{which}_responses",
         )
