@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 from astropy.table import Table
 
-from luv_finder.run import RUN_FILE, Run, unit_name, window_units
+from luv_finder.run import RUN_FILE, Run, duplicates, unit_name, window_units
 
 
 @pytest.fixture(scope="module")
@@ -109,3 +109,19 @@ def test_run_plots_come_from_saved_products(run):
         assert isinstance(figure(plots_dir=False), Figure)
     with pytest.raises(ValueError, match="no weight scales"):
         run.diagnostics(plots_dir=False)
+
+
+def test_duplicates_catch_the_two_halves_of_a_line_split_by_a_window_edge():
+    """ASPECS 3mm.07: 609 km/s wide across the spw00/spw01 gap, found in both, its halves 300 km/s apart."""
+    cat = Table({
+        "id": [1, 2, 3, 4],
+        "unit": ["spw01", "spw00", "spw00", "spw02"],
+        "detected": [True, True, True, True],
+        "dra": [0.0, 0.3, 7.0, 0.1],
+        "ddec": [0.0, 0.2, 0.0, 0.0],
+        "freq_ghz": [93.610, 93.516, 93.500, 93.600],
+        "width": [300.0, 500.0, 100.0, 100.0],
+        "fit_width": [243.0, 476.0, 172.0, np.nan],
+    })  # fmt: skip
+    beam = {"spw00": 0.7, "spw01": 0.7, "spw02": 0.7}
+    assert duplicates(cat, beam).tolist() == [0, 1, 0, 1]

@@ -82,6 +82,38 @@ def _window_freqs(path: str) -> dict[int, np.ndarray]:
         msmd.close()
 
 
+def _fitted(cat: Table, key: str) -> np.ndarray:
+    """``fit_<key>`` where the line was fitted, the catalogue's ``key`` elsewhere."""
+    value = np.asarray(cat[key], dtype=float)
+    if f"fit_{key}" not in cat.colnames:
+        return value
+    fit = np.asarray(cat[f"fit_{key}"], dtype=float)
+    return np.where(np.isfinite(fit), fit, value)
+
+
+def duplicates(cat: Table, beam: dict) -> np.ndarray:
+    """Id of a brighter detection of the same line in another unit, else 0.
+
+    Two detections are one line when they are within ``beam[unit]`` (arcsec) of each other and their
+    profiles overlap, ``|dv| <= (FWHM_a + FWHM_b) / 2``, with the fitted position, frequency and width
+    where the line was fitted: a line wider than the gap it straddles between two windows is found once
+    in each, its halves far apart in frequency. ``cat`` is sorted by S/N, brightest first.
+    """
+    dra, ddec, nu, width = (_fitted(cat, k) for k in ("dra", "ddec", "freq_ghz", "width"))
+    unit = np.asarray(cat["unit"])
+    of = np.zeros(len(cat), dtype=int)
+    rows = np.flatnonzero(cat["detected"])
+    for n, a in enumerate(rows):
+        if of[a]:
+            continue
+        for b in rows[n + 1 :]:
+            near = np.hypot(dra[a] - dra[b], ddec[a] - ddec[b]) <= beam[unit[a]]
+            overlap = abs(nu[b] / nu[a] - 1) * C_KMS <= (width[a] + width[b]) / 2
+            if not of[b] and unit[b] != unit[a] and near and overlap:
+                of[b] = cat["id"][a]
+    return of
+
+
 class Run:
     """A line search described by a YAML file (or dict); see the module docstring.
 
@@ -348,24 +380,9 @@ class Run:
         return near
 
     def duplicates(self, cat: Table) -> np.ndarray:
-        """Id of a brighter detection of the same line in another unit (within a beam and half a width), else 0."""
+        """:func:`duplicates` of ``cat``, the beam of each unit from its catalogue."""
         beam = {u: max(Table.read(self.path(u, ".ecsv")).meta["hwhm_major"]) for u in self.units}
-        of = np.zeros(len(cat), dtype=int)
-        rows = np.flatnonzero(cat["detected"])
-        for n, a in enumerate(rows):
-            if of[a]:
-                continue
-            for b in rows[n + 1 :]:
-                near = np.hypot(cat["dra"][a] - cat["dra"][b], cat["ddec"][a] - cat["ddec"][b])
-                dv = abs(cat["freq_ghz"][b] / cat["freq_ghz"][a] - 1) * C_KMS
-                if (
-                    not of[b]
-                    and cat["unit"][b] != cat["unit"][a]
-                    and near <= beam[cat["unit"][a]]
-                    and dv <= cat["width"][a] / 2
-                ):
-                    of[b] = cat["id"][a]
-        return of
+        return duplicates(cat, beam)
 
     # ---------------------------------------------------------------- products
     @property
@@ -550,4 +567,4 @@ class RunPlots:
         )
 
 
-__all__ = ["Run", "RunPlots", "unit_name", "window_units"]
+__all__ = ["Run", "RunPlots", "duplicates", "unit_name", "window_units"]

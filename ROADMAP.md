@@ -174,6 +174,15 @@ Open:
 - **Fit across overlapping windows.** Windows that overlap in frequency are combined
   in the search, but `fit_line` uses one window per pointing, so a line in the
   ASPECS 3 mm double-tuned range is fitted with one tuning's data.
+- **Lines across a window edge.** A line wider than the gap between two adjacent
+  windows is searched in each window apart, so it is found twice: ASPECS 3mm.07 (609
+  km/s at 93.558 GHz, between spw00, ending at 93.563 GHz, and spw01, starting at
+  93.570 GHz) is detected as its low half in spw00 (fitted 476 km/s) and its high
+  half in spw01 (243 km/s), 0.4" and 300 km/s apart, each with part of the flux.
+  Done: `run.duplicates` calls two detections one line when they are within a beam
+  and their fitted profiles overlap, `|dv| <= (FWHM_a + FWHM_b) / 2`, so the fainter
+  half is flagged. Open: search and fit adjacent windows as one spectrum (a template
+  and a line profile across the gap), so the line is found once with all its flux.
 - **Channel response.** The template is a Gaussian sampled at the channel centres;
   Hanning smoothing and channel averaging broaden a line a few channels wide, and
   windows with different correlator setups then see slightly different peaks. The
