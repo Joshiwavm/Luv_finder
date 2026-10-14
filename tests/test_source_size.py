@@ -85,7 +85,7 @@ def test_recovers_declared_snr(name, request):
             expected.response[0],
             drawn.response[0],
             declared,
-            f"size_{name}: expected {peak:.2f}, declared {declared:.2f}",
+            f"size_{name}",
             plots_dir=str(REPO / "plots" / "source_size"),
             name=f"size_{name}",
         )

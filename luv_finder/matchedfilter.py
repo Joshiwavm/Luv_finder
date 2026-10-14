@@ -338,19 +338,12 @@ class MatchedFilter(_Grid):
             snr.append(np.asarray(block)[:, :, :n])
         return np.concatenate(snr, axis=2), np.asarray(error)
 
-    def plot_response(
-        self, filename: str = "plots/filter_response.png", show: bool = False, vline: float | None = None
-    ):
-        """Save the best grid point's S/N spectrum (see :mod:`luv_finder.plotting`)."""
+    def plot_response(self, filename: str | None = None, vline: float | None = None):
+        """The best grid point's S/N spectrum, saved to ``filename`` if given (:mod:`luv_finder.plotting`)."""
         from .plotting import response_check
 
-        plots_dir, name = os.path.split(filename)
-        path = response_check(self, plots_dir=plots_dir or ".", name=name, line_ghz=vline)
-        if show:  # pragma: no cover - interactive only
-            import matplotlib.pyplot as plt
-
-            plt.show()
-        return path
+        plots_dir, name = os.path.split(filename) if filename else (None, "filter_response")
+        return response_check(self, plots_dir=(plots_dir or ".") if filename else None, name=name, line_ghz=vline)
 
 
 def build_grid(data: DataHandler, cfg: dict | None) -> dict:

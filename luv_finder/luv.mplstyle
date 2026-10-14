@@ -1,0 +1,25 @@
+# Luv_finder figure style (luv_finder.plotting.style), after the thesis style:
+# serif text, inward ticks on all four sides with minor ticks, a diverging palette.
+# The cycle keeps matplotlib's roles (C0 blue, C1 orange, C2 green, C3 red, C7 grey),
+# so code that colours by role reads the same; the pale abd9e9 comes last.
+
+font.family:         serif
+mathtext.fontset:    dejavuserif
+
+axes.prop_cycle:     cycler('color', ['2c7bb6', 'fdae61', '1a9641', 'd7191c', '7b3294', 'a6611a', 'de77ae', '636363', '9c9e2c', 'abd9e9'])
+axes.grid:           False
+axes.titlesize:      medium
+
+xtick.top:           True
+xtick.direction:     in
+xtick.minor.visible: True
+ytick.right:         True
+ytick.direction:     in
+ytick.minor.visible: True
+
+legend.frameon:      True
+legend.framealpha:   0.8
+legend.fontsize:     small
+
+figure.dpi:          200
+savefig.dpi:         200

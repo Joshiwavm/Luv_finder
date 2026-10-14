@@ -290,7 +290,9 @@ UNITS = {
 SEARCH_META = ("jackknife_spread", "hwhm_major", "hwhm_minor", "pa", "spectral_hwhm", "sidelobe")
 
 
-def catalogue(result: SearchResult, ref=None, floor: float = 4.0, k: float = 3.0, fidelity_min: float = 0.6) -> Table:
+def catalogue(
+    result: SearchResult, ref=None, floor: float = 4.0, k: float = 3.0, fidelity_min: float = 0.6, rule: str = "or"
+) -> Table:
     """Catalogue the line candidates of a search: one row per group of the data, by S/N descending.
 
     The noise correlation of ``result`` is measured, and the data, the jackknife and the negated
@@ -298,9 +300,10 @@ def catalogue(result: SearchResult, ref=None, floor: float = 4.0, k: float = 3.0
     group gets the likelihood ratio and the fidelity against the jackknife's groups
     (:func:`likelihood`, :func:`fidelity`). A group passes the likelihood ratio if
     ``Lambda >= k`` or no jackknife group is as bright: there ``Lambda`` diverges, and its lower
-    limit is the last finite value, at the brightest jackknife group. It is ``detected`` if it passes and its
-    fidelity is at least ``fidelity_min``, or the likelihood alone if the fidelity could not be
-    fitted. Nothing is clipped: the candidates are ``cat[cat["detected"]]``.
+    limit is the last finite value, at the brightest jackknife group. It is ``detected`` if it passes
+    the likelihood ratio or its fidelity is at least ``fidelity_min`` (``rule="or"``), or both
+    (``rule="and"``, where a fidelity that could not be fitted does not count against it). Nothing
+    is clipped: the candidates are ``cat[cat["detected"]]``.
 
     Parameters
     ----------
@@ -314,6 +317,8 @@ def catalogue(result: SearchResult, ref=None, floor: float = 4.0, k: float = 3.0
         Likelihood-ratio threshold.
     fidelity_min : float
         Fidelity threshold.
+    rule : {"or", "and"}
+        How the two tests combine into ``detected``.
 
     Returns
     -------
@@ -352,7 +357,7 @@ def catalogue(result: SearchResult, ref=None, floor: float = 4.0, k: float = 3.0
     columns |= {key: getattr(result, key)[i, j, t, c] for key in ("snr", "flux", "error")}
     columns |= {"line_flux": line_flux, "line_flux_error": line_flux_error, "coverage": result.coverage[i, j, c]}
     columns["n_peaks"] = np.array([g.n_peaks for g in found["data"]], dtype=int)
-    reliable, meta = _reliability(snr, floor, k, fidelity_min)
+    reliable, meta = _reliability(snr, floor, k, fidelity_min, rule)
     search = {"jackknife_spread": jackknife_spread(result)} | {key: getattr(nc, key) for key in SEARCH_META[1:]}
     cat = Table(columns | reliable, meta={key: value.tolist() for key, value in search.items()} | meta)
     for name, unit in UNITS.items():
@@ -361,13 +366,19 @@ def catalogue(result: SearchResult, ref=None, floor: float = 4.0, k: float = 3.0
     return cat
 
 
-def _reliability(snr: dict, floor: float, k: float, fidelity_min: float) -> tuple[dict, dict]:
+def _reliability(snr: dict, floor: float, k: float, fidelity_min: float, rule: str = "or") -> tuple[dict, dict]:
     """Likelihood ratio, fidelity and detection of the data groups against the jackknife's, as columns and meta."""
     ratio, lower = likelihood(snr["data"], snr["jackknife"])
     fid, (amplitude, sigma), bins = fidelity(snr["data"], snr["jackknife"], floor)
-    detected = ((ratio >= k) | lower) & ((fid >= fidelity_min) | np.isnan(fid))
+    passes = (ratio >= k) | lower
+    if rule == "or":
+        detected = passes | (fid >= fidelity_min)
+    elif rule == "and":
+        detected = passes & ((fid >= fidelity_min) | np.isnan(fid))
+    else:
+        raise ValueError(f'rule is "or" or "and", not {rule!r}')
     columns = {"likelihood": ratio, "likelihood_lower_limit": lower, "fidelity": fid, "detected": detected}
-    meta = {"floor": float(floor), "k": float(k), "fidelity_min": float(fidelity_min)}
+    meta = {"floor": float(floor), "k": float(k), "fidelity_min": float(fidelity_min), "rule": rule}
     meta |= {"noise_amplitude": float(amplitude), "noise_sigma": float(sigma)}
     for key, passed in (("snr_likelihood", ratio >= k), ("snr_fidelity", fid >= fidelity_min)):
         meta[key] = float(snr["data"][passed].min()) if passed.any() else np.nan
@@ -378,11 +389,11 @@ def _reliability(snr: dict, floor: float, k: float, fidelity_min: float) -> tupl
 
 def merge_catalogues(cats: Sequence[Table]) -> Table:
     """One catalogue of several searches (e.g. one per spectral window), its reliability over their whole volume."""
-    floor, k, fidelity_min = (cats[0].meta[key] for key in ("floor", "k", "fidelity_min"))
+    floor, k, fidelity_min, rule = (cats[0].meta[key] for key in ("floor", "k", "fidelity_min", "rule"))
     cat = vstack(list(cats), metadata_conflicts="silent").copy()  # vstack of one table returns it
     snr = {"data": np.asarray(cat["snr"])}
     snr |= {name: np.concatenate([c.meta[f"snr_{name}"] for c in cats]) for name in ("jackknife", "negative")}
-    reliable, meta = _reliability(snr, floor, k, fidelity_min)
+    reliable, meta = _reliability(snr, floor, k, fidelity_min, rule)
     for name, values in reliable.items():
         cat[name] = values
     cat.meta = meta | {"parts": [{key: c.meta[key] for key in SEARCH_META} for c in cats]}

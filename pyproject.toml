@@ -50,6 +50,7 @@ dev = [
 luv-mock = "luv_finder.cli.make_mock:main"
 luv-find = "luv_finder.cli.find_lines:main"
 luv-export = "luv_finder.cli.export_uv:main"
+luv-run = "luv_finder.cli.run:main"
 
 [project.urls]
 Homepage = "https://github.com/Joshiwavm/Luv_finder"
@@ -57,6 +58,9 @@ Documentation = "https://joshiwavm.github.io/Luv_finder/"
 
 [tool.setuptools.packages.find]
 include = ["luv_finder*"]
+
+[tool.setuptools.package-data]
+luv_finder = ["*.mplstyle"]
 
 [tool.ruff]
 line-length = 120

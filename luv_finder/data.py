@@ -123,9 +123,9 @@ def _robust(z2: np.ndarray) -> float:
     return float(np.median(z2) / (2 * np.log(2))) if z2.size else np.nan
 
 
-def reweighted(chunks: Sequence[Chunk]) -> list[Chunk]:
-    """The chunks of one window with their weights divided by :func:`weight_scale`, per scan and channel."""
-    ws = weight_scale(chunks)
+def reweighted(chunks: Sequence[Chunk], ws: WeightScale | None = None) -> list[Chunk]:
+    """The chunks of one window, weights divided by ``ws`` (default :func:`weight_scale`) per scan and channel."""
+    ws = weight_scale(chunks) if ws is None else ws
     deviation = np.nanmax(np.abs(ws.deviation()))
     print(
         f"spw {chunks[0].spw}: noise over the weights in {ws.scans.size} scans, median per scan "
@@ -353,13 +353,16 @@ def _phase_centre(msmd, field) -> tuple[float, float]:
     return centre["m0"]["value"], centre["m1"]["value"]
 
 
-def iter_chunks(msfile: str, ref, fields=None, spws=None, reweight: bool = True) -> Iterator[Chunk]:
+def iter_chunks(
+    msfile: str, ref, fields=None, spws=None, reweight: bool = True, scales: dict | None = None
+) -> Iterator[Chunk]:
     """Read target visibilities one spw at a time over all ``fields``, weights corrected, offsets from ``ref``.
 
     Autocorrelations, flagged rows and rows with no unflagged channel are dropped. Every window's
     weights are divided by the noise measured in it (:func:`reweighted`), so the peak memory is
     about twice one window over all its fields; ``reweight=False`` keeps the measurement set's
-    weights, for a noiseless simulation, which has no noise to measure.
+    weights, for a noiseless simulation, which has no noise to measure. A ``scales`` dict receives
+    each window's :class:`WeightScale` by spw.
     """
     all_fields, all_spws = target_selection(msfile)
     msmd = tools().msmetadata()
@@ -394,8 +397,13 @@ def iter_chunks(msfile: str, ref, fields=None, spws=None, reweight: bool = True)
                     sel.close()
                 if chunk is not None:
                     chunks.append(chunk)
-            if chunks:
-                yield from reweighted(chunks) if reweight else chunks
+            if chunks and reweight:
+                ws = weight_scale(chunks)
+                if scales is not None:
+                    scales[chunks[0].spw] = ws
+                yield from reweighted(chunks, ws)
+            elif chunks:
+                yield from chunks
     finally:
         tb.close()
 
