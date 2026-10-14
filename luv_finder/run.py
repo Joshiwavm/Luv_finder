@@ -28,7 +28,7 @@ import numpy as np
 import yaml
 from astropy.table import Table
 
-from .catalogue import catalogue, merge_catalogues
+from .catalogue import _reliability, catalogue, merge_catalogues
 from .data import Metadata, fields_in, iter_chunks, load, target_selection, write_npz
 from .matchedfilter import TEMPLATE_KEYS, search_pointings
 from .model import C_KMS
@@ -92,25 +92,29 @@ def _fitted(cat: Table, key: str) -> np.ndarray:
 
 
 def duplicates(cat: Table, beam: dict) -> np.ndarray:
-    """Id of a brighter detection of the same line in another unit, else 0.
+    """Id of a brighter group of the same line in another unit, else 0, for every row of ``cat``.
 
-    Two detections are one line when they are within ``beam[unit]`` (arcsec) of each other and their
+    Two groups are one line when they are within ``beam[unit]`` (arcsec) of each other and their
     profiles overlap, ``|dv| <= (FWHM_a + FWHM_b) / 2``, with the fitted position, frequency and width
-    where the line was fitted: a line wider than the gap it straddles between two windows is found once
-    in each, its halves far apart in frequency. ``cat`` is sorted by S/N, brightest first.
+    where the line was fitted (the template's elsewhere): a line wider than the gap it straddles between
+    two windows is found once in each, its halves far apart in frequency. ``cat`` is sorted by S/N.
     """
+    from scipy.spatial import cKDTree
+
     dra, ddec, nu, width = (_fitted(cat, k) for k in ("dra", "ddec", "freq_ghz", "width"))
     unit = np.asarray(cat["unit"])
+    pairs = cKDTree(np.c_[dra, ddec]).query_pairs(max(beam.values()), output_type="ndarray")
+    pairs.sort(axis=1)  # a brighter than b
+    a, b = pairs.T if pairs.size else (np.zeros(0, int), np.zeros(0, int))
+    same = (
+        (unit[a] != unit[b])
+        & (np.hypot(dra[a] - dra[b], ddec[a] - ddec[b]) <= np.array([beam[u] for u in unit[a]]))
+        & (np.abs(nu[b] / nu[a] - 1) * C_KMS <= (width[a] + width[b]) / 2)
+    )
     of = np.zeros(len(cat), dtype=int)
-    rows = np.flatnonzero(cat["detected"])
-    for n, a in enumerate(rows):
-        if of[a]:
-            continue
-        for b in rows[n + 1 :]:
-            near = np.hypot(dra[a] - dra[b], ddec[a] - ddec[b]) <= beam[unit[a]]
-            overlap = abs(nu[b] / nu[a] - 1) * C_KMS <= (width[a] + width[b]) / 2
-            if not of[b] and unit[b] != unit[a] and near and overlap:
-                of[b] = cat["id"][a]
+    for i, j in sorted(zip(a[same].tolist(), b[same].tolist(), strict=True)):
+        if not of[i] and not of[j]:
+            of[j] = cat["id"][i]
     return of
 
 
@@ -325,35 +329,59 @@ class Run:
             )
 
     def merge(self) -> Table:
-        """The units' catalogues as one, reliability over their whole volume: ``catalogue.ecsv``."""
+        """The units' catalogues as one, reliability over their whole volume: ``catalogue.ecsv``.
+
+        A line found in two units (:func:`duplicates`) counts once in the likelihood ratio and the
+        fidelity: the fainter group gets ``duplicate_of`` and is not detected.
+        """
         cat = merge_catalogues([Table.read(self.path(u, ".ecsv")) for u in self.units])
+        cat["duplicate_of"] = self.duplicates(cat)
+        one = np.asarray(cat["duplicate_of"] == 0)
+        if not one.all():
+            m = cat.meta
+            snr = {"data": np.asarray(cat["snr"])[one]}
+            snr |= {k: np.asarray(m[f"snr_{k}"]) for k in ("jackknife", "negative")}
+            columns, meta = _reliability(snr, m["floor"], m["k"], m["fidelity_min"], m["rule"])
+            for name, values in columns.items():
+                cat[name][one] = values
+                cat[name][~one] = False if values.dtype == bool else np.nan
+            cat.meta = meta | {"parts": m["parts"]}
         cat.write(self.output / "catalogue.ecsv", format="ascii.ecsv", overwrite=True)
         return cat
 
     # --------------------------------------------------------------------- fit
     def fit(self) -> Table:
-        """Fit the detections and the near misses in the visibilities: ``lines_fit.ecsv``, then :meth:`moment_maps`."""
-        from .fit import COLUMNS, fit_lines
+        """Fit the detections and the near misses in the visibilities: ``lines_fit.ecsv``, then :meth:`moment_maps`.
+
+        Lines already in ``lines_fit.ecsv`` (by unit and unit id) keep their fit, so a re-merge costs no refit.
+        """
+        from .fit import COLUMNS, empty_fit, fit_lines
 
         cat = self.catalogue
         near = self.near_misses(cat)
         todo = np.asarray(cat["detected"]) | near
-        fitted = None
+        fitted = empty_fit(cat)
+        old = self.lines if (self.output / "lines_fit.ecsv").exists() else None
+        if old is not None:
+            key = {(u, int(i)): n for n, (u, i) in enumerate(zip(old["unit"], old["unit_id"], strict=True))}
+            prev = np.array([key.get((u, int(i)), -1) for u, i in zip(cat["unit"], cat["unit_id"], strict=True)])
+            reuse = todo & (prev >= 0) & np.isfinite(np.asarray(old["fit_dra"], dtype=float)[prev])
+            for name in COLUMNS:
+                fitted[name][reuse] = old[name][prev[reuse]]
+            spectra = old.meta.get("spectra", {})
+            fitted.meta["spectra"] = {
+                str(cat["id"][n]): spectra[str(old["id"][prev[n]])] for n in np.flatnonzero(reuse)
+                if str(old["id"][prev[n]]) in spectra
+            }  # fmt: skip
+            todo &= ~reuse
         for unit in np.unique(cat["unit"][todo]):
             rows = todo & np.asarray(cat["unit"] == unit)
-            data = load(str(self.export_path(unit)))
-            done = fit_lines(data, cat, rows=rows, cores=self.config["cores"])
-            if fitted is None:
-                fitted = done
-            else:
-                for name in COLUMNS:
-                    fitted[name][rows] = done[name][rows]
-                fitted.meta.setdefault("spectra", {}).update(done.meta.get("spectra", {}))
+            done = fit_lines(load(str(self.export_path(unit))), cat, rows=rows, cores=self.config["cores"])
+            for name in COLUMNS:
+                fitted[name][rows] = done[name][rows]
+            fitted.meta.setdefault("spectra", {}).update(done.meta.get("spectra", {}))
             print(f"[{unit}: fitted {rows.sum()} lines]", flush=True)
-        if fitted is None:
-            raise ValueError("nothing to fit: no detections and no near misses")
         fitted["near_miss"] = near
-        fitted["duplicate_of"] = self.duplicates(fitted)
         fitted.write(self.output / "lines_fit.ecsv", format="ascii.ecsv", overwrite=True)
         self.moment_maps()
         return fitted
