@@ -17,6 +17,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.figure import Figure
 from matplotlib.patches import Circle
+from matplotlib.ticker import MaxNLocator
 
 from .model import C_KMS
 
@@ -771,7 +772,9 @@ def line_maps_check(maps, cat, plots_dir=None, name="line_maps"):
         _frame(ax, p)
         half = np.diff(dra[:2])[0] / 2
         extent = (dra[0] - half, dra[-1] + half, ddec[0] - half, ddec[-1] + half)
-        im = ax.imshow(m0.T, origin="lower", extent=extent, cmap="magma")
+        # the PB correction amplifies the noise at the coverage edge: scale by the bulk, not the edge
+        lo, hi = np.nanpercentile(m0, [1, 99.5]) if np.isfinite(m0).any() else (None, None)
+        im = ax.imshow(m0.T, origin="lower", extent=extent, cmap="magma", vmin=lo, vmax=hi)
         ax.plot(row["fit_dra"], row["fit_ddec"], "+", c="C0", ms=12, mew=1.5)
         fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04, label="Jy/beam km/s")
         _sky_axes(ax)
@@ -891,6 +894,7 @@ def filter_responses(
             ax.plot(f[near], s[i][near], c=f"C{i}", lw=1.6 if i == t else 0.8, label=f"{w[i]:g} km/s")
         ax.axhline(s[t, k], c="C3", ls=":", lw=0.8)
         ax.set_title(f"{label}  S/N {s[t, k]:.1f}", fontsize=9)
+        ax.xaxis.set_major_locator(MaxNLocator(4))
         ax.set_xlabel("frequency [GHz]")
         ax.set_ylabel("S/N")
     if n:

@@ -300,14 +300,13 @@ class Run:
 
     # --------------------------------------------------------------------- fit
     def fit(self) -> Table:
-        """Fit the detections and the near misses in the visibilities: ``lines_fit.ecsv`` and ``line_maps.npz``."""
+        """Fit the detections and the near misses in the visibilities: ``lines_fit.ecsv``, then :meth:`moment_maps`."""
         from .fit import COLUMNS, fit_lines
-        from .imaging import line_maps
 
         cat = self.catalogue
         near = self.near_misses(cat)
         todo = np.asarray(cat["detected"]) | near
-        fitted, maps = None, {}
+        fitted = None
         for unit in np.unique(cat["unit"][todo]):
             rows = todo & np.asarray(cat["unit"] == unit)
             data = load(str(self.export_path(unit)))
@@ -318,19 +317,28 @@ class Run:
                 for name in COLUMNS:
                     fitted[name][rows] = done[name][rows]
                 fitted.meta.setdefault("spectra", {}).update(done.meta.get("spectra", {}))
-            ok = done[rows][np.isfinite(done[rows]["fit_dra"])]
-            maps |= dict(zip(ok["id"], line_maps(data, ok), strict=True))
             print(f"[{unit}: fitted {rows.sum()} lines]", flush=True)
         if fitted is None:
             raise ValueError("nothing to fit: no detections and no near misses")
         fitted["near_miss"] = near
         fitted["duplicate_of"] = self.duplicates(fitted)
         fitted.write(self.output / "lines_fit.ecsv", format="ascii.ecsv", overwrite=True)
+        self.moment_maps()
+        return fitted
+
+    def moment_maps(self) -> None:
+        """Moment-0 maps of every fitted line, from the export: ``line_maps.npz`` (minutes; no refit)."""
+        from .imaging import line_maps
+
+        fit, maps = self.lines, {}
+        fitted = np.isfinite(np.asarray(fit["fit_dra"], dtype=float))
+        for unit in np.unique(fit["unit"][fitted]):
+            ok = fit[fitted & np.asarray(fit["unit"] == unit)]
+            maps |= dict(zip(ok["id"], line_maps(load(str(self.export_path(unit))), ok), strict=True))
         np.savez(
             self.output / "line_maps.npz",
             **{f"{i}_{k}": v for i, m in maps.items() for k, v in zip(("dra", "ddec", "moment0"), m, strict=True)},
         )
-        return fitted
 
     def near_misses(self, cat: Table) -> np.ndarray:
         """Not detected, fidelity at least ``near_miss.fidelity``: the brightest ``near_miss.max``."""

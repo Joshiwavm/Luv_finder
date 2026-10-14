@@ -8,7 +8,7 @@ import matplotlib
 def main(argv=None):
     p = argparse.ArgumentParser(prog="luv-run", description=__doc__)
     p.add_argument("config", help="run YAML, or a run's output directory")
-    p.add_argument("step", choices=["search", "merge", "fit", "summary", "diagnostics", "plots", "release"])
+    p.add_argument("step", choices=["search", "merge", "fit", "maps", "summary", "diagnostics", "plots", "release"])
     p.add_argument("--workers", type=int, default=1, help="processes sharing the units (search)")
     p.add_argument("--no-merge", action="store_true", help="do not merge the units after searching")
     args = p.parse_args(argv)
@@ -25,6 +25,8 @@ def main(argv=None):
         run.merge()
     elif args.step == "fit":
         run.fit()
+    elif args.step == "maps":
+        run.moment_maps()
     elif args.step == "summary":
         run.summary()
     elif args.step == "diagnostics":

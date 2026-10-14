@@ -147,7 +147,10 @@ def mosaic_dirty_maps(cubes: Sequence[DirtyCube], pb_limit: float = 0.2):
 
 
 def line_maps(data: DataHandler, cat, size: float = 8.0, pb_limit: float = 0.2) -> list[tuple]:
-    """``(dra, ddec, moment0)`` within ``size`` arcsec of each fitted line, Jy/beam km/s over +-1 FWHM, no continuum."""
+    """``(dra, ddec, moment0)`` within ``size`` arcsec of each fitted line, Jy/beam km/s over +-1 FWHM, no continuum.
+
+    Positions no pointing covers (primary beam below ``pb_limit``) are NaN.
+    """
     step = data.metadata.minresolution() / 4
     maps = []
     for row in cat[np.isfinite(cat["fit_dra"])]:
@@ -161,5 +164,6 @@ def line_maps(data: DataHandler, cat, size: float = 8.0, pb_limit: float = 0.2) 
         weight = ivar[off].sum(axis=0)
         continuum = np.divide((ivar * cube)[off].sum(axis=0), weight, out=np.zeros_like(weight), where=weight > 0)
         dv = np.abs(np.diff(chunks[0].freq)).mean() / nu0 * C_KMS
-        maps.append((dra, ddec, (cube[line] - continuum).sum(axis=0) * dv))
+        moment0 = (cube[line] - continuum).sum(axis=0) * dv
+        maps.append((dra, ddec, np.where(ivar[line].sum(axis=0) > 0, moment0, np.nan)))
     return maps
