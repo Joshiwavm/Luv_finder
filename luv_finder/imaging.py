@@ -111,13 +111,21 @@ def dirty_maps(data: DataHandler, dra, ddec, cores: int | None = None):
     return moment8, continuum, sigma.item()
 
 
-def pointing_cubes(path: str, grid_cfg: dict | None = None, pb_limit: float = 0.2, cores: int | None = None):
-    """The dirty cube of every field of a measurement set or NPZ, each on its search grid."""
+def oversample(axis, factor: int = 2) -> np.ndarray:
+    """``axis`` with ``factor`` times as many pixels over the same span (the search grid's res/2 to res/4)."""
+    start, step, n = _regular(axis)
+    return start + step / factor * np.arange(factor * (n - 1) + 1)
+
+
+def pointing_cubes(
+    path: str, grid_cfg: dict | None = None, pb_limit: float = 0.2, factor: int = 2, cores: int | None = None
+):
+    """The dirty cube of every field of a measurement set or NPZ, on its search grid oversampled ``factor`` times."""
     cubes = []
     for field in fields_in(path):
         data = load(path, [field])
         grid = build_grid(data, {**(grid_cfg or {}), "pb_limit": pb_limit})
-        cubes.append(dirty_cube(data, grid["dra"], grid["ddec"], cores))
+        cubes.append(dirty_cube(data, oversample(grid["dra"], factor), oversample(grid["ddec"], factor), cores))
     return cubes
 
 

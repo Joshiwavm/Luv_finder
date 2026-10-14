@@ -542,6 +542,44 @@ def _count_above(values, at):
     return len(values) - np.searchsorted(values, at)
 
 
+def erf_curve(snr, fidelity) -> tuple[float, float]:
+    """``(centre, width)`` of ``F = (1 + erf((S/N - centre) / sqrt(2) width)) / 2`` fitted to fidelity points.
+
+    For display only: it smooths the tail model's binned fidelity; the thresholds come from the bins.
+    NaN when fewer than three points are finite or the fit fails.
+    """
+    from scipy import optimize, special
+
+    snr, fidelity = np.asarray(snr, dtype=float), np.asarray(fidelity, dtype=float)
+    use = np.isfinite(snr) & np.isfinite(fidelity)
+    if use.sum() < 3:
+        return np.nan, np.nan
+    centre = snr[use][np.argmin(np.abs(fidelity[use] - 0.5))]
+    try:
+        p, _ = optimize.curve_fit(
+            lambda x, c, w: 0.5 * (1 + special.erf((x - c) / (np.sqrt(2) * w))),
+            snr[use],
+            fidelity[use],
+            p0=(centre, 0.5),
+            bounds=([0.0, 0.01], [np.inf, 10.0]),
+        )
+    except RuntimeError:
+        return np.nan, np.nan
+    return float(p[0]), float(p[1])
+
+
+def _erf_plot(ax, bins, xlim, **style):
+    """The :func:`erf_curve` of the tail model's ``bins`` over ``xlim``, labelled with its centre and width."""
+    from scipy import special
+
+    centre, width = erf_curve(bins["snr"], bins["model"])
+    if np.isfinite(centre):
+        x = np.linspace(*xlim, 300)
+        label = style.pop("label")
+        ax.plot(x, 0.5 * (1 + special.erf((x - centre) / (np.sqrt(2) * width))),
+                label=rf"{label} (C {centre:.2f}, $\sigma$ {width:.2f})", **style)  # fmt: skip
+
+
 @_styled
 def reliability_check(cat, plots_dir=None, name="reliability"):
     """Counts, likelihood ratio and fidelity of a catalogue against the jackknife, its noise reference.
@@ -552,9 +590,10 @@ def reliability_check(cat, plots_dir=None, name="reliability"):
     data curve, and the Gaussian tail fitted to the jackknife's. Middle: the likelihood ratio
     N_data / N_jackknife at every data group, a lower limit (caret) where no jackknife group is as
     bright, against the threshold ``k`` and the lowest S/N above it. Right: the binned fidelity
-    ``1 - N_jackknife / N_data``, the fidelity from the jackknife's tail and the lowest S/N reaching
-    ``fidelity_min``, and both against the negated data (as ASPECS measures it) for comparison. The
-    tails and the thresholds are left out where they are NaN.
+    ``1 - N_jackknife / N_data``, the fidelity from the jackknife's tail with an erf through it
+    (:func:`erf_curve`, display only) and the lowest S/N reaching ``fidelity_min``, and both against
+    the negated data (as ASPECS measures it) for comparison. The tails and the
+    thresholds are left out where they are NaN.
     """
     from matplotlib.ticker import LogFormatter
     from scipy import special
@@ -592,14 +631,16 @@ def reliability_check(cat, plots_dir=None, name="reliability"):
     fid.errorbar(
         bins["snr"], bins["fidelity"], bins["error"], fmt="o", c="k", ecolor="0.6", ms=4, capsize=2, label="binned"
     )
-    fid.plot(bins["snr"], bins["model"], ".-", c="C1", label="jackknife tail")
+    fid.plot(bins["snr"], bins["model"], ".", c="C1", label="jackknife tail")
+    _erf_plot(fid, bins, xlim, c="C1", label="erf")
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         values, (_, s_neg), bins_neg = fidelity(data, negative, floor)
     fid.plot(bins_neg["snr"], bins_neg["fidelity"], "s", mfc="none", c="0.45", ms=4,
              label="binned, negated")  # fmt: skip
     if np.isfinite(s_neg):
-        fid.plot(bins_neg["snr"], bins_neg["model"], ".--", c="0.45", label="negated tail")
+        fid.plot(bins_neg["snr"], bins_neg["model"], ".", c="0.45", label="negated tail")
+        _erf_plot(fid, bins_neg, xlim, c="0.45", ls="--", label="erf, negated")
     fid.axhline(fidelity_min, c="C3", ls="--", lw=1, label="fidelity_min")
     fid.set_ylim(-0.05, 1.05)
     fid.set_ylabel(r"Fidelity 1 $-$ N$_{jackknife}$ / N$_{data}$")

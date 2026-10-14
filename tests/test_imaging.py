@@ -6,7 +6,7 @@ import pytest
 from test_matchedfilter import _chunk, _metadata
 
 from luv_finder import DataHandler, Gaussian
-from luv_finder.imaging import dirty_cube, dirty_maps, mosaic_dirty_maps, pointing_cubes
+from luv_finder.imaging import dirty_cube, dirty_maps, mosaic_dirty_maps, oversample, pointing_cubes
 from luv_finder.kernel import _blocks
 from luv_finder.matchedfilter import build_grid
 from luv_finder.utils import primary_beam
@@ -61,8 +61,14 @@ def test_pointing_cubes_are_each_fields_cube_on_its_grid(two_field_npz):
     for field, cube in enumerate(cubes):
         data = DataHandler.from_npz(str(two_field_npz), [field])
         grid = build_grid(data, {"pb_limit": 0.2})
-        assert np.allclose(cube.cube, dirty_cube(data, grid["dra"], grid["ddec"]).cube, rtol=0, atol=1e-12)
+        assert np.allclose(
+            cube.cube, dirty_cube(data, oversample(grid["dra"]), oversample(grid["ddec"])).cube, rtol=0, atol=1e-12
+        )
     assert cubes[1].offset[0] - cubes[0].offset[0] == 10.0
+
+
+def test_oversample_halves_the_step_over_the_same_span():
+    assert oversample([-1.0, 0.0, 1.0]).tolist() == [-1.0, -0.5, 0.0, 0.5, 1.0]
 
 
 def test_dirty_maps_separate_continuum_and_line():

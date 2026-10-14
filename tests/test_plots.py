@@ -8,6 +8,7 @@ import warnings
 from types import SimpleNamespace
 
 import numpy as np
+import pytest
 from matplotlib.figure import Figure
 
 from luv_finder import Gaussian, MatchedFilter, Model
@@ -327,3 +328,14 @@ def test_filter_responses(plots):
         jk.append(rng.normal(0, 1, (3, f.size)))
     fig = filter_responses(freqs, snr, widths, ["#1", "#2"], jk=jk, plots_dir=str(plots), name="filter_responses")
     assert isinstance(fig, Figure) and len([ax for ax in fig.axes if ax.lines]) == 2
+
+
+def test_erf_curve_recovers_centre_and_width():
+    from scipy import special
+
+    from luv_finder.plotting import erf_curve
+
+    snr = np.arange(4.0, 9.0, 0.25)
+    centre, width = erf_curve(snr, 0.5 * (1 + special.erf((snr - 6.0) / (np.sqrt(2) * 0.4))))
+    assert (centre, width) == (pytest.approx(6.0), pytest.approx(0.4))
+    assert np.isnan(erf_curve([5.0, 6.0], [0.0, 1.0])).all()
