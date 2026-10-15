@@ -46,7 +46,11 @@ COLUMNS = (
     "member_ous_uid, proposal_id, target_name, s_ra, s_dec, s_fov, s_region, band_list, em_min, em_max, "
     "is_mosaic, scientific_category, antenna_arrays, data_rights, publication_year"
 )
-EXTRAGALACTIC = ("Cosmology and the high redshift universe", "Galaxies and galactic nuclei", "Active galaxies")
+EXTRAGALACTIC = (
+    "Galaxy evolution",
+    "Active galaxies",
+    "Cosmology",
+)  # ObsCore scientific_category; "Local Universe" (nearby galaxies, LMC/SMC) left out
 ZOOMS = {  # name: (ra, dec, half-width) in deg
     "ECDFS": (53.12, -27.81, 0.45),
     "COSMOS": (150.12, 2.21, 0.9),
