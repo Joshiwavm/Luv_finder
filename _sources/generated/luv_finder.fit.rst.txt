@@ -17,6 +17,7 @@
 
    .. autosummary::
    
+      empty_fit
       fit_line
       fit_lines
    

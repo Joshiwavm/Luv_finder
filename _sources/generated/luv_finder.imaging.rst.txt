@@ -12,6 +12,7 @@
       dirty_maps
       line_maps
       mosaic_dirty_maps
+      oversample
       pointing_cubes
    
    .. rubric:: Classes

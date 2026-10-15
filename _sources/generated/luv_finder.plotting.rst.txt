@@ -18,6 +18,7 @@
       amp_phase_check
       contact_sheet
       dirty_maps_check
+      erf_curve
       filter_responses
       line_maps_check
       line_spectra_check

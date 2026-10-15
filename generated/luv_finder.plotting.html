@@ -295,61 +295,64 @@ inside <a class="reference internal" href="#luv_finder.plotting.style" title="lu
 <tr class="row-odd"><td><p><a class="reference internal" href="#luv_finder.plotting.dirty_maps_check" title="luv_finder.plotting.dirty_maps_check"><code class="xref py py-obj docutils literal notranslate"><span class="pre">dirty_maps_check</span></code></a>(dra, ddec, moment8, ...[, ...])</p></td>
 <td><p>Moment-8 (S/N), continuum (mJy/beam), and the moment-8 with continuum contours.</p></td>
 </tr>
-<tr class="row-even"><td><p><a class="reference internal" href="#luv_finder.plotting.filter_responses" title="luv_finder.plotting.filter_responses"><code class="xref py py-obj docutils literal notranslate"><span class="pre">filter_responses</span></code></a>(freqs, snr, widths, labels)</p></td>
+<tr class="row-even"><td><p><a class="reference internal" href="#luv_finder.plotting.erf_curve" title="luv_finder.plotting.erf_curve"><code class="xref py py-obj docutils literal notranslate"><span class="pre">erf_curve</span></code></a>(snr, fidelity)</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">(centre,</span> <span class="pre">width)</span></code> of <code class="docutils literal notranslate"><span class="pre">F</span> <span class="pre">=</span> <span class="pre">(1</span> <span class="pre">+</span> <span class="pre">erf((S/N</span> <span class="pre">-</span> <span class="pre">centre)</span> <span class="pre">/</span> <span class="pre">sqrt(2)</span> <span class="pre">width))</span> <span class="pre">/</span> <span class="pre">2</span></code> fitted to fidelity points.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#luv_finder.plotting.filter_responses" title="luv_finder.plotting.filter_responses"><code class="xref py py-obj docutils literal notranslate"><span class="pre">filter_responses</span></code></a>(freqs, snr, widths, labels)</p></td>
 <td><p>The matched-filter response of every group: S/N against frequency for each template, one panel each.</p></td>
 </tr>
-<tr class="row-odd"><td><p><a class="reference internal" href="#luv_finder.plotting.line_maps_check" title="luv_finder.plotting.line_maps_check"><code class="xref py py-obj docutils literal notranslate"><span class="pre">line_maps_check</span></code></a>(maps, cat[, plots_dir, name])</p></td>
+<tr class="row-even"><td><p><a class="reference internal" href="#luv_finder.plotting.line_maps_check" title="luv_finder.plotting.line_maps_check"><code class="xref py py-obj docutils literal notranslate"><span class="pre">line_maps_check</span></code></a>(maps, cat[, plots_dir, name])</p></td>
 <td><p>Moment-0 map of every fitted line (<a class="reference internal" href="luv_finder.imaging.html#luv_finder.imaging.line_maps" title="luv_finder.imaging.line_maps"><code class="xref py py-func docutils literal notranslate"><span class="pre">luv_finder.imaging.line_maps()</span></code></a>), the fitted position marked.</p></td>
 </tr>
-<tr class="row-even"><td><p><a class="reference internal" href="#luv_finder.plotting.line_spectra_check" title="luv_finder.plotting.line_spectra_check"><code class="xref py py-obj docutils literal notranslate"><span class="pre">line_spectra_check</span></code></a>(cat[, span, plots_dir, name])</p></td>
+<tr class="row-odd"><td><p><a class="reference internal" href="#luv_finder.plotting.line_spectra_check" title="luv_finder.plotting.line_spectra_check"><code class="xref py py-obj docutils literal notranslate"><span class="pre">line_spectra_check</span></code></a>(cat[, span, plots_dir, name])</p></td>
 <td><p>Each fitted line's spectrum and best fit within <code class="docutils literal notranslate"><span class="pre">span</span></code> FWHM of its centre, both over the fitted peak.</p></td>
 </tr>
-<tr class="row-odd"><td><p><a class="reference internal" href="#luv_finder.plotting.mosaic_layout" title="luv_finder.plotting.mosaic_layout"><code class="xref py py-obj docutils literal notranslate"><span class="pre">mosaic_layout</span></code></a>(offsets, primary_beam[, ...])</p></td>
+<tr class="row-even"><td><p><a class="reference internal" href="#luv_finder.plotting.mosaic_layout" title="luv_finder.plotting.mosaic_layout"><code class="xref py py-obj docutils literal notranslate"><span class="pre">mosaic_layout</span></code></a>(offsets, primary_beam[, ...])</p></td>
 <td><p>Pointing centres and half-power primary beams in the dataset's sky frame.</p></td>
 </tr>
-<tr class="row-even"><td><p><a class="reference internal" href="#luv_finder.plotting.noise_check" title="luv_finder.plotting.noise_check"><code class="xref py py-obj docutils literal notranslate"><span class="pre">noise_check</span></code></a>(mf[, plots_dir, name])</p></td>
+<tr class="row-odd"><td><p><a class="reference internal" href="#luv_finder.plotting.noise_check" title="luv_finder.plotting.noise_check"><code class="xref py py-obj docutils literal notranslate"><span class="pre">noise_check</span></code></a>(mf[, plots_dir, name])</p></td>
 <td><p>Response statistics of the data against its jackknife and a unit Gaussian.</p></td>
 </tr>
-<tr class="row-odd"><td><p><a class="reference internal" href="#luv_finder.plotting.passes" title="luv_finder.plotting.passes"><code class="xref py py-obj docutils literal notranslate"><span class="pre">passes</span></code></a>(cat)</p></td>
+<tr class="row-even"><td><p><a class="reference internal" href="#luv_finder.plotting.passes" title="luv_finder.plotting.passes"><code class="xref py py-obj docutils literal notranslate"><span class="pre">passes</span></code></a>(cat)</p></td>
 <td><p>Which reliability test each row passes: <code class="docutils literal notranslate"><span class="pre">both</span></code>, <code class="docutils literal notranslate"><span class="pre">likelihood</span></code>, <code class="docutils literal notranslate"><span class="pre">fidelity</span></code> or <code class="docutils literal notranslate"><span class="pre">none</span></code>.</p></td>
 </tr>
-<tr class="row-even"><td><p><a class="reference internal" href="#luv_finder.plotting.peak_snr_map" title="luv_finder.plotting.peak_snr_map"><code class="xref py py-obj docutils literal notranslate"><span class="pre">peak_snr_map</span></code></a>(maps[, marks, plots_dir, name])</p></td>
+<tr class="row-odd"><td><p><a class="reference internal" href="#luv_finder.plotting.peak_snr_map" title="luv_finder.plotting.peak_snr_map"><code class="xref py py-obj docutils literal notranslate"><span class="pre">peak_snr_map</span></code></a>(maps[, marks, plots_dir, name])</p></td>
 <td><p>Peak S/N on the sky from saved maps <code class="docutils literal notranslate"><span class="pre">(dra,</span> <span class="pre">ddec,</span> <span class="pre">peak)</span></code> (one or several), their maximum.</p></td>
 </tr>
-<tr class="row-odd"><td><p><a class="reference internal" href="#luv_finder.plotting.pointings_check" title="luv_finder.plotting.pointings_check"><code class="xref py py-obj docutils literal notranslate"><span class="pre">pointings_check</span></code></a>(freqs_ghz, pointings, ...[, ...])</p></td>
+<tr class="row-even"><td><p><a class="reference internal" href="#luv_finder.plotting.pointings_check" title="luv_finder.plotting.pointings_check"><code class="xref py py-obj docutils literal notranslate"><span class="pre">pointings_check</span></code></a>(freqs_ghz, pointings, ...[, ...])</p></td>
 <td><p>One position seen through several pointings of a mosaic, and the combination.</p></td>
 </tr>
-<tr class="row-even"><td><p><a class="reference internal" href="#luv_finder.plotting.reliability_check" title="luv_finder.plotting.reliability_check"><code class="xref py py-obj docutils literal notranslate"><span class="pre">reliability_check</span></code></a>(cat[, plots_dir, name])</p></td>
+<tr class="row-odd"><td><p><a class="reference internal" href="#luv_finder.plotting.reliability_check" title="luv_finder.plotting.reliability_check"><code class="xref py py-obj docutils literal notranslate"><span class="pre">reliability_check</span></code></a>(cat[, plots_dir, name])</p></td>
 <td><p>Counts, likelihood ratio and fidelity of a catalogue against the jackknife, its noise reference.</p></td>
 </tr>
-<tr class="row-odd"><td><p><a class="reference internal" href="#luv_finder.plotting.response_check" title="luv_finder.plotting.response_check"><code class="xref py py-obj docutils literal notranslate"><span class="pre">response_check</span></code></a>(mf[, plots_dir, name, line_ghz])</p></td>
+<tr class="row-even"><td><p><a class="reference internal" href="#luv_finder.plotting.response_check" title="luv_finder.plotting.response_check"><code class="xref py py-obj docutils literal notranslate"><span class="pre">response_check</span></code></a>(mf[, plots_dir, name, line_ghz])</p></td>
 <td><p>Matched-filter response of the best grid point, with the jackknife overlaid.</p></td>
 </tr>
-<tr class="row-even"><td><p><a class="reference internal" href="#luv_finder.plotting.response_shape_check" title="luv_finder.plotting.response_shape_check"><code class="xref py py-obj docutils literal notranslate"><span class="pre">response_shape_check</span></code></a>(nc, result[, peaks, ...])</p></td>
+<tr class="row-odd"><td><p><a class="reference internal" href="#luv_finder.plotting.response_shape_check" title="luv_finder.plotting.response_shape_check"><code class="xref py py-obj docutils literal notranslate"><span class="pre">response_shape_check</span></code></a>(nc, result[, peaks, ...])</p></td>
 <td><p>The null correlation rho of the response against what bright lines actually look like.</p></td>
 </tr>
-<tr class="row-odd"><td><p><a class="reference internal" href="#luv_finder.plotting.responses_check" title="luv_finder.plotting.responses_check"><code class="xref py py-obj docutils literal notranslate"><span class="pre">responses_check</span></code></a>(freqs, curves, title[, ...])</p></td>
+<tr class="row-even"><td><p><a class="reference internal" href="#luv_finder.plotting.responses_check" title="luv_finder.plotting.responses_check"><code class="xref py py-obj docutils literal notranslate"><span class="pre">responses_check</span></code></a>(freqs, curves, title[, ...])</p></td>
 <td><p>Several S/N spectra on one axis, e.g. the phase centre against the source positions.</p></td>
 </tr>
-<tr class="row-even"><td><p><a class="reference internal" href="#luv_finder.plotting.scan_check" title="luv_finder.plotting.scan_check"><code class="xref py py-obj docutils literal notranslate"><span class="pre">scan_check</span></code></a>(x, curves, xlabel, title[, ...])</p></td>
+<tr class="row-odd"><td><p><a class="reference internal" href="#luv_finder.plotting.scan_check" title="luv_finder.plotting.scan_check"><code class="xref py py-obj docutils literal notranslate"><span class="pre">scan_check</span></code></a>(x, curves, xlabel, title[, ...])</p></td>
 <td><p>Peak S/N against one trial parameter, e.g. template size, width or position angle.</p></td>
 </tr>
-<tr class="row-odd"><td><p><a class="reference internal" href="#luv_finder.plotting.snr_map" title="luv_finder.plotting.snr_map"><code class="xref py py-obj docutils literal notranslate"><span class="pre">snr_map</span></code></a>(mf[, plots_dir, name, marks])</p></td>
+<tr class="row-even"><td><p><a class="reference internal" href="#luv_finder.plotting.snr_map" title="luv_finder.plotting.snr_map"><code class="xref py py-obj docutils literal notranslate"><span class="pre">snr_map</span></code></a>(mf[, plots_dir, name, marks])</p></td>
 <td><p>Peak S/N over channels, widths and sizes at every (dra, ddec) of the grid.</p></td>
 </tr>
-<tr class="row-even"><td><p><a class="reference internal" href="#luv_finder.plotting.source_size_check" title="luv_finder.plotting.source_size_check"><code class="xref py py-obj docutils literal notranslate"><span class="pre">source_size_check</span></code></a>(freqs, expected, noisy, ...)</p></td>
+<tr class="row-odd"><td><p><a class="reference internal" href="#luv_finder.plotting.source_size_check" title="luv_finder.plotting.source_size_check"><code class="xref py py-obj docutils literal notranslate"><span class="pre">source_size_check</span></code></a>(freqs, expected, noisy, ...)</p></td>
 <td><p>Response at the true source position: noiseless expectation and one noisy draw.</p></td>
 </tr>
-<tr class="row-odd"><td><p><a class="reference internal" href="#luv_finder.plotting.spectrum_check" title="luv_finder.plotting.spectrum_check"><code class="xref py py-obj docutils literal notranslate"><span class="pre">spectrum_check</span></code></a>(data, dra, ddec[, model, ...])</p></td>
+<tr class="row-even"><td><p><a class="reference internal" href="#luv_finder.plotting.spectrum_check" title="luv_finder.plotting.spectrum_check"><code class="xref py py-obj docutils literal notranslate"><span class="pre">spectrum_check</span></code></a>(data, dra, ddec[, model, ...])</p></td>
 <td><p>Real and imaginary visibility spectra: data, jackknife and model.</p></td>
 </tr>
-<tr class="row-even"><td><p><a class="reference internal" href="#luv_finder.plotting.style" title="luv_finder.plotting.style"><code class="xref py py-obj docutils literal notranslate"><span class="pre">style</span></code></a>()</p></td>
+<tr class="row-odd"><td><p><a class="reference internal" href="#luv_finder.plotting.style" title="luv_finder.plotting.style"><code class="xref py py-obj docutils literal notranslate"><span class="pre">style</span></code></a>()</p></td>
 <td><p>The Luv_finder figure style as a context manager: <code class="docutils literal notranslate"><span class="pre">with</span> <span class="pre">style():</span> <span class="pre">...</span></code>.</p></td>
 </tr>
-<tr class="row-odd"><td><p><a class="reference internal" href="#luv_finder.plotting.uv_profile" title="luv_finder.plotting.uv_profile"><code class="xref py py-obj docutils literal notranslate"><span class="pre">uv_profile</span></code></a>(datasets, dra, ddec, models, freq_ghz)</p></td>
+<tr class="row-even"><td><p><a class="reference internal" href="#luv_finder.plotting.uv_profile" title="luv_finder.plotting.uv_profile"><code class="xref py py-obj docutils literal notranslate"><span class="pre">uv_profile</span></code></a>(datasets, dra, ddec, models, freq_ghz)</p></td>
 <td><p>Visibility amplitude against uv distance at one channel, data binned and model envelopes.</p></td>
 </tr>
-<tr class="row-even"><td><p><a class="reference internal" href="#luv_finder.plotting.weights_check" title="luv_finder.plotting.weights_check"><code class="xref py py-obj docutils literal notranslate"><span class="pre">weights_check</span></code></a>(chunks, labels[, plots_dir, ...])</p></td>
+<tr class="row-odd"><td><p><a class="reference internal" href="#luv_finder.plotting.weights_check" title="luv_finder.plotting.weights_check"><code class="xref py py-obj docutils literal notranslate"><span class="pre">weights_check</span></code></a>(chunks, labels[, plots_dir, ...])</p></td>
 <td><p>Do the weights predict the scatter? Re V at the phase centre per channel, its spread and <code class="docutils literal notranslate"><span class="pre">&lt;1/w&gt;^1/2</span></code>.</p></td>
 </tr>
 </tbody>
@@ -392,6 +395,14 @@ or a per-pixel map shaped like <code class="docutils literal notranslate"><span 
 NaN pixels, outside every primary beam, are left blank. The colour scales are robust to a few
 extreme pixels: continuum 1st to 99th percentile of the well-covered area (noise within twice
 its minimum), moment-8 0 to 99.9th percentile.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="luv_finder.plotting.erf_curve">
+<span class="sig-prename descclassname"><span class="pre">luv_finder.plotting.</span></span><span class="sig-name descname"><span class="pre">erf_curve</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">snr</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">fidelity</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#tuple" title="(in Python v3.15)"><span class="pre">tuple</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><span class="pre">float</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><span class="pre">float</span></a><span class="p"><span class="pre">]</span></span></span></span><a class="reference internal" href="../_modules/luv_finder/plotting.html#erf_curve"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#luv_finder.plotting.erf_curve" title="Link to this definition">¶</a></dt>
+<dd><p><code class="docutils literal notranslate"><span class="pre">(centre,</span> <span class="pre">width)</span></code> of <code class="docutils literal notranslate"><span class="pre">F</span> <span class="pre">=</span> <span class="pre">(1</span> <span class="pre">+</span> <span class="pre">erf((S/N</span> <span class="pre">-</span> <span class="pre">centre)</span> <span class="pre">/</span> <span class="pre">sqrt(2)</span> <span class="pre">width))</span> <span class="pre">/</span> <span class="pre">2</span></code> fitted to fidelity points.</p>
+<p>For display only: it smooths the tail model’s binned fidelity; the thresholds come from the bins.
+NaN when fewer than three points are finite or the fit fails.</p>
 </dd></dl>
 
 <dl class="py function">
@@ -474,9 +485,10 @@ data, the jackknife and the negated data (a diagnostic only), with the detected 
 data curve, and the Gaussian tail fitted to the jackknife’s. Middle: the likelihood ratio
 N_data / N_jackknife at every data group, a lower limit (caret) where no jackknife group is as
 bright, against the threshold <code class="docutils literal notranslate"><span class="pre">k</span></code> and the lowest S/N above it. Right: the binned fidelity
-<code class="docutils literal notranslate"><span class="pre">1</span> <span class="pre">-</span> <span class="pre">N_jackknife</span> <span class="pre">/</span> <span class="pre">N_data</span></code>, the fidelity from the jackknife’s tail and the lowest S/N reaching
-<code class="docutils literal notranslate"><span class="pre">fidelity_min</span></code>, and both against the negated data (as ASPECS measures it) for comparison. The
-tails and the thresholds are left out where they are NaN.</p>
+<code class="docutils literal notranslate"><span class="pre">1</span> <span class="pre">-</span> <span class="pre">N_jackknife</span> <span class="pre">/</span> <span class="pre">N_data</span></code>, the fidelity from the jackknife’s tail with an erf through it
+(<a class="reference internal" href="#luv_finder.plotting.erf_curve" title="luv_finder.plotting.erf_curve"><code class="xref py py-func docutils literal notranslate"><span class="pre">erf_curve()</span></code></a>, display only) and the lowest S/N reaching <code class="docutils literal notranslate"><span class="pre">fidelity_min</span></code>, and both against
+the negated data (as ASPECS measures it) for comparison. The tails and the
+thresholds are left out where they are NaN.</p>
 </dd></dl>
 
 <dl class="py function">
@@ -632,6 +644,7 @@ window’s chunks of every field, tests the reweighting, which is fitted per sca
 <li><a class="reference internal" href="#luv_finder.plotting.amp_phase_check"><code class="docutils literal notranslate"><span class="pre">amp_phase_check()</span></code></a></li>
 <li><a class="reference internal" href="#luv_finder.plotting.contact_sheet"><code class="docutils literal notranslate"><span class="pre">contact_sheet()</span></code></a></li>
 <li><a class="reference internal" href="#luv_finder.plotting.dirty_maps_check"><code class="docutils literal notranslate"><span class="pre">dirty_maps_check()</span></code></a></li>
+<li><a class="reference internal" href="#luv_finder.plotting.erf_curve"><code class="docutils literal notranslate"><span class="pre">erf_curve()</span></code></a></li>
 <li><a class="reference internal" href="#luv_finder.plotting.filter_responses"><code class="docutils literal notranslate"><span class="pre">filter_responses()</span></code></a></li>
 <li><a class="reference internal" href="#luv_finder.plotting.line_maps_check"><code class="docutils literal notranslate"><span class="pre">line_maps_check()</span></code></a></li>
 <li><a class="reference internal" href="#luv_finder.plotting.line_spectra_check"><code class="docutils literal notranslate"><span class="pre">line_spectra_check()</span></code></a></li>

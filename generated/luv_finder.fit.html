@@ -294,10 +294,13 @@ chi^2, its gradient and the Gauss-Newton matrix <code class="docutils literal no
 <div class="table-wrapper autosummary longtable docutils container">
 <table class="autosummary longtable docutils align-default">
 <tbody>
-<tr class="row-odd"><td><p><a class="reference internal" href="#luv_finder.fit.fit_line" title="luv_finder.fit.fit_line"><code class="xref py py-obj docutils literal notranslate"><span class="pre">fit_line</span></code></a>(data, dra, ddec, freq_ghz, width[, ...])</p></td>
+<tr class="row-odd"><td><p><a class="reference internal" href="#luv_finder.fit.empty_fit" title="luv_finder.fit.empty_fit"><code class="xref py py-obj docutils literal notranslate"><span class="pre">empty_fit</span></code></a>(cat)</p></td>
+<td><p>A copy of <code class="docutils literal notranslate"><span class="pre">cat</span></code> with the <a class="reference internal" href="#luv_finder.fit.COLUMNS" title="luv_finder.fit.COLUMNS"><code class="xref py py-data docutils literal notranslate"><span class="pre">COLUMNS</span></code></a>, not yet fitted (NaN, 0, False).</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#luv_finder.fit.fit_line" title="luv_finder.fit.fit_line"><code class="xref py py-obj docutils literal notranslate"><span class="pre">fit_line</span></code></a>(data, dra, ddec, freq_ghz, width[, ...])</p></td>
 <td><p>Fit one line, started from the matched filter's position, template shape (sigma, arcsec) and width.</p></td>
 </tr>
-<tr class="row-even"><td><p><a class="reference internal" href="#luv_finder.fit.fit_lines" title="luv_finder.fit.fit_lines"><code class="xref py py-obj docutils literal notranslate"><span class="pre">fit_lines</span></code></a>(data, cat[, rows, cores])</p></td>
+<tr class="row-odd"><td><p><a class="reference internal" href="#luv_finder.fit.fit_lines" title="luv_finder.fit.fit_lines"><code class="xref py py-obj docutils literal notranslate"><span class="pre">fit_lines</span></code></a>(data, cat[, rows, cores])</p></td>
 <td><p>A copy of <code class="docutils literal notranslate"><span class="pre">cat</span></code> with the <a class="reference internal" href="#luv_finder.fit.COLUMNS" title="luv_finder.fit.COLUMNS"><code class="xref py py-data docutils literal notranslate"><span class="pre">COLUMNS</span></code></a> of every <code class="docutils literal notranslate"><span class="pre">rows</span></code> line (default the detected); failures warn.</p></td>
 </tr>
 </tbody>
@@ -325,6 +328,12 @@ chi^2, its gradient and the Gauss-Newton matrix <code class="docutils literal no
 <dt class="sig sig-object py" id="luv_finder.fit.START">
 <span class="sig-prename descclassname"><span class="pre">luv_finder.fit.</span></span><span class="sig-name descname"><span class="pre">START</span></span><span class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">('dra',</span> <span class="pre">'ddec',</span> <span class="pre">'freq_ghz',</span> <span class="pre">'width',</span> <span class="pre">'bmaj',</span> <span class="pre">'bmin',</span> <span class="pre">'pa')</span></span><a class="headerlink" href="#luv_finder.fit.START" title="Link to this definition">¶</a></dt>
 <dd><p>Catalogue columns a fit starts from; the source shape defaults to a point.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="luv_finder.fit.empty_fit">
+<span class="sig-prename descclassname"><span class="pre">luv_finder.fit.</span></span><span class="sig-name descname"><span class="pre">empty_fit</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">cat</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.astropy.org/en/stable/api/astropy.table.Table.html#astropy.table.Table" title="(in Astropy v8.0)"><span class="pre">Table</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.astropy.org/en/stable/api/astropy.table.Table.html#astropy.table.Table" title="(in Astropy v8.0)"><span class="pre">Table</span></a></span></span><a class="reference internal" href="../_modules/luv_finder/fit.html#empty_fit"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#luv_finder.fit.empty_fit" title="Link to this definition">¶</a></dt>
+<dd><p>A copy of <code class="docutils literal notranslate"><span class="pre">cat</span></code> with the <a class="reference internal" href="#luv_finder.fit.COLUMNS" title="luv_finder.fit.COLUMNS"><code class="xref py py-data docutils literal notranslate"><span class="pre">COLUMNS</span></code></a>, not yet fitted (NaN, 0, False).</p>
 </dd></dl>
 
 <dl class="py function">
@@ -402,6 +411,7 @@ chi^2, its gradient and the Gauss-Newton matrix <code class="docutils literal no
 <li><a class="reference internal" href="#luv_finder.fit.LINE_FLUX"><code class="docutils literal notranslate"><span class="pre">LINE_FLUX</span></code></a></li>
 <li><a class="reference internal" href="#luv_finder.fit.REPORTED"><code class="docutils literal notranslate"><span class="pre">REPORTED</span></code></a></li>
 <li><a class="reference internal" href="#luv_finder.fit.START"><code class="docutils literal notranslate"><span class="pre">START</span></code></a></li>
+<li><a class="reference internal" href="#luv_finder.fit.empty_fit"><code class="docutils literal notranslate"><span class="pre">empty_fit()</span></code></a></li>
 <li><a class="reference internal" href="#luv_finder.fit.fit_line"><code class="docutils literal notranslate"><span class="pre">fit_line()</span></code></a></li>
 <li><a class="reference internal" href="#luv_finder.fit.fit_lines"><code class="docutils literal notranslate"><span class="pre">fit_lines()</span></code></a></li>
 </ul>
