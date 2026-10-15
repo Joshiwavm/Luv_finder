@@ -139,7 +139,13 @@ def test_point_source_fits_through_zero_size():
 
 def test_fit_lines_survives_a_failed_line():
     cat = Table(
-        {"dra": [START[0], 0.0], "ddec": [START[1], 0.0], "freq_ghz": [START[2], 50.0], "width": [200.0, 200.0]}
+        {
+            "dra": [START[0], 0.0],
+            "ddec": [START[1], 0.0],
+            "freq_ghz": [START[2], 50.0],
+            "width": [200.0, 200.0],
+            "snr": [10.0, 10.0],
+        }
     )
     with pytest.warns(UserWarning, match="row 1"):
         fitted = fit_lines(_data(noise=True), cat, channel_noise=None)

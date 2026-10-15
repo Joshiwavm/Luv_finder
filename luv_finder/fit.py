@@ -10,6 +10,7 @@ chi^2, its gradient and the Gauss-Newton matrix ``J^T W J`` in every parameter e
 
 from __future__ import annotations
 
+import dataclasses
 import warnings
 
 import jax
@@ -21,6 +22,7 @@ from scipy import linalg, optimize
 from .data import Chunk, DataHandler, load, sky_direction
 from .data import channel_noise as measure_noise
 from .kernel import DATA_POWERS, WEIGHT_POWERS, limit_cores, on_device, point_moments
+from .matchedfilter import MASK_FWHM, MASK_SNR
 from .model import C_KMS, CONTINUUM_ORDER, FWHM_TO_SIGMA, covariance, rotated
 from .utils import primary_beam
 
@@ -181,6 +183,22 @@ def _window_chunks(data: DataHandler, dra: float, ddec: float, nu: float, pb_lim
     return chunks
 
 
+def _without(chunk: Chunk, nu: float, width: float, others) -> Chunk:
+    """``chunk`` with the channels of the ``others`` lines (GHz, km/s) given zero weight, as the filter masks them.
+
+    Each other line masks ``MASK_FWHM`` of its FWHM; the fitted line (``nu`` Hz, ``width``) keeps its own.
+    """
+    v = np.abs(chunk.freq / nu - 1) * C_KMS
+    drop = np.zeros(chunk.freq.size, dtype=bool)
+    for nu_o, width_o in others:
+        drop |= np.abs(chunk.freq / (nu_o * 1e9) - 1) * C_KMS <= MASK_FWHM * width_o
+    drop &= v > MASK_FWHM * width
+    if not drop.any():
+        return chunk
+    keep = ~drop[:, None]
+    return dataclasses.replace(chunk, X=chunk.X * keep, w=(chunk.w * keep).astype(chunk.w.dtype))
+
+
 def fit_line(
     data: DataHandler,
     dra: float,
@@ -193,10 +211,15 @@ def fit_line(
     continuum_order: int | None = CONTINUUM_ORDER,
     pb_limit: float = 0.2,
     channel_noise: str | dict | None = "measure",
+    others=(),
 ) -> dict:
-    """Fit one line, started from the matched filter's position, template shape (sigma, arcsec) and width."""
+    """Fit one line, started from the matched filter's position, template shape (sigma, arcsec) and width.
+
+    ``others``: (GHz, km/s) of other lines at the position, left out of the fit (:func:`_without`).
+    """
     chunks = _window_chunks(data, dra, ddec, freq_ghz * 1e9, pb_limit)
     noise = measure_noise(chunks) if channel_noise == "measure" else (channel_noise or {}).get(chunks[0].spw)
+    chunks = [_without(c, freq_ghz * 1e9, width, others) for c in chunks]
     dish, freq = data.metadata.dish_diameter, np.asarray(chunks[0].freq, dtype=float)
     rho = None if noise is None else noise.rho
     n_continuum = 0 if continuum_order is None else continuum_order + 1
@@ -330,6 +353,8 @@ def fit_lines(data: DataHandler | str, cat: Table, rows=None, cores: int | None 
     """A copy of ``cat`` with the :data:`COLUMNS` of every ``rows`` line (default the detected); failures warn.
 
     ``meta["spectra"]`` holds each fitted line's PB-corrected spectrum at its fitted position and the best-fit model.
+    The other rows of ``cat`` with S/N >= ``MASK_SNR`` within a resolution element are left out of each fit
+    (their channels get no weight), as the filter leaves them out of the continuum.
     """
     limit_cores(cores)
     if not isinstance(data, DataHandler):
@@ -339,10 +364,14 @@ def fit_lines(data: DataHandler | str, cat: Table, rows=None, cores: int | None 
     if rows is None:
         rows = cat["detected"] if "detected" in cat.colnames else np.ones(len(cat), dtype=bool)
     out = empty_fit(cat)
+    pos, snr = np.c_[cat["dra"], cat["ddec"]].astype(float), np.asarray(cat["snr"], dtype=float)
+    lines = np.c_[cat["freq_ghz"], cat["width"]].astype(float)
     for i in np.flatnonzero(rows):
         start = {k: float(cat[k][i]) for k in START if k in cat.colnames}
+        near = (np.hypot(*(pos - pos[i]).T) <= data.metadata.minresolution()) & (snr >= MASK_SNR)
+        near[i] = False
         try:
-            values = fit_line(data, **start, **kwargs)
+            values = fit_line(data, **start, others=[tuple(x) for x in lines[near]], **kwargs)
         except Exception as err:  # one line's failure must not cost the table
             warnings.warn(f"the fit of catalogue row {i} failed: {err}", stacklevel=2)
             continue

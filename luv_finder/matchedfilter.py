@@ -32,15 +32,23 @@ from .utils import ARCSEC, primary_beam, primary_beam_radius
 
 TEMPLATE_KEYS = ("bmin", "bmaj", "pa", "width")
 GRID_KEYS = ("dra", "ddec", *TEMPLATE_KEYS)
+#: A line whose response peaks at ``MASK_SNR`` or more at a position is left out of the continuum fit
+#: there, within ``MASK_FWHM`` template FWHM of its peak, so it does not bend the continuum of the others.
+MASK_SNR, MASK_FWHM = 5.0, 1.0
 
 
 @partial(jax.jit, static_argnames="order")
 def _spectral(sig, weight, freq, centres, widths, rho, order=None):
-    """S/N ``(n_shape, n_width, n_dra, n_ddec, n_centre)`` and peak error ``(n_shape, n_width, n_centre)``."""
+    """S/N and peak error, both ``(n_shape, n_width, n_dra, n_ddec, n_centre)``.
+
+    With a continuum, the polynomial is fitted jointly with every template, then again at each
+    position without the channels of the other lines that peak there at ``MASK_SNR`` or more
+    (:func:`_masked`), so a bright line does not bend the continuum of the rest.
+    """
     spread = centres[None, :, None] * widths[:, None, None] * FWHM_TO_SIGMA / C_KMS
     profile = jnp.exp(-0.5 * ((freq[None, None, :] - centres[None, :, None]) / spread) ** 2)
-    num = jnp.einsum("wim,msab->swabi", profile, sig)
-    var = jnp.einsum("wim,ms->swi", profile**2, weight)
+    num = num0 = jnp.einsum("wim,msab->swabi", profile, sig)
+    var = v0 = jnp.einsum("wim,ms->swi", profile**2, weight)
     h = jnp.broadcast_to(profile, (weight.shape[1], *profile.shape))
     covered = var > 0
     if order is not None:
@@ -61,8 +69,48 @@ def _spectral(sig, weight, freq, centres, widths, rho, order=None):
     for lag in range(1, rho.size):
         var_c = var_c + 2 * rho[lag] * jnp.sum(h[..., :-lag] * h[..., lag:], axis=-1)
     var_c = jnp.where(covered, var_c, 1.0)
-    error = jnp.where(covered, jnp.sqrt(var_c) / jnp.where(covered, var, 1.0), jnp.nan)
-    return num * jnp.where(covered, 1 / jnp.sqrt(var_c), 0.0)[:, :, None, None, :], error
+    snr = num * jnp.where(covered, 1 / jnp.sqrt(var_c), 0.0)[:, :, None, None, :]
+    if order is None:
+        error = jnp.where(covered, jnp.sqrt(var_c) / jnp.where(covered, var, 1.0), jnp.nan)
+        return snr, jnp.broadcast_to(error[:, :, None, None, :], snr.shape)
+    return _masked(snr, sig, weight, freq, centres, widths, profile, basis, gram, c, num0, v0, var_c / var, covered)
+
+
+def _masked(snr, sig, weight, freq, centres, widths, profile, basis, gram, c, num0, v0, ratio, covered):
+    """The joint fit again, at each position without the channels of its other lines (``MASK_SNR``).
+
+    A line peaking at ``MASK_SNR`` or more at a position masks ``MASK_FWHM`` of its template's FWHM
+    around the peak; each template keeps its own ``MASK_FWHM`` (so an isolated line loses nothing).
+    The least-squares fit of template and polynomial then runs with the channel weights ``m W``: the
+    full sums minus the masked channels' part. The variance is exact for independent channels, scaled
+    by the channel correlation's ``ratio`` of the unmasked fit. Where nothing is masked this is the joint fit.
+    """
+    best, which = snr.max(axis=1), snr.argmax(axis=1)  # (n_shape, n_dra, n_ddec, n_centre)
+    low = jnp.pad(best, ((0, 0), (0, 0), (0, 0), (1, 0)), constant_values=-jnp.inf)[..., :-1]
+    high = jnp.pad(best, ((0, 0), (0, 0), (0, 0), (0, 1)), constant_values=-jnp.inf)[..., 1:]
+    peak = (best >= MASK_SNR) & (best >= low) & (best >= high)
+    velocity = jnp.abs(freq[None, :] / centres[:, None] - 1) * C_KMS  # (n_centre, n_chan)
+    near = (velocity[None] <= MASK_FWHM * widths[:, None, None]).astype(float)  # (n_width, n_centre, n_chan)
+    pick = (peak[..., None] & (which[..., None] == jnp.arange(widths.size))).astype(float)
+    masked = (jnp.einsum("sabiw,wim->sabm", pick, near) > 0).astype(float)  # (n_shape, n_dra, n_ddec, n_chan)
+    other = 1.0 - near  # channels outside each template's own support, (n_width, n_centre, n_chan)
+    # the masked channels' part of every sum of the joint fit, per position and template
+    pw = basis[:, :, None] * basis[:, None, :]  # (n_chan, j, k)
+    d_gram = jnp.einsum("sabm,wim,ms,mjk->swabijk", masked, other, weight, pw)
+    d_c = jnp.einsum("sabm,wim,ms,wim,mj->swabij", masked, other, weight, profile, basis)
+    d_v = jnp.einsum("sabm,wim,ms,wim->swabi", masked, other, weight, profile**2)
+    d_num = jnp.einsum("sabm,wim,wim,msab->swabi", masked, other, profile, sig)
+    d_r = jnp.einsum("sabm,wim,mj,msab->swabij", masked, other, basis, sig)
+    g_m = gram[:, None, None, None, None] - d_gram
+    c_m = c[:, :, None, None] - d_c
+    r_m = jnp.einsum("mj,msab->sabj", basis, sig)[:, None, :, :, None] - d_r
+    coef = jnp.linalg.solve(g_m, c_m[..., None])[..., 0]  # G_m^-1 c_m
+    num = num0 - d_num - jnp.einsum("swabij,swabij->swabi", coef, r_m)
+    var = v0[:, :, None, None] - d_v - jnp.einsum("swabij,swabij->swabi", coef, c_m)
+    var_c = var * ratio[:, :, None, None]
+    ok = covered[:, :, None, None] & (var > 1e-9 * v0[:, :, None, None])
+    root = jnp.sqrt(jnp.where(ok, var_c, 1.0))
+    return jnp.where(ok, num / root, 0.0), jnp.where(ok, root / jnp.where(ok, var, 1.0), jnp.nan)
 
 
 def _centres(chunks: Sequence[Chunk]) -> np.ndarray:
@@ -310,9 +358,9 @@ class MatchedFilter(_Grid):
         axes = {k: np.asarray(v) for k, v in self.axes.items()}
         bmin, bmaj, pa = (np.asarray(s) for s in zip(*product(axes["bmin"], axes["bmaj"], axes["pa"]), strict=True))
         cov = covariance(bmaj * ARCSEC, bmin * ARCSEC, pa)
-        # windows that overlap in frequency add by inverse variance, (n_shape, n_width[, n_dra, n_ddec], n_centre)
-        w = np.zeros((bmin.size, len(axes["width"]), self.freqs.size))
-        wflux = np.zeros((*w.shape[:2], len(axes["dra"]), len(axes["ddec"]), self.freqs.size))
+        # windows that overlap in frequency add by inverse variance, (n_shape, n_width, n_dra, n_ddec, n_centre)
+        w = np.zeros((bmin.size, len(axes["width"]), len(axes["dra"]), len(axes["ddec"]), self.freqs.size))
+        wflux = np.zeros_like(w)
         tol = 1e-3 * np.diff(self.freqs).min() if self.freqs.size > 1 else 1.0
         with jax.enable_x64(True):
             for c in tqdm(data.chunks, desc="Windows", leave=False):
@@ -320,23 +368,25 @@ class MatchedFilter(_Grid):
                 snr, error = self._window(c, axes, cov, self.freqs[at])
                 inverse = np.nan_to_num(error**-2.0)
                 w[..., at] += inverse
-                wflux[..., at] += inverse[:, :, None, None] * snr * np.nan_to_num(error)[:, :, None, None]
+                wflux[..., at] += inverse * snr * np.nan_to_num(error)
         error = np.where(w > 0, 1 / np.sqrt(np.where(w > 0, w, 1.0)), np.nan)
-        snr = wflux * np.nan_to_num(error)[:, :, None, None]
-        snr = snr.transpose(2, 3, 0, 1, 4).reshape(*snr.shape[2:4], -1, snr.shape[-1])
-        error = np.broadcast_to(error.reshape(-1, error.shape[-1]), snr.shape)
+        snr, error = (
+            a.transpose(2, 3, 0, 1, 4).reshape(*a.shape[2:4], -1, a.shape[-1])
+            for a in (wflux * np.nan_to_num(error), error)
+        )
         coverage = np.broadcast_to(1.0, (*snr.shape[:2], snr.shape[-1]))
         return SearchResult(dict(self.axes), self.freqs, snr, snr * error, error, coverage)
 
     def _window(self, chunk: Chunk, axes: dict, cov: tuple, centres: np.ndarray) -> tuple:
-        """S/N and error of one window at ``centres``."""
-        snr = []
+        """S/N and error of one window at ``centres``, ``(n_shape, n_width, n_dra, n_ddec, n_centre)``."""
+        snr, error = [], []
         rho = jnp.asarray(self.noise[chunk.spw].rho if chunk.spw in self.noise else np.ones(1))
         freq, centres, widths = jnp.asarray(chunk.freq), jnp.asarray(centres), jnp.asarray(axes["width"])
         for n, collapsed in _blocks(chunk, axes["dra"], axes["ddec"], cov):
-            block, error = _spectral(*collapsed, freq, centres, widths, rho, order=self.continuum_order)
+            block, err = _spectral(*collapsed, freq, centres, widths, rho, order=self.continuum_order)
             snr.append(np.asarray(block)[:, :, :n])
-        return np.concatenate(snr, axis=2), np.asarray(error)
+            error.append(np.asarray(err)[:, :, :n])
+        return np.concatenate(snr, axis=2), np.concatenate(error, axis=2)
 
     def plot_response(self, filename: str | None = None, vline: float | None = None):
         """The best grid point's S/N spectrum, saved to ``filename`` if given (:mod:`luv_finder.plotting`)."""

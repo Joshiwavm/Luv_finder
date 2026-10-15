@@ -100,11 +100,47 @@ def test_without_a_continuum_fit_a_continuum_reads_as_line():
     assert _snr_at([b, CONTINUA["flat"]], 60, None) - _snr_at([b], 60, None) > 15
 
 
-@pytest.mark.parametrize("separation", [6, 12])
-def test_a_brighter_line_in_the_window_pulls_a_fainter_one_down_through_the_polynomial(separation):
-    """The continuum is fitted with each template over the whole window, so A biases B at any degree; not without."""
+@pytest.mark.parametrize("separation", [3, 6, 12])
+def test_a_brighter_line_in_the_window_leaves_a_fainter_one_unbiased(separation):
+    """A peaks above MASK_SNR, so the continuum is fitted without its channels for B's templates."""
     a, channel = _line(LINE_A, 15.0), LINE_A + separation * FWHM_CHANNELS
     b = _line(channel, 6.0)
-    bias = {order: _snr_at([a, b], channel, order) - _snr_at([b], channel, order) for order in (None, 1, 2)}
-    assert bias[None] == pytest.approx(0.0, abs=1e-9)
-    assert bias[1] < -0.2 and bias[2] < 0.5 and bias[1] < bias[2]
+    for order in (None, 1, 2):
+        bias = _snr_at([a, b], channel, order) - _snr_at([b], channel, order)
+        assert abs(bias) < (1e-3 if order is None else 0.15), order  # None: only the lines' far tails overlap
+
+
+def _joint(spectra, channel, order):
+    """The joint fit of template and polynomial over the whole window, in numpy."""
+    y = 400 * np.sum(spectra, axis=0)  # 400 unit-weight rows at the phase centre
+    W = np.full(N_CHAN, 400.0)
+    g = np.exp(-0.5 * ((np.arange(N_CHAN) - channel) / (FWHM_CHANNELS / 2.355)) ** 2)
+    P = np.linspace(-1.0, 1.0, N_CHAN)[:, None] ** np.arange(order + 1)
+    h = g - P @ np.linalg.solve(P.T @ (W[:, None] * P), P.T @ (W * g))
+    return h @ y / np.sqrt(h @ (W * h))
+
+
+@pytest.mark.parametrize("snr", [4.0, 15.0])
+def test_a_lone_line_gets_the_joint_fit(snr):
+    """Below MASK_SNR nothing is masked; above, the line keeps its own channels: the joint fit either way."""
+    line = _line(60, snr)
+    for order in (1, 2):
+        # rel 1e-5: the library's template is Gaussian in frequency, this one in channel index
+        assert _snr_at([line], 60, order) == pytest.approx(_joint([line], 60, order), rel=1e-5)
+
+
+def test_a_fit_leaves_out_the_other_lines_but_keeps_its_own_channels():
+    from luv_finder.fit import _without
+    from luv_finder.matchedfilter import MASK_FWHM
+
+    data = _window([_line(LINE_A, 15.0)])
+    (chunk,) = data.chunks
+    nu = chunk.freq[100]
+    other = (chunk.freq[LINE_A] / 1e9, 300.0)
+    out = _without(chunk, nu, 300.0, [other])
+    v_other = np.abs(chunk.freq / chunk.freq[LINE_A] - 1) * 299792.458
+    dropped = np.all(out.w == 0, axis=1)
+    assert np.array_equal(dropped, v_other <= MASK_FWHM * 300.0)
+    assert np.all(out.X[dropped] == 0) and np.array_equal(out.w[~dropped], chunk.w[~dropped])
+    # the fitted line's own channels stay even inside another's
+    assert not np.all(_without(chunk, chunk.freq[LINE_A + 1], 300.0, [other]).w[LINE_A + 1] == 0)
