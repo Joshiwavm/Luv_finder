@@ -865,7 +865,8 @@ def peak_snr_map(maps, marks=None, plots_dir=None, name="peak_snr"):
     """Peak S/N on the sky from saved maps ``(dra, ddec, peak)`` (one or several), their maximum.
 
     The units of one band are searched on lattices of different steps (half each one's resolution), so
-    every map is put onto the finest by nearest neighbour; positions no map covers stay blank. ``marks``
+    every map is put onto the finest by nearest neighbour; positions no map covers stay blank. Drawn
+    interpolated between the lattice points (Gouraud shading; display only). ``marks``
     maps a label to a (dra, ddec), or is a catalogue whose rows are marked ``#id`` at ``dra``, ``ddec``.
     """
     if isinstance(maps[0], np.ndarray) and maps[0].ndim == 1:
@@ -881,7 +882,7 @@ def peak_snr_map(maps, marks=None, plots_dir=None, name="peak_snr"):
         values = z[np.clip(ix, 0, x.size - 1)][:, np.clip(iy, 0, y.size - 1)]
         peak = np.fmax(peak, np.where(inside, values, np.nan))
     fig, ax = _subplots(figsize=(6.4, 5.4))
-    mesh = ax.pcolormesh(xs, ys, peak.T, shading="nearest", vmin=0, cmap="magma", rasterized=True)
+    mesh = ax.pcolormesh(xs, ys, np.ma.masked_invalid(peak.T), shading="gouraud", vmin=0, cmap="magma", rasterized=True)
     fig.colorbar(mesh, ax=ax, label="peak S/N")
     _mark(ax, _marks(marks))
     _sky_axes(ax)
