@@ -398,6 +398,15 @@ Open:
 - The figures' numbers move with the archive (new data monthly, proprietary data
   turning public); a release of the table should record its query date.
 
+### Candidate science targets
+
+Projects to search with Luv_finder once their data are in hand:
+
+| Project | Band | To check |
+|---|---|---|
+| 2022.A.00034.S | 3 | targets, pointings, spectral setup, data rights |
+| 2024.A.00047.S | 1 | targets, pointings, spectral setup, data rights |
+
 ## Longer term
 
 - **Merge with [alma-data-prep](https://github.com/Joshiwavm/alma-data-prep).**
