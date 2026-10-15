@@ -260,11 +260,150 @@ Both drafts live in Notion: the method chapter on the Luv-finder page, and the J
 article as its subpage. The `notion-sync` skill (`.claude/skills/notion-sync/`) keeps
 them in step with `main`.
 
+## 5. Archive mining
+
+Goal: a blind line search over the whole public ALMA archive. Find the data that
+add the most survey volume, download only what calibration needs, restore it
+with the right CASA, prepare it with alma-data-prep, and search it here.
+
+### What exists
+
+`scripts/alma_sky_coverage.py` (not part of the package) queries the archive's
+`ivoa.obscore` through ALminer in (band, Dec strip) chunks, cached in
+`data/archive/chunks/`, and collapses the per-spw rows to one row per (MOUS,
+footprint): band, footprint, array (12m/7m), data rights, the frequency coverage
+as merged spw intervals and the summed bandwidth. `plot` draws the coverage
+figure. The hands-on notebook `04_alma_archive_coverage` in
+`ALMA_analysis/Notebooks/luv_finder/` runs both and selects by field, band, line
+and redshift, array and data rights, giving one row per MOUS (project code, MOUS,
+targets, area, bandwidth) as a CSV.
+
+State of the archive on 2026-10-14 (ESO mirror, Dec < +30, science targets,
+interferometric only): 430,977 rows, 87,734 footprints, fetched in 8 minutes.
+
+| | Footprints | Unique area [arcmin^2] | Band 3 | Band 6 |
+|---|---|---|---|---|
+| All science targets | 87,734 | 58,619 | 39,343 | 18,656 |
+| Extragalactic | 43,628 | 15,431 | 8,795 | 4,936 |
+
+Extragalactic means `Galaxy evolution`, `Active galaxies` and `Cosmology`. About
+half the equatorial strip is COSMOS; the rest is H-ATLAS/GAMA (9h-15h) and SDSS
+Stripe 82 (20h-4h). Band 2 has no science data yet.
+
+### What the archive tables are like
+
+Checked on real rows; each point changed the script:
+
+- `s_region` is STC-S: `Circle` for a single pointing (radius `s_fov / 2`),
+  `Polygon` for a mosaic, often non-convex (healpy's `query_polygon` fails on
+  about 20% of them), `Union ( ... )` of disjoint outlines, and holes as
+  `Not (Polygon ...)`. Footprints are rasterised by point-in-polygon on the
+  candidate pixels of a bounding disc, with the holes removed.
+- `s_fov` is the PB FWHM for a single pointing, but for a `Union` it spans all
+  members, up to 38 degrees. Areas come from the rasterised outlines, never from
+  `s_fov`.
+- `scientific_category` now reads `Galaxy evolution`, `Active galaxies`,
+  `Cosmology`, `Local Universe`, `ISM and star formation`, ...; the older names
+  match nothing. `Active galaxies` includes Sgr A* and the CMZ (about 400
+  footprints), and 2015.1.01289.S files 1,179 footprints at l = 350, b = 0 as
+  `Galaxy evolution`: an extragalactic selection still needs a Galactic-plane cut.
+- `antenna_arrays` lists `pad:antenna`: DA/DV are 12 m, CM 7 m, PM total power.
+- `em_min`/`em_max` are wavelengths in metres. `band_list` has multi-band values
+  ("3 7") on 103 of about 449,000 science rows; an exact match skips them.
+- `s_region` is a geometry column on the ESO TAP service, so `LIKE` on it fails.
+
+ALminer pins pyvo 1.2.1, which has no `DALOverflowWarning` (a truncated result
+passes silently) and imports `cgi` (gone in Python 3.13), and an astroquery that
+needs `setuptools<81`. Its `download_data` breaks with current pandas (it hands
+astroquery a string array, not a list). It runs in its own venv
+(`~/venvs/almacov`, Python 3.12, pyvo upgraded), never in `luv`.
+
+### From a MOUS to calibrated visibilities
+
+`astroquery.alma.Alma.get_data_info([mous])` lists every file of a MOUS, by
+`semantics`:
+
+| Semantics | What | Needed for visibilities |
+|---|---|---|
+| `#this` | `<project>_<mous>_001_of_001.tar`: pipeline images and masks | no |
+| `#auxiliary` | `<project>_<mous>_auxiliary.tar`: `scriptForPI.py`, `caltables.tgz`, `calapply.txt` per EB, flag versions, the pipeline manifest, weblog, QA reports | yes |
+| `#progenitor` | `<project>_<EB>.asdm.sdm.tar`: raw data of the calibrated EBs | yes |
+| `#package` | further ASDMs without a `calapply.txt`, not calibrated (QA0 failures, presumably) | no |
+| `#documentation` | README | yes |
+
+With `expand_tarfiles=True` the members are listed one by one, and small ones
+(README, `scriptForPI.py`, the manifest) can be read without downloading a tar.
+The CASA and pipeline versions are in
+`calibration/*pipeline_manifest.xml` (`<casaversion name=...>`,
+`<pipeline_version name=...>`), not in the README. Restoring: untar everything in
+one directory, which recreates
+`<project>/science_goal.uid___*/group.uid___*/member.uid___*/{raw,calibration,script,...}`,
+then in `script/` run `casa --pipeline -c member.uid___*.scriptForPI.py` with that
+version. The calibrated MSs land in `calibrated/` (`*.ms.split.cal`, or
+`*_targets.ms` for pipeline-imaged data). That tree is what alma-data-prep's
+`ProjectDataOrganizer` walks for `*.ms.split.cal`, so it needs no change.
+Alternatively the EU ARC delivers calibrated MSs on request (Helpdesk ticket).
+
+Allegro has, after `allegro-setup`: `casapy431`, `casapy452`, `casapy460`,
+`casapy470`, `casapy-472`, `casapy-500` ... `casapy-580`, `casapy-611p`,
+`casapy-621p`, `casapy-630`, `casapy-641p`, `casapy-654p`, `casapy-655`,
+`casapy-666p`, `casapy-672`. CASA `X.Y.Z.*` maps to `casapy-XYZ`, and the `p`
+builds carry the pipeline; restoring pipeline-calibrated data needs a `p` build.
+At archive scale the version bookkeeping, not the download, is the work.
+
+Worked example, 2023.1.00213.S (PI Kitayama), J0459.6-4946:
+
+| | |
+|---|---|
+| MOUS | `uid://A001/X3621/X376d` (the project's only one); group `X3621/X376c`, science goal `X3621/X376b` |
+| Setup | Band 3, 12 m mosaic, 4 spws from 84.04 GHz, 31.25 MHz channels, about 2.8" |
+| On source | 11,154 s; calibrators J0519-4546, J1107-4449 (bandpass, flux), J0451-4653, J0455-4615, J0526-4830, J0531-4827 (phase) |
+| Rights | public since 2025-04-16, QA2 passed |
+| CASA | 6.5.4.9, pipeline 2023.1.0.124: `casapy-654p` |
+| EBs | 15 calibrated, 4 more `#package` ASDMs not |
+| Download for visibilities | auxiliary tar 3.0 GB + 15 ASDMs 127 GB (images tar 0.28 GB, not needed) |
+
+All 15 calibrated EBs are already in
+`~/Documents/Allegro-home/open_CLJ0459/archive/2023.1.00213.S/.../member.uid___A001_X3621_X376d/calibrated/`.
+
+### Plan: Luv_finder, ALminer and alma-data-prep run jointly
+
+A `luv_finder.archive` module and a `luv-archive` CLI, on pyvo and astroquery
+directly rather than ALminer (its pins break `luv`, its download is broken, and
+it is a thin layer over the two), keeping ObsCore column names so ALminer
+functions still read the tables:
+
+1. `luv-archive query`: the footprint and MOUS table, moved from
+   `scripts/alma_sky_coverage.py` into the package, with the selections of the
+   notebook (field, band, line and redshift, array, data rights, a Galactic-plane
+   cut).
+2. `luv-archive manifest <MOUS ...>`: per MOUS the archive tree path, the
+   calibrated EBs, the sizes and the CASA and pipeline versions from the
+   manifest, mapped to the `casapy` build. Writes `download.sh` (`wget -c` of the
+   auxiliary tar and the `#progenitor` ASDMs; public data only, proprietary data
+   need an archive login) and `restore.sh` (untar, then `scriptForPI.py` under
+   the right `casapy` per MOUS).
+3. alma-data-prep: `ProjectDataOrganizer(<archive root>)` as now, to a
+   concatenated MS.
+4. Luv_finder: the `luv-run` YAML points `data:` at that MS; later a run could
+   name a project or MOUS instead.
+
+Open:
+
+- Where `archive` lives: here (the search defines what is worth downloading) or
+  in alma-data-prep (getting data is its job, but it runs in CASA's python, which
+  may lack pyvo).
+- `restore.sh` needs `allegro-setup` and a `casapy`, so it belongs on the CASA
+  side, with alma-data-prep.
+- The figures' numbers move with the archive (new data monthly, proprietary data
+  turning public); a release of the table should record its query date.
+
 ## Longer term
 
 - **Merge with [alma-data-prep](https://github.com/Joshiwavm/alma-data-prep).**
   The per-(field, spw) reader in `data.py` is the piece to share: Stokes I from
   `WEIGHT` and `FLAG`, the selection alma-data-prep's own export applies.
+  Archive mining (section 5) joins the two from the other end.
 - **Bright-line subtraction.** Subtract the best-fit UV model and re-run on the
   residual. Needs a bright-plus-faint fixture. Detection does not need the
   moment-8 machinery in `alma_data_prep.export_cube.ExportCube`: that map is
