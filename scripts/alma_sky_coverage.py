@@ -7,8 +7,8 @@ A discussion figure for an archive-wide blind line search, not part of the packa
 
 ``fetch`` queries ``ivoa.obscore`` through ALminer (``alminer.run_query``) in (band, Dec strip)
 chunks, cached in ``data/archive/chunks/`` so an interrupted fetch resumes, and collapses the
-per-spw rows to one row per (member OUS, footprint): band, footprint, the frequency coverage as
-merged spw intervals, and the summed bandwidth. ``plot`` draws
+per-spw rows to one row per (member OUS, footprint): band, footprint, array (12m/7m), data
+rights, the frequency coverage as merged spw intervals, and the summed bandwidth. ``plot`` draws
 
 - the whole sky (Mollweide, equatorial; north of ``--dec-max`` greyed) with the area ALMA covers per HEALPix
   cell: the footprints are rasterised on a fine HEALPix grid (``--nside``, 3.2" pixels by
@@ -128,11 +128,21 @@ def collapse(parts):
                 s_region=region,
                 is_mosaic=str(first["is_mosaic"]) == "T",
                 category=first["scientific_category"],
+                array=_array(first["antenna_arrays"]),
+                data_rights=first["data_rights"],
                 nu_spans=" ".join(f"{a:.4f}-{b:.4f}" for a, b in spans),
                 bandwidth=float(np.sum(spans[:, 1] - spans[:, 0])),
             )
         )
     return Table(rows=out)
+
+
+def _array(antennas):
+    """12-m (DA/DV antennas) or 7-m (CM antennas, the ACA) from ObsCore's ``antenna_arrays``."""
+    antennas = str(antennas) if isinstance(antennas, str) else ""
+    if re.search(r"\bD[AV]\d", antennas):
+        return "12m"
+    return "7m" if re.search(r"\bCM\d", antennas) else ""
 
 
 def merge_intervals(spans):
