@@ -27,7 +27,7 @@ from tqdm import tqdm
 
 from .data import ChannelNoise, Chunk, DataHandler, fields_in, load
 from .kernel import _blocks, limit_cores
-from .model import C_KMS, FWHM_TO_SIGMA, Gaussian, Model, covariance
+from .model import C_KMS, CONTINUUM_ORDER, FWHM_TO_SIGMA, Gaussian, Model, covariance
 from .utils import ARCSEC, primary_beam, primary_beam_radius
 
 TEMPLATE_KEYS = ("bmin", "bmaj", "pa", "width")
@@ -263,7 +263,7 @@ class MatchedFilter(_Grid):
         self,
         data: DataHandler,
         mod: Model,
-        continuum_order: int | None = 2,
+        continuum_order: int | None = CONTINUUM_ORDER,
         channel_noise: str | dict | None = "measure",
     ):
         if isinstance(channel_noise, str) and channel_noise != "measure":

@@ -21,7 +21,7 @@ from scipy import linalg, optimize
 from .data import Chunk, DataHandler, load, sky_direction
 from .data import channel_noise as measure_noise
 from .kernel import DATA_POWERS, WEIGHT_POWERS, limit_cores, on_device, point_moments
-from .model import C_KMS, FWHM_TO_SIGMA, covariance, rotated
+from .model import C_KMS, CONTINUUM_ORDER, FWHM_TO_SIGMA, covariance, rotated
 from .utils import primary_beam
 
 #: Line flux per peak flux density and FWHM, as :meth:`~luv_finder.matchedfilter.SearchResult.integrated_flux`.
@@ -190,7 +190,7 @@ def fit_line(
     bmaj: float = 0.0,
     bmin: float = 0.0,
     pa: float = 0.0,
-    continuum_order: int | None = 2,
+    continuum_order: int | None = CONTINUUM_ORDER,
     pb_limit: float = 0.2,
     channel_noise: str | dict | None = "measure",
 ) -> dict:

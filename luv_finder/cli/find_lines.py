@@ -14,6 +14,7 @@ from ..catalogue import catalogue  # noqa: E402
 from ..data import fields_in, load
 from ..fit import fit_lines
 from ..matchedfilter import MatchedFilter, SearchResult, build_grid, grid_model, pb_corrected, search_pointings
+from ..model import CONTINUUM_ORDER
 from ..plotting import reliability_check, response_check
 
 #: Catalogue columns printed for the detected lines.
@@ -59,9 +60,9 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument(
         "--continuum-order",
         type=continuum_order,
-        default=2,
+        default=CONTINUUM_ORDER,
         help="degree of the continuum polynomial fitted with the line per window and position; "
-        "-1 or none disables (default 2)",
+        f"-1 or none disables (default {CONTINUUM_ORDER})",
     )
     p.add_argument(
         "--catalogue",

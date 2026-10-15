@@ -22,6 +22,7 @@ OFFSETS = ((0.0, 0.0), (30.0, 0.0))  # pointing centres, arcsec; the primary bea
 SOURCE = {"dra": 12.0, "ddec": -5.0, "bmaj": 2.0, "bmin": 1.0, "pa": 40.0}  # PB 0.86 and 0.74
 LINE = {"nu0": NU0 + 2.3 * DNU, "width": 300.0, "peak": 0.2}
 CONTINUUM = (0.05, 0.01, -0.02)  # Jy, coefficients in the channel index scaled to [-1, 1]
+ORDER = len(CONTINUUM) - 1  # the fit models the injected quadratic
 #: A catalogue's start: the nearest half-resolution grid point, channel and template.
 START = (11.0, -4.0, (NU0 + 2 * DNU) / 1e9, 200.0)
 FREQ = NU0 + (np.arange(N_CHAN) - N_CHAN // 2) * DNU
@@ -107,7 +108,7 @@ def test_reduced_chi2_is_the_direct_sum():
 
 
 def test_noise_free_fit_recovers_every_parameter():
-    fit = fit_line(_data(), *START, channel_noise=None)
+    fit = fit_line(_data(), *START, continuum_order=ORDER, channel_noise=None)
     assert fit["fit_converged"] and fit["fit_n_pointings"] == 2
     for key, pull in _pulls(fit, _truth()).items():
         assert abs(pull) < 0.01, key
@@ -119,7 +120,7 @@ def test_noise_free_fit_recovers_every_parameter():
 
 
 def test_noisy_fit_is_within_its_errors():
-    fit = fit_line(_data(noise=True), *START, channel_noise=None)
+    fit = fit_line(_data(noise=True), *START, continuum_order=ORDER, channel_noise=None)
     assert fit["fit_converged"]
     for key, pull in _pulls(fit, _truth()).items():
         assert abs(pull) < 3, key
@@ -129,7 +130,7 @@ def test_noisy_fit_is_within_its_errors():
 
 def test_point_source_fits_through_zero_size():
     point = {**SOURCE, "bmaj": 0.0, "bmin": 0.0}
-    fit = fit_line(_data(point), *START, channel_noise=None)
+    fit = fit_line(_data(point), *START, continuum_order=ORDER, channel_noise=None)
     assert fit["fit_converged"] and fit["fit_bmaj"] < 0.05
     truth = {k: v for k, v in _truth(point).items() if k not in ("fit_bmaj", "fit_bmin")}
     for key, pull in _pulls(fit, truth).items():

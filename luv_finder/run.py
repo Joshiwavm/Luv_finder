@@ -31,7 +31,7 @@ from astropy.table import Table
 from .catalogue import _reliability, catalogue, merge_catalogues
 from .data import Metadata, fields_in, iter_chunks, load, target_selection, write_npz
 from .matchedfilter import TEMPLATE_KEYS, search_pointings
-from .model import C_KMS
+from .model import C_KMS, CONTINUUM_ORDER
 
 #: Name of the config copy every run keeps in its output directory.
 RUN_FILE = "run.yaml"
@@ -376,7 +376,9 @@ class Run:
             todo &= ~reuse
         for unit in np.unique(cat["unit"][todo]):
             rows = todo & np.asarray(cat["unit"] == unit)
-            done = fit_lines(load(str(self.export_path(unit))), cat, rows=rows, cores=self.config["cores"])
+            done = fit_lines(
+                load(str(self.export_path(unit))), cat, rows=rows, cores=self.config["cores"], **self.fit_options
+            )
             for name in COLUMNS:
                 fitted[name][rows] = done[name][rows]
             fitted.meta.setdefault("spectra", {}).update(done.meta.get("spectra", {}))
@@ -385,6 +387,11 @@ class Run:
         fitted.write(self.output / "lines_fit.ecsv", format="ascii.ecsv", overwrite=True)
         self.moment_maps()
         return fitted
+
+    @property
+    def fit_options(self) -> dict:
+        """The fit's continuum degree: the search's (``filter: continuum_order``), else the default."""
+        return {"continuum_order": self.config["filter"].get("continuum_order", CONTINUUM_ORDER)}
 
     def moment_maps(self) -> None:
         """Moment-0 maps of every fitted line, from the export: ``line_maps.npz`` (minutes; no refit)."""

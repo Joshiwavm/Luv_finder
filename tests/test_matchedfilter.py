@@ -17,7 +17,7 @@ from luv_finder.matchedfilter import (
     pb_corrected,
     search_pointings,
 )
-from luv_finder.model import FWHM_TO_SIGMA
+from luv_finder.model import CONTINUUM_ORDER, FWHM_TO_SIGMA
 from luv_finder.utils import primary_beam, primary_beam_radius
 
 C_KMS = 299792.458
@@ -475,7 +475,7 @@ def _assert_same(a, b):
         _assert_same(a.jackknife, b.jackknife)
 
 
-def _search_by_hand(path, field, continuum_order=2):
+def _search_by_hand(path, field, continuum_order=CONTINUUM_ORDER):
     """One field searched step by step as ``search_pointings`` does: ``(data, filter)`` after ``run``."""
     data = DataHandler.from_npz(path, [field])
     mf = _finder(data, continuum_order, "measure", **build_grid(data, {**SOURCES_GRID, "pb_limit": 0.2}))

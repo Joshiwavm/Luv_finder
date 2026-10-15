@@ -13,6 +13,8 @@ from astropy.constants import c
 
 C_KMS = c.to(u.km / u.s).value
 FWHM_TO_SIGMA = 1 / 2.355
+#: Degree of the continuum polynomial fitted with each line, in the search and the fit.
+CONTINUUM_ORDER = 1
 
 
 def covariance(bmaj, bmin, pa, xp=np):

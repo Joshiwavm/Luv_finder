@@ -73,7 +73,8 @@ class MockObservation:
         ``position`` (dra, ddec) arcsec east and north; optional ``axis_maj``/``axis_min``, the Gaussian
         sigma in arcsec (the model's ``bmaj``/``bmin``, default one cell), and ``pa``, the
         major axis' position angle in degrees east of north (default 0);
-        ``line`` {width km/s, mean GHz, snr}; ``continuum`` {snr}.
+        ``line`` {width km/s, mean GHz, snr}; ``continuum`` {snr, index}, flux density
+        ``propto (nu / freq_center)^index`` (default 0, flat), ``snr`` at ``freq_center``.
     alma_config : str
         Bare name of a CASA antenna configuration, e.g. ``alma.cycle13.3.cfg``,
         resolved from CASA's own data directory.
@@ -209,7 +210,9 @@ class MockObservation:
                 print(f"source {src['position']}: line flux {flux_line * dv:.3e} Jy km/s")
             if "continuum" in src:
                 flux_cont = src["continuum"]["snr"] * self.sensitivity / np.sqrt(nchan)
-                self.cube += flux_cont * spatial[None]
+                nu = f_start + df * chans
+                slope = (nu / u.Quantity(self.freq_center).to(u.GHz).value) ** src["continuum"].get("index", 0.0)
+                self.cube += flux_cont * slope[:, None, None] * spatial[None]
                 print(f"source {src['position']}: continuum {flux_cont:.3e} Jy/chan")
         return self.cube
 
