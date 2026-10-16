@@ -4,6 +4,12 @@
 .. automodule:: luv_finder.model
 
    
+   .. rubric:: Module Attributes
+
+   .. autosummary::
+   
+      CONTINUUM_ORDER
+   
    .. rubric:: Functions
 
    .. autosummary::

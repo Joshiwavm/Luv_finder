@@ -302,7 +302,8 @@
 <dt><strong>sources</strong><span class="classifier">list of dict</span></dt><dd><p><code class="docutils literal notranslate"><span class="pre">position</span></code> (dra, ddec) arcsec east and north; optional <code class="docutils literal notranslate"><span class="pre">axis_maj</span></code>/<code class="docutils literal notranslate"><span class="pre">axis_min</span></code>, the Gaussian
 sigma in arcsec (the model’s <code class="docutils literal notranslate"><span class="pre">bmaj</span></code>/<code class="docutils literal notranslate"><span class="pre">bmin</span></code>, default one cell), and <code class="docutils literal notranslate"><span class="pre">pa</span></code>, the
 major axis’ position angle in degrees east of north (default 0);
-<code class="docutils literal notranslate"><span class="pre">line</span></code> {width km/s, mean GHz, snr}; <code class="docutils literal notranslate"><span class="pre">continuum</span></code> {snr}.</p>
+<code class="docutils literal notranslate"><span class="pre">line</span></code> {width km/s, mean GHz, snr}; <code class="docutils literal notranslate"><span class="pre">continuum</span></code> {snr, index}, flux density
+<code class="docutils literal notranslate"><span class="pre">propto</span> <span class="pre">(nu</span> <span class="pre">/</span> <span class="pre">freq_center)^index</span></code> (default 0, flat), <code class="docutils literal notranslate"><span class="pre">snr</span></code> at <code class="docutils literal notranslate"><span class="pre">freq_center</span></code>.</p>
 </dd>
 <dt><strong>alma_config</strong><span class="classifier">str</span></dt><dd><p>Bare name of a CASA antenna configuration, e.g. <code class="docutils literal notranslate"><span class="pre">alma.cycle13.3.cfg</span></code>,
 resolved from CASA’s own data directory.</p>

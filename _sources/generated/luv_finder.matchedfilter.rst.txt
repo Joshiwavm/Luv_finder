@@ -4,6 +4,13 @@
 .. automodule:: luv_finder.matchedfilter
 
    
+   .. rubric:: Module Attributes
+
+   .. autosummary::
+   
+      MASK_SNR
+      MASK_FWHM
+   
    .. rubric:: Functions
 
    .. autosummary::

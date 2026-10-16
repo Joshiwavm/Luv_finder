@@ -268,6 +268,16 @@
 <p>Parameter naming convention: every component attribute is exposed as
 <code class="docutils literal notranslate"><span class="pre">src_{component_index:02d}_{attribute}</span></code> (e.g. <code class="docutils literal notranslate"><span class="pre">src_00_nu_center</span></code>). The
 matched filter parses this key to route values back onto the component.</p>
+<p class="rubric">Module Attributes</p>
+<div class="table-wrapper autosummary longtable docutils container">
+<table class="autosummary longtable docutils align-default">
+<tbody>
+<tr class="row-odd"><td><p><a class="reference internal" href="#luv_finder.model.CONTINUUM_ORDER" title="luv_finder.model.CONTINUUM_ORDER"><code class="xref py py-obj docutils literal notranslate"><span class="pre">CONTINUUM_ORDER</span></code></a></p></td>
+<td><p>Degree of the continuum polynomial fitted with each line, in the search and the fit.</p></td>
+</tr>
+</tbody>
+</table>
+</div>
 <p class="rubric">Functions</p>
 <div class="table-wrapper autosummary longtable docutils container">
 <table class="autosummary longtable docutils align-default">
@@ -297,6 +307,12 @@ matched filter parses this key to route values back onto the component.</p>
 </tbody>
 </table>
 </div>
+<dl class="py data">
+<dt class="sig sig-object py" id="luv_finder.model.CONTINUUM_ORDER">
+<span class="sig-prename descclassname"><span class="pre">luv_finder.model.</span></span><span class="sig-name descname"><span class="pre">CONTINUUM_ORDER</span></span><span class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">1</span></span><a class="headerlink" href="#luv_finder.model.CONTINUUM_ORDER" title="Link to this definition">¶</a></dt>
+<dd><p>Degree of the continuum polynomial fitted with each line, in the search and the fit.</p>
+</dd></dl>
+
 <dl class="py class">
 <dt class="sig sig-object py" id="luv_finder.model.Gaussian">
 <span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">luv_finder.model.</span></span><span class="sig-name descname"><span class="pre">Gaussian</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">dra</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">ddec</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">total_flux</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">bmin</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">bmaj</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">pa</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">nu_center</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">width</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">100.0</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/luv_finder/model.html#Gaussian"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#luv_finder.model.Gaussian" title="Link to this definition">¶</a></dt>
@@ -427,6 +443,7 @@ matched filter parses this key to route values back onto the component.</p>
           <div class="toc-tree">
             <ul>
 <li><a class="reference internal" href="#">luv_finder.model</a><ul>
+<li><a class="reference internal" href="#luv_finder.model.CONTINUUM_ORDER"><code class="docutils literal notranslate"><span class="pre">CONTINUUM_ORDER</span></code></a></li>
 <li><a class="reference internal" href="#luv_finder.model.Gaussian"><code class="docutils literal notranslate"><span class="pre">Gaussian</span></code></a><ul>
 <li><a class="reference internal" href="#luv_finder.model.Gaussian.envelope"><code class="docutils literal notranslate"><span class="pre">Gaussian.envelope()</span></code></a></li>
 <li><a class="reference internal" href="#luv_finder.model.Gaussian.spectrum"><code class="docutils literal notranslate"><span class="pre">Gaussian.spectrum()</span></code></a></li>
