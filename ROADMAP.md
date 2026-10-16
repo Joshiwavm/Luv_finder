@@ -127,6 +127,21 @@ visibilities, so the Band 1 default grid (21,675 points, 415 k rows in the
 
 Open:
 
+- **Combining pointings: an average of averages.** Each pointing is collapsed to a
+  spectrum and filtered on its own, its flux divided by its PB, and the pointings
+  are then averaged with weights PB^2 / sigma^2. Check that this equals fitting the
+  concatenated visibilities of all pointings at once: a mean of ratios is not in
+  general a ratio of means. For a fixed template the two agree algebraically,
+  `F = sum_p B_p y_p / sum_p B_p^2 W_p` (`y_p`, `W_p` the pointing's filter sums), the
+  sums `fit.py` uses, but they can part where:
+  - the continuum is fitted, and since `claude/continuum-order` masked, per pointing,
+    instead of once as a continuum times each pointing's PB;
+  - the PB is taken at one frequency, while it changes across a wide line or window;
+  - an extended source sees a different PB across its extent in every pointing;
+  - the channel-correlation and mask corrections are per pointing.
+  Test: a mock mosaic with a line seen by several pointings at different PB,
+  combined search against one joint fit of every pointing's visibilities (flux, S/N,
+  centre), with and without continuum.
 - **Completeness.** Inject analytic `Model` lines into the visibilities (ASPECS
   style) and recover them through the same path, to turn the S/N limit into a
   flux limit per coverage (on a mosaic the S/N cut is uniform, the flux limit is
