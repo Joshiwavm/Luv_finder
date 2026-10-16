@@ -181,6 +181,10 @@ def test_fit_lines_of_the_fixture(data, truth, tmp_path):
     for (dra, ddec, m0), i in zip(maps, sorted(nearest), strict=True):
         peak = np.unravel_index(np.argmax(m0), m0.shape)
         assert np.hypot(dra[peak[0]] - cat["fit_dra"][i], ddec[peak[1]] - cat["fit_ddec"][i]) < 2.0
+    far = cat[[nearest[0]]]
+    far["fit_dra"] = 10 * data.metadata.primarybeamsize()  # a fit that ran outside every pointing
+    ((_, _, m0),) = line_maps(data, far)
+    assert np.isnan(m0).all()
     line_maps_check(maps, back, plots_dir=str(tmp_path))
     line_spectra_check(back, plots_dir=str(tmp_path))
     assert (tmp_path / "line_maps.png").is_file() and (tmp_path / "line_spectra.png").is_file()

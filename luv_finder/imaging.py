@@ -16,7 +16,7 @@ from .fit import _window_chunks
 from .kernel import limit_cores
 from .matchedfilter import _beam, _check_freqs, _one_field, _union_lattice, build_grid
 from .model import C_KMS
-from .utils import ARCSEC, C
+from .utils import ARCSEC, C, primary_beam
 
 
 @dataclass(frozen=True, eq=False)
@@ -157,13 +157,18 @@ def mosaic_dirty_maps(cubes: Sequence[DirtyCube], pb_limit: float = 0.2):
 def line_maps(data: DataHandler, cat, size: float = 8.0, pb_limit: float = 0.2) -> list[tuple]:
     """``(dra, ddec, moment0)`` within ``size`` arcsec of each fitted line, Jy/beam km/s over +-1 FWHM, no continuum.
 
-    Positions no pointing covers (primary beam below ``pb_limit``) are NaN.
+    Positions no pointing covers (primary beam below ``pb_limit``) are NaN, the whole map when a fit ran
+    to one of them.
     """
     step = data.metadata.minresolution() / 4
-    maps = []
+    dish, maps = data.metadata.dish_diameter, []
     for row in cat[np.isfinite(cat["fit_dra"])]:
         centre, nu0, width = (row["fit_dra"], row["fit_ddec"]), row["fit_freq_ghz"] * 1e9, row["fit_width"]
         dra, ddec = (step * np.arange(np.ceil((x - size) / step), np.floor((x + size) / step) + 1) for x in centre)
+        pb = [primary_beam(np.hypot(centre[0] - c.offset[0], centre[1] - c.offset[1]), nu0, dish) for c in data.chunks]
+        if max(pb) < pb_limit:
+            maps.append((dra, ddec, np.full((dra.size, ddec.size), np.nan)))
+            continue
         chunks = _window_chunks(data, *centre, nu0, pb_limit)
         cubes = [dirty_cube(DataHandler(chunks=[c], metadata=data.metadata), dra, ddec) for c in chunks]
         dra, ddec, cube, ivar = _linear_mosaic(cubes, pb_limit)
