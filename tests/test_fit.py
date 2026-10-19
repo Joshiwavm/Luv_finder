@@ -41,10 +41,10 @@ def _model(chunk, spectrum, dra, ddec, bmaj, bmin, pa):
     return (pb * spectrum)[:, None] * shape * np.conj(chunk.phase(dra, ddec))
 
 
-def _data(source=SOURCE, noise=False, seed=0, n_row=3000) -> DataHandler:
+def _data(source=SOURCE, noise=False, seed=0, n_row=3000, line=LINE) -> DataHandler:
     """Two pointings of the source, random uv within 30 klambda (resolution 4.9 arcsec), weights 0.5-2, 5% flagged."""
     rng = np.random.default_rng(seed)
-    spectrum = _spectrum(continuum=CONTINUUM, **LINE)
+    spectrum = _spectrum(continuum=CONTINUUM, **line)
     chunks = []
     for field, offset in enumerate(OFFSETS):
         u, v = rng.uniform(-3e4, 3e4, (2, n_row)) * C / NU0
@@ -213,3 +213,12 @@ def test_the_fit_uses_the_visibility_weights():
     for key in ("fit_dra", "fit_freq_ghz", "fit_width", "fit_line_flux"):
         assert abs(scaled[key] - plain[key]) < 1e-3 * plain[f"{key}_error"]
         assert scaled[f"{key}_error"] == pytest.approx(2 * plain[f"{key}_error"], rel=1e-3)
+
+
+def test_a_line_narrower_than_the_bound_fits_at_min_width():
+    """40 km/s, about one channel: the width stops at MIN_WIDTH with no error, and the rest still fits."""
+    from luv_finder.fit import MIN_WIDTH
+
+    fit = fit_line(_data(line={**LINE, "width": 40.0}), *START, continuum_order=ORDER, channel_noise=None)
+    assert fit["fit_width"] == MIN_WIDTH and np.isnan(fit["fit_width_error"])
+    assert abs(fit["fit_freq_ghz"] - LINE["nu0"] / 1e9) < 0.1 * DNU / 1e9

@@ -43,6 +43,10 @@ REPORTED = {
     "continuum": "Jy",
 }
 
+#: Lowest fitted line FWHM, km/s: a line a few channels wide would otherwise collapse below one channel,
+#: since the model samples a Gaussian at the channel centres (no Hanning or channel response).
+MIN_WIDTH = 70.0
+
 #: Columns :func:`fit_lines` adds, with their units.
 COLUMNS = {
     **{f"fit_{k}{e}": u for k, u in REPORTED.items() for e in ("", "_error")},
@@ -244,7 +248,7 @@ def fit_line(
                     cache[z.tobytes()] = (
                         value,
                         grad[free] * scale[free],
-                        hess[free, free] * np.outer(scale, scale)[free, free],
+                        hess[np.ix_(free, free)] * np.outer(scale, scale)[np.ix_(free, free)],
                     )
                 return cache[z.tobytes()]
 
@@ -260,23 +264,27 @@ def fit_line(
             theta[free] += scale[free] * result.x
             return theta, result.success
 
-        SPATIAL, SPECTRAL = slice(0, 5), slice(5, None)
+        SPATIAL, SPECTRAL, WIDTH = slice(0, 5), slice(5, None), 6
 
         def profiled(theta):
             """One pass at theta's position and shape, the spectrum fitted exactly on its moments."""
             same = np.array_equal(theta[SPATIAL], best["theta"][SPATIAL])
             moments = best["moments"] if same else _moments(theta, chunks)
+            free = np.arange(theta.size)[SPECTRAL]
             theta, ok = solve(
-                np.concatenate([theta[SPATIAL], best["theta"][SPECTRAL]]),
-                SPECTRAL,
-                lambda t: system(t, moments),
+                np.concatenate([theta[SPATIAL], best["theta"][SPECTRAL]]), free, lambda t: system(t, moments)
             )
+            if theta[WIDTH] < MIN_WIDTH:  # on its bound: the rest of the spectrum refitted at MIN_WIDTH
+                theta[WIDTH] = MIN_WIDTH
+                theta, ok = solve(theta, free[free != WIDTH], lambda t: system(t, moments))
             value, grad = system(theta, moments)[:2]
             best.update(theta=theta, ok=ok, moments=moments)
             return value, grad
 
         # start: the peak and continuum, linear in the model, by one Newton step from zero
-        theta0 = np.array([dra, ddec, *covariance(bmaj, bmin, pa), freq_ghz * 1e9, width, 0.0, *np.zeros(n_continuum)])
+        theta0 = np.array(
+            [dra, ddec, *covariance(bmaj, bmin, pa), freq_ghz * 1e9, max(width, MIN_WIDTH), 0.0, *np.zeros(n_continuum)]
+        )
         moments = _moments(theta0, chunks)
         _, grad, hess, _, _ = system(theta0, moments)
         theta0[7:] -= np.linalg.solve(hess[7:, 7:], grad[7:])
@@ -320,6 +328,8 @@ def fit_line(
     on_bound = np.sort((y0 + y_scale * result.x)[2:4])[::-1] < 1e-6 * y_scale[2:4].min()
     errors[2:4][on_bound] = np.nan
     values[4], errors[4] = (np.nan, np.nan) if on_bound.all() else (values[4], errors[4])
+    if values[6] <= MIN_WIDTH:  # the width on its bound
+        errors[6] = np.nan
     ok = Q > 0
     ra, dec = np.degrees(sky_direction(values[:2], data.metadata.ref))
     out = {f"fit_{k}": v for k, v in zip(REPORTED, values, strict=True)}
