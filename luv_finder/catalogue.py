@@ -397,9 +397,14 @@ def _reliability(
     return columns, meta
 
 
-def merge_catalogues(cats: Sequence[Table]) -> Table:
-    """One catalogue of several searches (e.g. one per spectral window), its reliability over their whole volume."""
-    floor, k, fidelity_min, rule = (cats[0].meta[key] for key in ("floor", "k", "fidelity_min", "rule"))
+def merge_catalogues(cats: Sequence[Table], reliability: dict | None = None) -> Table:
+    """One catalogue of several searches (e.g. one per spectral window), its reliability over their whole volume.
+
+    ``reliability`` (``floor``, ``k``, ``fidelity_min``, ``rule``) overrides the searches' own, so the
+    tests can change without a new search.
+    """
+    given = {key: cats[0].meta[key] for key in ("floor", "k", "fidelity_min", "rule")} | (reliability or {})
+    floor, k, fidelity_min, rule = (given[key] for key in ("floor", "k", "fidelity_min", "rule"))
     cat = vstack(list(cats), metadata_conflicts="silent").copy()  # vstack of one table returns it
     snr = {"data": np.asarray(cat["snr"])}
     snr |= {name: np.concatenate([c.meta[f"snr_{name}"] for c in cats]) for name in ("jackknife", "negative")}

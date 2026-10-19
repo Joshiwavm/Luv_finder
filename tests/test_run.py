@@ -125,3 +125,11 @@ def test_duplicates_catch_the_two_halves_of_a_line_split_by_a_window_edge():
     })  # fmt: skip
     beam = {"spw00": 0.7, "spw01": 0.7, "spw02": 0.7}
     assert duplicates(cat, beam).tolist() == [0, 1, 0, 1]
+
+
+def test_merge_applies_the_run_files_reliability(run):
+    """A rule changed in the run file takes effect on merge, without a new search."""
+    other = "or" if run.config["reliability"]["rule"] == "and" else "and"
+    again = Run({**run.config, "reliability": {**run.config["reliability"], "rule": other}})
+    assert again.merge().meta["rule"] == other
+    assert run.merge().meta["rule"] == run.config["reliability"]["rule"]

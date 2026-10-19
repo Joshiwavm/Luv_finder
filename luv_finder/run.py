@@ -331,10 +331,12 @@ class Run:
     def merge(self) -> Table:
         """The units' catalogues as one, reliability over their whole volume: ``catalogue.ecsv``.
 
+        The tests are the run file's ``reliability``, so changing it needs a merge, not a search.
+
         A line found in two units (:func:`duplicates`) counts once in the likelihood ratio and the
         fidelity: the fainter group gets ``duplicate_of`` and is not detected.
         """
-        cat = merge_catalogues([Table.read(self.path(u, ".ecsv")) for u in self.units])
+        cat = merge_catalogues([Table.read(self.path(u, ".ecsv")) for u in self.units], self.config["reliability"])
         cat["duplicate_of"] = self.duplicates(cat)
         one = np.asarray(cat["duplicate_of"] == 0)
         if not one.all():
