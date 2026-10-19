@@ -8,6 +8,7 @@
 
    .. autosummary::
    
+      DETECTION_RULE
       UNITS
       SEARCH_META
    

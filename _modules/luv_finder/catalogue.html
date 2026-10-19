@@ -547,6 +547,9 @@
 
 
 
+<span class="c1">#: How the likelihood ratio and the fidelity combine into ``detected``: "and" (both) or "or" (either).</span>
+<span class="n">DETECTION_RULE</span> <span class="o">=</span> <span class="s2">"and"</span>
+
 <span class="c1">#: Units of the :func:`catalogue` columns.</span>
 <span class="n">UNITS</span> <span class="o">=</span> <span class="p">{</span>
     <span class="s2">"dra"</span><span class="p">:</span> <span class="s2">"arcsec"</span><span class="p">,</span>
@@ -572,7 +575,12 @@
 <div class="viewcode-block" id="catalogue">
 <a class="viewcode-back" href="../../generated/luv_finder.catalogue.html#luv_finder.catalogue.catalogue">[docs]</a>
 <span class="k">def</span><span class="w"> </span><span class="nf">catalogue</span><span class="p">(</span>
-    <span class="n">result</span><span class="p">:</span> <span class="n">SearchResult</span><span class="p">,</span> <span class="n">ref</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">floor</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">4.0</span><span class="p">,</span> <span class="n">k</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">3.0</span><span class="p">,</span> <span class="n">fidelity_min</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.6</span><span class="p">,</span> <span class="n">rule</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">"or"</span>
+    <span class="n">result</span><span class="p">:</span> <span class="n">SearchResult</span><span class="p">,</span>
+    <span class="n">ref</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+    <span class="n">floor</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">4.0</span><span class="p">,</span>
+    <span class="n">k</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">3.0</span><span class="p">,</span>
+    <span class="n">fidelity_min</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.6</span><span class="p">,</span>
+    <span class="n">rule</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="n">DETECTION_RULE</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Table</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">"""Catalogue the line candidates of a search: one row per group of the data, by S/N descending.</span>
 
@@ -582,8 +590,8 @@
 <span class="sd">    (:func:`likelihood`, :func:`fidelity`). A group passes the likelihood ratio if</span>
 <span class="sd">    ``Lambda &gt;= k`` or no jackknife group is as bright: there ``Lambda`` diverges, and its lower</span>
 <span class="sd">    limit is the last finite value, at the brightest jackknife group. It is ``detected`` if it passes</span>
-<span class="sd">    the likelihood ratio or its fidelity is at least ``fidelity_min`` (``rule="or"``), or both</span>
-<span class="sd">    (``rule="and"``, where a fidelity that could not be fitted does not count against it). Nothing</span>
+<span class="sd">    the likelihood ratio and its fidelity is at least ``fidelity_min`` (``rule="and"``, the default;</span>
+<span class="sd">    a fidelity that could not be fitted does not count against it), or either (``rule="or"``). Nothing</span>
 <span class="sd">    is clipped: the candidates are ``cat[cat["detected"]]``.</span>
 
 <span class="sd">    Parameters</span>
@@ -648,7 +656,9 @@
 
 
 
-<span class="k">def</span><span class="w"> </span><span class="nf">_reliability</span><span class="p">(</span><span class="n">snr</span><span class="p">:</span> <span class="nb">dict</span><span class="p">,</span> <span class="n">floor</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span> <span class="n">k</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span> <span class="n">fidelity_min</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span> <span class="n">rule</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">"or"</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">dict</span><span class="p">,</span> <span class="nb">dict</span><span class="p">]:</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">_reliability</span><span class="p">(</span>
+    <span class="n">snr</span><span class="p">:</span> <span class="nb">dict</span><span class="p">,</span> <span class="n">floor</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span> <span class="n">k</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span> <span class="n">fidelity_min</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span> <span class="n">rule</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="n">DETECTION_RULE</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">dict</span><span class="p">,</span> <span class="nb">dict</span><span class="p">]:</span>
 <span class="w">    </span><span class="sd">"""Likelihood ratio, fidelity and detection of the data groups against the jackknife's, as columns and meta."""</span>
     <span class="n">ratio</span><span class="p">,</span> <span class="n">lower</span> <span class="o">=</span> <span class="n">likelihood</span><span class="p">(</span><span class="n">snr</span><span class="p">[</span><span class="s2">"data"</span><span class="p">],</span> <span class="n">snr</span><span class="p">[</span><span class="s2">"jackknife"</span><span class="p">])</span>
     <span class="n">fid</span><span class="p">,</span> <span class="p">(</span><span class="n">amplitude</span><span class="p">,</span> <span class="n">sigma</span><span class="p">),</span> <span class="n">bins</span> <span class="o">=</span> <span class="n">fidelity</span><span class="p">(</span><span class="n">snr</span><span class="p">[</span><span class="s2">"data"</span><span class="p">],</span> <span class="n">snr</span><span class="p">[</span><span class="s2">"jackknife"</span><span class="p">],</span> <span class="n">floor</span><span class="p">)</span>
