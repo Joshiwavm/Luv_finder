@@ -1,8 +1,9 @@
 # Roadmap
 
 Current state: grid-search matched filter, in S/N. The data are stored per (field,
-spw) as `X = w * V` and a channel flag mask,
-with `u`, `v`, time and weight per row and frequency per channel.
+spw) as `X = w * V` and the weight of every visibility (0 where flagged), with `u`,
+`v`, time, baseline and scan per row and frequency per channel; the weights are
+corrected on reading per (scan, channel).
 
 The matched filter runs in JAX, float64, on a whole window at once. Per channel,
 the position search is one complex matrix product over a `dra x ddec` grid,
@@ -25,12 +26,27 @@ the moment-8 and continuum maps. `search_pointings` searches, corrects and combi
 pointing in one call; the whole Band 3 mosaic, 195 x 183 positions x 3 widths x
 512 channels with its jackknife, takes 18 minutes on 12 cores at 13 GB.
 
-From a search to a catalogue (`catalogue.py`, section 2.2): local maxima are
+From a search to a catalogue (`catalogue.py`, section 2.1): local maxima are
 grouped by the response shape measured on the jackknife, and every group is
-tested with a likelihood ratio and a fidelity against the jackknife's groups.
-The S/N accounts for the correlation between channels that ALMA's Hanning
-response leaves, measured on the jackknife. The Band 3 mosaic gives 14 lines
-(section 2.2).
+tested with a likelihood ratio and a fidelity against the jackknife's groups;
+it is detected when it passes both. The S/N accounts for the correlation between
+channels that ALMA's Hanning response leaves, measured on the jackknife. The
+continuum is a degree-1 polynomial fitted with the template, with every line at
+S/N >= 5 at that position masked over one template FWHM; the fit does the same.
+On 2026-10-19 the J0459 Band 3 mosaic gives 12 lines and Band 1 4; ASPECS 3 mm 13
+and 1.2 mm 6, all published (13 of the 16 published 3 mm lines).
+
+Assumptions, stated in the paper rather than lifted:
+
+- The primary-beam correction is point-like, one PB per position: a source
+  comparable to the beam sees the PB vary across it, which the visibility plane
+  cannot undo.
+- Frequencies are in the measurement set's frame; `Metadata.from_ms` warns unless
+  it is LSRK (TOPO differs by up to ~30 km/s), so regrid with `mstransform` first.
+- The line model is sampled at the channel centres, with no channel response; the
+  fitted width is bounded at 70 km/s (`fit.MIN_WIDTH`).
+- A line at S/N >= 100 is flagged (`catalogue.bright_lines`), not subtracted: its
+  sidelobes reach a few sigma elsewhere.
 
 The rest of section 1 is about scaling to larger grids.
 
@@ -87,6 +103,14 @@ rotation to the peak the cells can be large: 5 klambda loses
 thousand cells of 196 k rows. Each pass of the fit (`kernel.point_moments`) would be
 100-200x cheaper; worth it for Band 1's 960-channel window or larger mosaics.
 
+### The masked continuum
+
+Masking the lines at S/N >= 5 out of the continuum fit (`matchedfilter._masked`)
+costs x1.07 on a J0459 Band 3 pointing, x1.23 on ASPECS 3 mm and x4.0 on ASPECS
+1.2 mm, where the few rows leave the spectral part dominant. Most position blocks
+hold no peak at S/N >= 5 and need no masked pass: skipping them should bring the
+cost back to that of the joint fit.
+
 ### The position search is a Fourier transform
 
 The response is built along two different axes, and only the first is expensive.
@@ -122,10 +146,9 @@ Where it starts to matter: the GEMM cost grows with the number of positions time
 visibilities, so the Band 1 default grid (21,675 points, 415 k rows in the
 960-channel window) takes 6.6 minutes per pass where a Band 3 pointing takes 39 s.
 
-### 2.2 Detection inference
-#TODO: double check the effect of continuum subtraction on the line inference.
+## 2. Detection
 
-Open:
+### 2.1 Open
 
 - **Combining pointings: an average of averages.** Each pointing is collapsed to a
   spectrum and filtered on its own, its flux divided by its PB, and the pointings
@@ -137,7 +160,6 @@ Open:
   - the continuum is fitted, and since `claude/continuum-order` masked, per pointing,
     instead of once as a continuum times each pointing's PB;
   - the PB is taken at one frequency, while it changes across a wide line or window;
-  - an extended source sees a different PB across its extent in every pointing;
   - the channel-correlation and mask corrections are per pointing.
   Test: a mock mosaic with a line seen by several pointings at different PB,
   combined search against one joint fit of every pointing's visibilities (flux, S/N,
@@ -146,80 +168,40 @@ Open:
   style) and recover them through the same path, to turn the S/N limit into a
   flux limit per coverage (on a mosaic the S/N cut is uniform, the flux limit is
   not).
-- **Frequencies in LSRK.** The search works in the measurement set's frame, TOPO
-  for these data; at the Band 3 observation dates (March 2024) TOPO to LSRK is
-  +7.4 to +7.9 MHz at 85 GHz (~27 km/s), most of the 11 MHz by which the
-  catalogue sits below an independent by-eye line list. Catalogue frequencies and
-  redshifts should be LSRK, which needs the observation times and the site in
-  `Metadata`.
-- **Fluxes against the by-eye list** (low priority). That list is the published
-  one: lines found by eye in the image cubes, their fluxes from Gaussian fits to
-  the extracted spectra. The uv fit's line fluxes are 1.4-6.0 times (median 2.8)
-  those, so this compares that simple image-plane method with the full fit; the
-  moment-0 maps (`imaging.line_maps`) show which lines are extended, where a
-  spectrum misses flux.
-- **Atmospheric lines.** Atmospheric lines make some channels noisier than a
-  weight per spectral window says: ozone at 1.2 mm (231.3, 235.7, 237.1, 239.1 GHz
-  and more above 240 GHz) and the 118.75 GHz O2 wing at the top of Band 3. With
-  `statwt chanbin="spw"` the S/N there is overestimated in the data and the jackknife
-  alike; in ASPECS 1.2 mm the excess is 1.5-3.4x in power and changes by a factor of
-  two between execution blocks. Done: the weights are measured on reading per
-  (scan, channel) from integrations of a baseline <= 450 s apart, any field
-  (`weight_scale`, 99% of the rows paired at 1.2 mm), and divided by it. Per scan,
-  because the 237.15 GHz ozone core also changes between the scans of a block, by
-  +-8% in power in 3 of 8 blocks (chi^2/dof 2.4-7.4 at the line peak; clean channels
-  1.0). With the weights as read, false peaks gathered on the ozone lines (3-12x
-  the chance rate at S/N >= 5); corrected per channel, they no longer do.
-- **Narrow features that change in time.** The robust check of `weight_scale` exceeds
-  5 sigma in ASPECS 3 mm spw 6, 7, 9 and 11. In spw 9 (20.7 sigma) it is two channels
-  at 108.88 GHz in two execution blocks, with heavy-tailed pair differences on many
-  baselines (the top 1% of pairs carry 11% of `sum w z^2`, twice the Gaussian share):
-  interference or a spur. The mean-based scale down-weights those cells by their
-  real variance; flagging the (scan, channel) cells the check marks would be cleaner.
-- **Jackknife of sparsely sampled fields.** A mosaic field seen once per visit
-  (ASPECS 1.2 mm: 9-14 integrations per window, days to months apart) pairs fewer
-  rows than one tracked for hours: the per-baseline pairing keeps 67-74% of them
-  (98% at 3 mm), down from 33-42% when integrations were paired by their index in
-  time. Partners far apart in hour angle cancel the sky less well; the continuum
-  fit removes leaked continuum, but a bright line could leak. Check the leakage on
-  a mock observed the same way. At 1.2 mm the data hold 4-9% more groups than the
-  jackknife at S/N 4-5.5, while the negated data match the data: a pair sits at the
-  mean of its partners' uv, which differ when they are months apart. Compare with a
-  jackknife that keeps one partner's uv.
+- **The 1.2 mm jackknife deficit.** At S/N 4-5.5 the ASPECS 1.2 mm data and the
+  negated data hold 1.07 and 1.09 times the jackknife's groups (3 mm: 1.00 and 1.01;
+  2026-10-19). Not the sparse sampling: a mosaic field there is seen 9-14 times per
+  window, days to months apart, so a pair's partners are hours apart in hour angle,
+  and a `simobserve` mock observed that way (Band 6, `alma.cycle13.2.cfg`, 12
+  integrations at random hour angles in random order, against 12 consecutive;
+  `output/jackknife_sparse/`) shows:
+  - leakage: the jackknife leaves 0.1 of a S/N 50 line at its peak and 3.5 beside it
+    (tracked: 0.2), and 0.02 of a S/N 240 continuum source after the continuum fit
+    (8.7 without). Pairs at one partner's uv instead of their mean leave 9.2. The
+    brightest 1.2 mm line is S/N 9;
+  - the null: over 200 noise draws the jackknife holds 0.99 +- 0.01, 0.97 +- 0.02 and
+    1.05 +- 0.05 times the groups of the data and the negated data at S/N >= 3, 3.5
+    and 4 (tracked: 1.02, 1.02, 0.93).
+  Left: noise constant over a pair cancels in the jackknife, and 0.3% in sigma
+  would do it (counts at S/N T scale by (T^2 + 1) per unit fractional sigma); and
+  the 26-33% of rows the jackknife cannot pair, which the mock pairs all.
 - **Fit across overlapping windows.** Windows that overlap in frequency are combined
   in the search, but `fit_line` uses one window per pointing, so a line in the
   ASPECS 3 mm double-tuned range is fitted with one tuning's data.
 - **Lines across a window edge.** A line wider than the gap between two adjacent
-  windows is searched in each window apart, so it is found twice: ASPECS 3mm.07 (609
-  km/s at 93.558 GHz, between spw00, ending at 93.563 GHz, and spw01, starting at
-  93.570 GHz) is detected as its low half in spw00 (fitted 476 km/s) and its high
-  half in spw01 (243 km/s), 0.4" and 300 km/s apart, each with part of the flux.
-  Done: `run.duplicates` calls two detections one line when they are within a beam
-  and their fitted profiles overlap, `|dv| <= (FWHM_a + FWHM_b) / 2`, so the fainter
-  half is flagged. Open: search and fit adjacent windows as one spectrum (a template
-  and a line profile across the gap), so the line is found once with all its flux.
-- **Channel response.** The template is a Gaussian sampled at the channel centres;
-  Hanning smoothing and channel averaging broaden a line a few channels wide, and
-  windows with different correlator setups then see slightly different peaks. The
-  fit has the same gap: a line two channels wide (ASPECS 3mm.08, 50 km/s) can
-  collapse below one channel, to a width of 4 km/s with an unbounded error. A lower
-  bound on the width near the channel width, or the channel response in the model,
-  would stop it.
+  windows is searched in each window apart: ASPECS 3mm.07 (609 km/s at 93.558 GHz,
+  between spw00 and spw01) is found as its low half in one and its high half in the
+  other. `run.duplicates` flags the fainter half (within a beam, fitted profiles
+  overlapping), but each half carries part of the flux. Search and fit adjacent
+  windows as one spectrum, so the line is found once with all its flux.
 - **Fidelity per template width.** ASPECS computes the fidelity per kernel width:
   narrow templates have more independent trials than broad ones at the same S/N.
   The catalogue pools all templates. Its noise is a Gaussian tail fitted to the
   jackknife groups, as ASPECS fits its negatives; an erf fitted to the binned
-  fidelity failed at 1.2 mm, where the jackknife deficit near the floor (above)
+  fidelity failed at 1.2 mm, where the jackknife deficit (above)
   held the low bins at 0.05 and set the threshold at S/N 7.9 instead of 6.7.
-- **A fit that absorbs its neighbours.** The candidate at 85.857 GHz, 16-31 MHz
-  from two detected lines, is no longer detected (fidelity 0.43), but when it was
-  its fit ran to a 1818 km/s line 101 MHz off the peak (chi^2_red 3.5, 10.8
-  times the catalogue flux) and still reported `fit_converged`. Fit neighbouring
-  lines jointly. Cutting the fit to a few widths around the peak does not help:
-  in so few channels the quadratic continuum mimics a broad line (tried: one line
-  ran to 5800 km/s, another lost 30% of its flux).
 
-### 2.3 Joint Band 1 and Band 3 identification
+### 2.2 Joint Band 1 and Band 3 identification
 One pointing per band. A line in each band at the same sky position is a redshift
 confirmation, since the bands sample different transitions of the same ladder.
 Needs co-spatial matching with a tolerance set by the coarser beam, a way to
@@ -256,11 +238,11 @@ joint review.
 
 The methods paper validates on ASPECS, the cleanest test: public data with a published
 blind catalogue (Gonzalez-Lopez et al. 2019). It then compares the SPT-CL J0459 Band 3
-mosaic (14 lines) and Band 1 with our published by-eye list. Before submitting:
+mosaic (12 lines) and Band 1 with our published by-eye list. Before submitting:
 
 - the ASPECS comparison: recovered, new and missed lines, and the S/N and flux ratios;
-- completeness, LSRK frequencies and joint fits of neighbouring lines (section 2.2);
-- the Band 1 search and the joint Band 1 and Band 3 identification (section 2.3).
+- completeness and the check of combined pointings (section 2.1);
+- the joint Band 1 and Band 3 identification (section 2.2).
 
 JOSS gates, all needed at submission:
 
@@ -428,27 +410,8 @@ Projects to search with Luv_finder once their data are in hand:
   The per-(field, spw) reader in `data.py` is the piece to share: Stokes I from
   `WEIGHT` and `FLAG`, the selection alma-data-prep's own export applies.
   Archive mining (section 5) joins the two from the other end.
-- **Bright-line subtraction.** Subtract the best-fit UV model and re-run on the
-  residual. Needs a bright-plus-faint fixture. Detection does not need the
-  moment-8 machinery in `alma_data_prep.export_cube.ExportCube`: that map is
-  `max_nu [I / sigma_nu]`, which is a matched filter with a one-channel boxcar,
-  so the filter here already dominates it for a line of known width. Moment-8
-  cannot move into the visibility plane either, because `max` is nonlinear and
-  pointwise in space while the Fourier relation is linear; Parseval gives total
-  power, not a per-pixel maximum. The reason to want it there, avoiding a CASA
-  imaging pass, is solved: `imaging.dirty_cube` produces the dirty cube on the
-  search grid by NUFFT, and `dirty_maps` the moment-8 from it.
 - **Combining 12 m and 7 m (ACA) data.** The arrays have different dishes, so
   each needs its own primary beam in `pb_corrected`, `combine_pointings` and the
   fit; they share one position lattice, set by the 12 m resolution.
-- **Primary beam for extended sources.** The correction is point-like: one PB
-  per position. For a source comparable to the beam the PB varies across it;
-  folding PB into the template envelope (per pointing) would handle that.
-- **Moment maps of found lines.** Moment-0/1 maps of catalogued lines from the
-  `imaging.dirty_cube` of their pointings.
-- **GPU.** The filter is device-agnostic JAX. miscanti has a Tesla T4 but no
-  CUDA jaxlib, and the T4's float64 rate is 1/32 of its float32 rate, so it is
-  unlikely to beat the CPU; Apple GPUs have no float64 at all. Worth trying on
-  a cluster GPU with real float64 throughput (A100/H100).
 - **Other exploration methods** beyond grid search, once it is understood on real
   data.
