@@ -281,10 +281,13 @@ chi^2, its gradient and the Gauss-Newton matrix <code class="docutils literal no
 <tr class="row-even"><td><p><a class="reference internal" href="#luv_finder.fit.REPORTED" title="luv_finder.fit.REPORTED"><code class="xref py py-obj docutils literal notranslate"><span class="pre">REPORTED</span></code></a></p></td>
 <td><p>Quantities reported per line, each with an <code class="docutils literal notranslate"><span class="pre">_error</span></code>, and their units.</p></td>
 </tr>
-<tr class="row-odd"><td><p><a class="reference internal" href="#luv_finder.fit.COLUMNS" title="luv_finder.fit.COLUMNS"><code class="xref py py-obj docutils literal notranslate"><span class="pre">COLUMNS</span></code></a></p></td>
+<tr class="row-odd"><td><p><a class="reference internal" href="#luv_finder.fit.MIN_WIDTH" title="luv_finder.fit.MIN_WIDTH"><code class="xref py py-obj docutils literal notranslate"><span class="pre">MIN_WIDTH</span></code></a></p></td>
+<td><p>Lowest fitted line FWHM, km/s: a line a few channels wide would otherwise collapse below one channel, since the model samples a Gaussian at the channel centres (no Hanning or channel response).</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#luv_finder.fit.COLUMNS" title="luv_finder.fit.COLUMNS"><code class="xref py py-obj docutils literal notranslate"><span class="pre">COLUMNS</span></code></a></p></td>
 <td><p>Columns <a class="reference internal" href="#luv_finder.fit.fit_lines" title="luv_finder.fit.fit_lines"><code class="xref py py-func docutils literal notranslate"><span class="pre">fit_lines()</span></code></a> adds, with their units.</p></td>
 </tr>
-<tr class="row-even"><td><p><a class="reference internal" href="#luv_finder.fit.START" title="luv_finder.fit.START"><code class="xref py py-obj docutils literal notranslate"><span class="pre">START</span></code></a></p></td>
+<tr class="row-odd"><td><p><a class="reference internal" href="#luv_finder.fit.START" title="luv_finder.fit.START"><code class="xref py py-obj docutils literal notranslate"><span class="pre">START</span></code></a></p></td>
 <td><p>Catalogue columns a fit starts from; the source shape defaults to a point.</p></td>
 </tr>
 </tbody>
@@ -316,6 +319,13 @@ chi^2, its gradient and the Gauss-Newton matrix <code class="docutils literal no
 <dt class="sig sig-object py" id="luv_finder.fit.LINE_FLUX">
 <span class="sig-prename descclassname"><span class="pre">luv_finder.fit.</span></span><span class="sig-name descname"><span class="pre">LINE_FLUX</span></span><span class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">np.float64(1.0643856792488324)</span></span><a class="headerlink" href="#luv_finder.fit.LINE_FLUX" title="Link to this definition">¶</a></dt>
 <dd><p>Line flux per peak flux density and FWHM, as <a class="reference internal" href="luv_finder.matchedfilter.html#luv_finder.matchedfilter.SearchResult.integrated_flux" title="luv_finder.matchedfilter.SearchResult.integrated_flux"><code class="xref py py-meth docutils literal notranslate"><span class="pre">integrated_flux()</span></code></a>.</p>
+</dd></dl>
+
+<dl class="py data">
+<dt class="sig sig-object py" id="luv_finder.fit.MIN_WIDTH">
+<span class="sig-prename descclassname"><span class="pre">luv_finder.fit.</span></span><span class="sig-name descname"><span class="pre">MIN_WIDTH</span></span><span class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">70.0</span></span><a class="headerlink" href="#luv_finder.fit.MIN_WIDTH" title="Link to this definition">¶</a></dt>
+<dd><p>Lowest fitted line FWHM, km/s: a line a few channels wide would otherwise collapse below one channel,
+since the model samples a Gaussian at the channel centres (no Hanning or channel response).</p>
 </dd></dl>
 
 <dl class="py data">
@@ -412,6 +422,7 @@ The other rows of <code class="docutils literal notranslate"><span class="pre">c
 <li><a class="reference internal" href="#">luv_finder.fit</a><ul>
 <li><a class="reference internal" href="#luv_finder.fit.COLUMNS"><code class="docutils literal notranslate"><span class="pre">COLUMNS</span></code></a></li>
 <li><a class="reference internal" href="#luv_finder.fit.LINE_FLUX"><code class="docutils literal notranslate"><span class="pre">LINE_FLUX</span></code></a></li>
+<li><a class="reference internal" href="#luv_finder.fit.MIN_WIDTH"><code class="docutils literal notranslate"><span class="pre">MIN_WIDTH</span></code></a></li>
 <li><a class="reference internal" href="#luv_finder.fit.REPORTED"><code class="docutils literal notranslate"><span class="pre">REPORTED</span></code></a></li>
 <li><a class="reference internal" href="#luv_finder.fit.START"><code class="docutils literal notranslate"><span class="pre">START</span></code></a></li>
 <li><a class="reference internal" href="#luv_finder.fit.empty_fit"><code class="docutils literal notranslate"><span class="pre">empty_fit()</span></code></a></li>

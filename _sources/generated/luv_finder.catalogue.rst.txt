@@ -9,6 +9,7 @@
    .. autosummary::
    
       DETECTION_RULE
+      BRIGHT_SNR
       UNITS
       SEARCH_META
    
@@ -16,6 +17,7 @@
 
    .. autosummary::
    
+      bright_lines
       catalogue
       fidelity
       groups

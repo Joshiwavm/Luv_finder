@@ -12,12 +12,14 @@
       READ_BLOCK
       MAX_GAP
       CHANNEL_BLOCK
+      FREQUENCY_FRAMES
    
    .. rubric:: Functions
 
    .. autosummary::
    
       channel_noise
+      check_frame
       fields_in
       iter_chunks
       load

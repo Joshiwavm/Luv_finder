@@ -626,6 +626,9 @@
         <span class="n">msmd</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
 
         <span class="n">tb</span> <span class="o">=</span> <span class="n">tools</span><span class="p">()</span><span class="o">.</span><span class="n">table</span><span class="p">()</span>
+        <span class="n">tb</span><span class="o">.</span><span class="n">open</span><span class="p">(</span><span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">msfile</span><span class="si">}</span><span class="s2">/SPECTRAL_WINDOW"</span><span class="p">)</span>
+        <span class="n">check_frame</span><span class="p">(</span><span class="n">msfile</span><span class="p">,</span> <span class="n">tb</span><span class="o">.</span><span class="n">getcol</span><span class="p">(</span><span class="s2">"MEAS_FREQ_REF"</span><span class="p">)[[</span><span class="nb">int</span><span class="p">(</span><span class="n">s</span><span class="p">)</span> <span class="k">for</span> <span class="n">s</span> <span class="ow">in</span> <span class="n">spws</span><span class="p">]])</span>
+        <span class="n">tb</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
         <span class="n">tb</span><span class="o">.</span><span class="n">open</span><span class="p">(</span><span class="n">msfile</span><span class="p">)</span>
         <span class="n">sel</span> <span class="o">=</span> <span class="n">tb</span><span class="o">.</span><span class="n">query</span><span class="p">(</span><span class="sa">f</span><span class="s2">"FIELD_ID IN </span><span class="si">{</span><span class="p">[</span><span class="nb">int</span><span class="p">(</span><span class="n">f</span><span class="p">)</span><span class="w"> </span><span class="k">for</span><span class="w"> </span><span class="n">f</span><span class="w"> </span><span class="ow">in</span><span class="w"> </span><span class="n">fields</span><span class="p">]</span><span class="si">}</span><span class="s2"> AND ANTENNA1 != ANTENNA2"</span><span class="p">,</span> <span class="n">columns</span><span class="o">=</span><span class="s2">"UVW"</span><span class="p">)</span>
         <span class="n">uvw</span> <span class="o">=</span> <span class="n">sel</span><span class="o">.</span><span class="n">getcol</span><span class="p">(</span><span class="s2">"UVW"</span><span class="p">)</span>
@@ -647,6 +650,25 @@
 <span class="w">        </span><span class="sd">"""Angular resolution in arcsec from the longest baseline."""</span>
         <span class="k">return</span> <span class="mf">1.0</span> <span class="o">/</span> <span class="bp">self</span><span class="o">.</span><span class="n">max_uvwave</span> <span class="o">/</span> <span class="n">ARCSEC</span></div>
 </div>
+
+
+
+<span class="c1">#: casacore's MFrequency reference codes (``MEAS_FREQ_REF`` of an MS's SPECTRAL_WINDOW).</span>
+<span class="n">FREQUENCY_FRAMES</span> <span class="o">=</span> <span class="p">(</span><span class="s2">"REST"</span><span class="p">,</span> <span class="s2">"LSRK"</span><span class="p">,</span> <span class="s2">"LSRD"</span><span class="p">,</span> <span class="s2">"BARY"</span><span class="p">,</span> <span class="s2">"GEO"</span><span class="p">,</span> <span class="s2">"TOPO"</span><span class="p">,</span> <span class="s2">"GALACTO"</span><span class="p">,</span> <span class="s2">"LGROUP"</span><span class="p">,</span> <span class="s2">"CMB"</span><span class="p">)</span>
+
+
+<div class="viewcode-block" id="check_frame">
+<a class="viewcode-back" href="../../generated/luv_finder.data.html#luv_finder.data.check_frame">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">check_frame</span><span class="p">(</span><span class="n">msfile</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">codes</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""Warn unless every window is in LSRK: the search, the catalogue and the fit keep the MS's frame."""</span>
+    <span class="n">frames</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">({</span><span class="n">FREQUENCY_FRAMES</span><span class="p">[</span><span class="nb">int</span><span class="p">(</span><span class="n">c</span><span class="p">)]</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">np</span><span class="o">.</span><span class="n">atleast_1d</span><span class="p">(</span><span class="n">codes</span><span class="p">)})</span>
+    <span class="k">if</span> <span class="n">frames</span> <span class="o">!=</span> <span class="p">[</span><span class="s2">"LSRK"</span><span class="p">]:</span>
+        <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">msfile</span><span class="si">}</span><span class="s2">: channel frequencies are in </span><span class="si">{</span><span class="s1">', '</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">frames</span><span class="p">)</span><span class="si">}</span><span class="s2">, not LSRK, and so will be the catalogue's "</span>
+            <span class="s2">"frequencies and redshifts (TOPO differs from LSRK by up to ~30 km/s); regrid to LSRK first "</span>
+            <span class="s2">"(CASA mstransform, outframe='LSRK') for published values"</span><span class="p">,</span>
+            <span class="n">stacklevel</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span>
+        <span class="p">)</span></div>
 
 
 

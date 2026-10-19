@@ -10,6 +10,7 @@
    
       LINE_FLUX
       REPORTED
+      MIN_WIDTH
       COLUMNS
       START
    

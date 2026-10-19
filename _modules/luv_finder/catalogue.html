@@ -550,6 +550,10 @@
 <span class="c1">#: How the likelihood ratio and the fidelity combine into ``detected``: "and" (both) or "or" (either).</span>
 <span class="n">DETECTION_RULE</span> <span class="o">=</span> <span class="s2">"and"</span>
 
+<span class="c1">#: S/N from which a line's sidelobes (``sidelobe`` of a few per cent) reach a few sigma elsewhere in the search:</span>
+<span class="c1">#: flagged by :func:`bright_lines`, not subtracted.</span>
+<span class="n">BRIGHT_SNR</span> <span class="o">=</span> <span class="mf">100.0</span>
+
 <span class="c1">#: Units of the :func:`catalogue` columns.</span>
 <span class="n">UNITS</span> <span class="o">=</span> <span class="p">{</span>
     <span class="s2">"dra"</span><span class="p">:</span> <span class="s2">"arcsec"</span><span class="p">,</span>
@@ -652,7 +656,24 @@
     <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">unit</span> <span class="ow">in</span> <span class="n">UNITS</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
         <span class="k">if</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">cat</span><span class="o">.</span><span class="n">colnames</span><span class="p">:</span>
             <span class="n">cat</span><span class="p">[</span><span class="n">name</span><span class="p">]</span><span class="o">.</span><span class="n">unit</span> <span class="o">=</span> <span class="n">unit</span>
+    <span class="k">if</span> <span class="n">note</span> <span class="o">:=</span> <span class="n">bright_lines</span><span class="p">(</span><span class="n">cat</span><span class="p">):</span>
+        <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span><span class="n">note</span><span class="p">,</span> <span class="n">stacklevel</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span>
     <span class="k">return</span> <span class="n">cat</span></div>
+
+
+
+<div class="viewcode-block" id="bright_lines">
+<a class="viewcode-back" href="../../generated/luv_finder.catalogue.html#luv_finder.catalogue.bright_lines">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">bright_lines</span><span class="p">(</span><span class="n">cat</span><span class="p">:</span> <span class="n">Table</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">"""A note on the groups at S/N &gt;= :data:`BRIGHT_SNR`, empty if none."""</span>
+    <span class="n">bright</span> <span class="o">=</span> <span class="n">cat</span><span class="p">[</span><span class="n">cat</span><span class="p">[</span><span class="s2">"snr"</span><span class="p">]</span> <span class="o">&gt;=</span> <span class="n">BRIGHT_SNR</span><span class="p">]</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="nb">len</span><span class="p">(</span><span class="n">bright</span><span class="p">):</span>
+        <span class="k">return</span> <span class="s2">""</span>
+    <span class="n">found</span> <span class="o">=</span> <span class="s2">", "</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="sa">f</span><span class="s2">"#</span><span class="si">{</span><span class="n">row</span><span class="p">[</span><span class="s1">'id'</span><span class="p">]</span><span class="si">}</span><span class="s2"> (S/N </span><span class="si">{</span><span class="n">row</span><span class="p">[</span><span class="s1">'snr'</span><span class="p">]</span><span class="si">:</span><span class="s2">.0f</span><span class="si">}</span><span class="s2">, </span><span class="si">{</span><span class="n">row</span><span class="p">[</span><span class="s1">'freq_ghz'</span><span class="p">]</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2"> GHz)"</span> <span class="k">for</span> <span class="n">row</span> <span class="ow">in</span> <span class="n">bright</span><span class="p">)</span>
+    <span class="k">return</span> <span class="p">(</span>
+        <span class="sa">f</span><span class="s2">"S/N &gt;= </span><span class="si">{</span><span class="n">BRIGHT_SNR</span><span class="si">:</span><span class="s2">g</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="n">found</span><span class="si">}</span><span class="s2">; its sidelobes can pass the tests elsewhere, "</span>
+        <span class="s2">"so check the groups around it (or subtract it and search the residual)"</span>
+    <span class="p">)</span></div>
 
 
 

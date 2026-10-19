@@ -291,6 +291,9 @@ the NPZ path (<a class="reference internal" href="#luv_finder.data.DataHandler.f
 <tr class="row-even"><td><p><a class="reference internal" href="#luv_finder.data.CHANNEL_BLOCK" title="luv_finder.data.CHANNEL_BLOCK"><code class="xref py py-obj docutils literal notranslate"><span class="pre">CHANNEL_BLOCK</span></code></a></p></td>
 <td><p>Channels handled at once when the weights are measured.</p></td>
 </tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#luv_finder.data.FREQUENCY_FRAMES" title="luv_finder.data.FREQUENCY_FRAMES"><code class="xref py py-obj docutils literal notranslate"><span class="pre">FREQUENCY_FRAMES</span></code></a></p></td>
+<td><p>casacore's MFrequency reference codes (<code class="docutils literal notranslate"><span class="pre">MEAS_FREQ_REF</span></code> of an MS's SPECTRAL_WINDOW).</p></td>
+</tr>
 </tbody>
 </table>
 </div>
@@ -301,37 +304,40 @@ the NPZ path (<a class="reference internal" href="#luv_finder.data.DataHandler.f
 <tr class="row-odd"><td><p><a class="reference internal" href="#luv_finder.data.channel_noise" title="luv_finder.data.channel_noise"><code class="xref py py-obj docutils literal notranslate"><span class="pre">channel_noise</span></code></a>(chunks[, max_lag, significance])</p></td>
 <td><p>On the jackknife: noise power per channel over the weights, <code class="docutils literal notranslate"><span class="pre">sum</span> <span class="pre">|X|^2</span> <span class="pre">/</span> <span class="pre">2</span> <span class="pre">sum</span> <span class="pre">w</span></code>, and <code class="docutils literal notranslate"><span class="pre">(1,</span> <span class="pre">rho_1,</span> <span class="pre">...)</span></code>.</p></td>
 </tr>
-<tr class="row-even"><td><p><a class="reference internal" href="#luv_finder.data.fields_in" title="luv_finder.data.fields_in"><code class="xref py py-obj docutils literal notranslate"><span class="pre">fields_in</span></code></a>(path)</p></td>
+<tr class="row-even"><td><p><a class="reference internal" href="#luv_finder.data.check_frame" title="luv_finder.data.check_frame"><code class="xref py py-obj docutils literal notranslate"><span class="pre">check_frame</span></code></a>(msfile, codes)</p></td>
+<td><p>Warn unless every window is in LSRK: the search, the catalogue and the fit keep the MS's frame.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#luv_finder.data.fields_in" title="luv_finder.data.fields_in"><code class="xref py py-obj docutils literal notranslate"><span class="pre">fields_in</span></code></a>(path)</p></td>
 <td><p>Target fields of a measurement set or an NPZ, sorted; an NPZ is not read beyond its index.</p></td>
 </tr>
-<tr class="row-odd"><td><p><a class="reference internal" href="#luv_finder.data.iter_chunks" title="luv_finder.data.iter_chunks"><code class="xref py py-obj docutils literal notranslate"><span class="pre">iter_chunks</span></code></a>(msfile, ref[, fields, spws, ...])</p></td>
+<tr class="row-even"><td><p><a class="reference internal" href="#luv_finder.data.iter_chunks" title="luv_finder.data.iter_chunks"><code class="xref py py-obj docutils literal notranslate"><span class="pre">iter_chunks</span></code></a>(msfile, ref[, fields, spws, ...])</p></td>
 <td><p>Read target visibilities one spw at a time over all <code class="docutils literal notranslate"><span class="pre">fields</span></code>, weights corrected, offsets from <code class="docutils literal notranslate"><span class="pre">ref</span></code>.</p></td>
 </tr>
-<tr class="row-even"><td><p><a class="reference internal" href="#luv_finder.data.load" title="luv_finder.data.load"><code class="xref py py-obj docutils literal notranslate"><span class="pre">load</span></code></a>(path[, fields])</p></td>
+<tr class="row-odd"><td><p><a class="reference internal" href="#luv_finder.data.load" title="luv_finder.data.load"><code class="xref py py-obj docutils literal notranslate"><span class="pre">load</span></code></a>(path[, fields])</p></td>
 <td><p>The visibilities of <code class="docutils literal notranslate"><span class="pre">fields</span></code> (default: all) from a measurement set or an NPZ.</p></td>
 </tr>
-<tr class="row-odd"><td><p><a class="reference internal" href="#luv_finder.data.pair_weight" title="luv_finder.data.pair_weight"><code class="xref py py-obj docutils literal notranslate"><span class="pre">pair_weight</span></code></a>(a, b)</p></td>
+<tr class="row-even"><td><p><a class="reference internal" href="#luv_finder.data.pair_weight" title="luv_finder.data.pair_weight"><code class="xref py py-obj docutils literal notranslate"><span class="pre">pair_weight</span></code></a>(a, b)</p></td>
 <td><p>Inverse variance of <code class="docutils literal notranslate"><span class="pre">(x_a</span> <span class="pre">+-</span> <span class="pre">x_b)</span> <span class="pre">/</span> <span class="pre">2</span></code> from the weights of <code class="docutils literal notranslate"><span class="pre">x_a</span></code> and <code class="docutils literal notranslate"><span class="pre">x_b</span></code>; 0 if either is.</p></td>
 </tr>
-<tr class="row-even"><td><p><a class="reference internal" href="#luv_finder.data.reweighted" title="luv_finder.data.reweighted"><code class="xref py py-obj docutils literal notranslate"><span class="pre">reweighted</span></code></a>(chunks[, ws])</p></td>
+<tr class="row-odd"><td><p><a class="reference internal" href="#luv_finder.data.reweighted" title="luv_finder.data.reweighted"><code class="xref py py-obj docutils literal notranslate"><span class="pre">reweighted</span></code></a>(chunks[, ws])</p></td>
 <td><p>The chunks of one window, weights divided by <code class="docutils literal notranslate"><span class="pre">ws</span></code> (default <a class="reference internal" href="#luv_finder.data.weight_scale" title="luv_finder.data.weight_scale"><code class="xref py py-func docutils literal notranslate"><span class="pre">weight_scale()</span></code></a>) per scan and channel.</p></td>
 </tr>
-<tr class="row-odd"><td><p><a class="reference internal" href="#luv_finder.data.sky_direction" title="luv_finder.data.sky_direction"><code class="xref py py-obj docutils literal notranslate"><span class="pre">sky_direction</span></code></a>(offset, ref)</p></td>
+<tr class="row-even"><td><p><a class="reference internal" href="#luv_finder.data.sky_direction" title="luv_finder.data.sky_direction"><code class="xref py py-obj docutils literal notranslate"><span class="pre">sky_direction</span></code></a>(offset, ref)</p></td>
 <td><p>(RA, Dec) in rad of the (east, north) <code class="docutils literal notranslate"><span class="pre">offset</span></code> in arcsec from <code class="docutils literal notranslate"><span class="pre">ref</span></code>, the inverse of <a class="reference internal" href="#luv_finder.data.sky_offset" title="luv_finder.data.sky_offset"><code class="xref py py-func docutils literal notranslate"><span class="pre">sky_offset()</span></code></a>.</p></td>
 </tr>
-<tr class="row-even"><td><p><a class="reference internal" href="#luv_finder.data.sky_offset" title="luv_finder.data.sky_offset"><code class="xref py py-obj docutils literal notranslate"><span class="pre">sky_offset</span></code></a>(direction, ref)</p></td>
+<tr class="row-odd"><td><p><a class="reference internal" href="#luv_finder.data.sky_offset" title="luv_finder.data.sky_offset"><code class="xref py py-obj docutils literal notranslate"><span class="pre">sky_offset</span></code></a>(direction, ref)</p></td>
 <td><p>(east, north) offset in arcsec of <code class="docutils literal notranslate"><span class="pre">direction</span></code> on the tangent plane at <code class="docutils literal notranslate"><span class="pre">ref</span></code>, both (RA, Dec) in rad.</p></td>
 </tr>
-<tr class="row-odd"><td><p><a class="reference internal" href="#luv_finder.data.stokes_i" title="luv_finder.data.stokes_i"><code class="xref py py-obj docutils literal notranslate"><span class="pre">stokes_i</span></code></a>(data, weight, flag)</p></td>
+<tr class="row-even"><td><p><a class="reference internal" href="#luv_finder.data.stokes_i" title="luv_finder.data.stokes_i"><code class="xref py py-obj docutils literal notranslate"><span class="pre">stokes_i</span></code></a>(data, weight, flag)</p></td>
 <td><p>Average the parallel hands <code class="docutils literal notranslate"><span class="pre">[0,</span> <span class="pre">-1]</span></code> into (vis, w); <code class="docutils literal notranslate"><span class="pre">weight</span></code> per row or per channel, <code class="docutils literal notranslate"><span class="pre">w</span></code> 0 if flagged.</p></td>
 </tr>
-<tr class="row-even"><td><p><a class="reference internal" href="#luv_finder.data.target_selection" title="luv_finder.data.target_selection"><code class="xref py py-obj docutils literal notranslate"><span class="pre">target_selection</span></code></a>(msfile)</p></td>
+<tr class="row-odd"><td><p><a class="reference internal" href="#luv_finder.data.target_selection" title="luv_finder.data.target_selection"><code class="xref py py-obj docutils literal notranslate"><span class="pre">target_selection</span></code></a>(msfile)</p></td>
 <td><p>Field and spectral-window ids observed with the target intent.</p></td>
 </tr>
-<tr class="row-odd"><td><p><a class="reference internal" href="#luv_finder.data.weight_scale" title="luv_finder.data.weight_scale"><code class="xref py py-obj docutils literal notranslate"><span class="pre">weight_scale</span></code></a>(chunks)</p></td>
+<tr class="row-even"><td><p><a class="reference internal" href="#luv_finder.data.weight_scale" title="luv_finder.data.weight_scale"><code class="xref py py-obj docutils literal notranslate"><span class="pre">weight_scale</span></code></a>(chunks)</p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">sum</span> <span class="pre">w</span> <span class="pre">z^2</span> <span class="pre">/</span> <span class="pre">2</span> <span class="pre">sum</span> <span class="pre">w</span></code> per (scan, channel) over a window's integrations of a baseline &lt;= <code class="docutils literal notranslate"><span class="pre">MAX_GAP</span></code> apart.</p></td>
 </tr>
-<tr class="row-even"><td><p><a class="reference internal" href="#luv_finder.data.write_npz" title="luv_finder.data.write_npz"><code class="xref py py-obj docutils literal notranslate"><span class="pre">write_npz</span></code></a>(path, metadata, chunks)</p></td>
+<tr class="row-odd"><td><p><a class="reference internal" href="#luv_finder.data.write_npz" title="luv_finder.data.write_npz"><code class="xref py py-obj docutils literal notranslate"><span class="pre">write_npz</span></code></a>(path, metadata, chunks)</p></td>
 <td><p>Write an NPZ one array at a time, so <code class="docutils literal notranslate"><span class="pre">chunks</span></code> may be a generator that never sits in memory whole.</p></td>
 </tr>
 </tbody>
@@ -505,6 +511,12 @@ uv coverage and weights instead.</p>
 </dd></dl>
 
 <dl class="py data">
+<dt class="sig sig-object py" id="luv_finder.data.FREQUENCY_FRAMES">
+<span class="sig-prename descclassname"><span class="pre">luv_finder.data.</span></span><span class="sig-name descname"><span class="pre">FREQUENCY_FRAMES</span></span><span class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">('REST',</span> <span class="pre">'LSRK',</span> <span class="pre">'LSRD',</span> <span class="pre">'BARY',</span> <span class="pre">'GEO',</span> <span class="pre">'TOPO',</span> <span class="pre">'GALACTO',</span> <span class="pre">'LGROUP',</span> <span class="pre">'CMB')</span></span><a class="headerlink" href="#luv_finder.data.FREQUENCY_FRAMES" title="Link to this definition">¶</a></dt>
+<dd><p>casacore’s MFrequency reference codes (<code class="docutils literal notranslate"><span class="pre">MEAS_FREQ_REF</span></code> of an MS’s SPECTRAL_WINDOW).</p>
+</dd></dl>
+
+<dl class="py data">
 <dt class="sig sig-object py" id="luv_finder.data.MAX_GAP">
 <span class="sig-prename descclassname"><span class="pre">luv_finder.data.</span></span><span class="sig-name descname"><span class="pre">MAX_GAP</span></span><span class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">450.0</span></span><a class="headerlink" href="#luv_finder.data.MAX_GAP" title="Link to this definition">¶</a></dt>
 <dd><p>Largest time between two integrations of a baseline that measure the weights’ noise together, s.</p>
@@ -584,6 +596,12 @@ uv coverage and weights instead.</p>
 <dt class="sig sig-object py" id="luv_finder.data.channel_noise">
 <span class="sig-prename descclassname"><span class="pre">luv_finder.data.</span></span><span class="sig-name descname"><span class="pre">channel_noise</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">chunks</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/collections.abc.html#collections.abc.Iterable" title="(in Python v3.15)"><span class="pre">Iterable</span></a><span class="p"><span class="pre">[</span></span><a class="reference internal" href="#luv_finder.data.Chunk" title="luv_finder.data.Chunk"><span class="pre">Chunk</span></a><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">max_lag</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="(in Python v3.15)"><span class="pre">int</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">8</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">significance</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><span class="pre">float</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">5.0</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="#luv_finder.data.ChannelNoise" title="luv_finder.data.ChannelNoise"><span class="pre">ChannelNoise</span></a></span></span><a class="reference internal" href="../_modules/luv_finder/data.html#channel_noise"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#luv_finder.data.channel_noise" title="Link to this definition">¶</a></dt>
 <dd><p>On the jackknife: noise power per channel over the weights, <code class="docutils literal notranslate"><span class="pre">sum</span> <span class="pre">|X|^2</span> <span class="pre">/</span> <span class="pre">2</span> <span class="pre">sum</span> <span class="pre">w</span></code>, and <code class="docutils literal notranslate"><span class="pre">(1,</span> <span class="pre">rho_1,</span> <span class="pre">...)</span></code>.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="luv_finder.data.check_frame">
+<span class="sig-prename descclassname"><span class="pre">luv_finder.data.</span></span><span class="sig-name descname"><span class="pre">check_frame</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">msfile</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.15)"><span class="pre">str</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">codes</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/builtins/constants.html#None" title="(in Python v3.15)"><span class="pre">None</span></a></span></span><a class="reference internal" href="../_modules/luv_finder/data.html#check_frame"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#luv_finder.data.check_frame" title="Link to this definition">¶</a></dt>
+<dd><p>Warn unless every window is in LSRK: the search, the catalogue and the fit keep the MS’s frame.</p>
 </dd></dl>
 
 <dl class="py function">
@@ -740,6 +758,7 @@ each window’s <a class="reference internal" href="#luv_finder.data.WeightScale
 <li><a class="reference internal" href="#luv_finder.data.DataHandler.to_npz"><code class="docutils literal notranslate"><span class="pre">DataHandler.to_npz()</span></code></a></li>
 </ul>
 </li>
+<li><a class="reference internal" href="#luv_finder.data.FREQUENCY_FRAMES"><code class="docutils literal notranslate"><span class="pre">FREQUENCY_FRAMES</span></code></a></li>
 <li><a class="reference internal" href="#luv_finder.data.MAX_GAP"><code class="docutils literal notranslate"><span class="pre">MAX_GAP</span></code></a></li>
 <li><a class="reference internal" href="#luv_finder.data.Metadata"><code class="docutils literal notranslate"><span class="pre">Metadata</span></code></a><ul>
 <li><a class="reference internal" href="#luv_finder.data.Metadata.minresolution"><code class="docutils literal notranslate"><span class="pre">Metadata.minresolution()</span></code></a></li>
@@ -756,6 +775,7 @@ each window’s <a class="reference internal" href="#luv_finder.data.WeightScale
 </ul>
 </li>
 <li><a class="reference internal" href="#luv_finder.data.channel_noise"><code class="docutils literal notranslate"><span class="pre">channel_noise()</span></code></a></li>
+<li><a class="reference internal" href="#luv_finder.data.check_frame"><code class="docutils literal notranslate"><span class="pre">check_frame()</span></code></a></li>
 <li><a class="reference internal" href="#luv_finder.data.fields_in"><code class="docutils literal notranslate"><span class="pre">fields_in()</span></code></a></li>
 <li><a class="reference internal" href="#luv_finder.data.iter_chunks"><code class="docutils literal notranslate"><span class="pre">iter_chunks()</span></code></a></li>
 <li><a class="reference internal" href="#luv_finder.data.load"><code class="docutils literal notranslate"><span class="pre">load()</span></code></a></li>
