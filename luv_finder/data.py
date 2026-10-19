@@ -321,6 +321,9 @@ class Metadata:
         msmd.close()
 
         tb = tools().table()
+        tb.open(f"{msfile}/SPECTRAL_WINDOW")
+        check_frame(msfile, tb.getcol("MEAS_FREQ_REF")[[int(s) for s in spws]])
+        tb.close()
         tb.open(msfile)
         sel = tb.query(f"FIELD_ID IN {[int(f) for f in fields]} AND ANTENNA1 != ANTENNA2", columns="UVW")
         uvw = sel.getcol("UVW")
@@ -336,6 +339,22 @@ class Metadata:
     def minresolution(self) -> float:
         """Angular resolution in arcsec from the longest baseline."""
         return 1.0 / self.max_uvwave / ARCSEC
+
+
+#: casacore's MFrequency reference codes (``MEAS_FREQ_REF`` of an MS's SPECTRAL_WINDOW).
+FREQUENCY_FRAMES = ("REST", "LSRK", "LSRD", "BARY", "GEO", "TOPO", "GALACTO", "LGROUP", "CMB")
+
+
+def check_frame(msfile: str, codes) -> None:
+    """Warn unless every window is in LSRK: the search, the catalogue and the fit keep the MS's frame."""
+    frames = sorted({FREQUENCY_FRAMES[int(c)] for c in np.atleast_1d(codes)})
+    if frames != ["LSRK"]:
+        warnings.warn(
+            f"{msfile}: channel frequencies are in {', '.join(frames)}, not LSRK, and so will be the catalogue's "
+            "frequencies and redshifts (TOPO differs from LSRK by up to ~30 km/s); regrid to LSRK first "
+            "(CASA mstransform, outframe='LSRK') for published values",
+            stacklevel=2,
+        )
 
 
 def target_selection(msfile: str):

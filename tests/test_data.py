@@ -317,3 +317,13 @@ def test_weight_scale_needs_close_integrations():
     far = _chunk(np.arange(10) * 1000.0, np.zeros(10, dtype=int))
     with pytest.raises(ValueError, match="within 450 s"):
         weight_scale([far])
+
+
+def test_check_frame_warns_unless_lsrk():
+    from luv_finder.data import check_frame
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        check_frame("x.ms", [1, 1])  # LSRK: silent
+    with pytest.warns(UserWarning, match="TOPO, not LSRK"):
+        check_frame("x.ms", [5, 5])
