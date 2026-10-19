@@ -37,7 +37,7 @@ def test_run_writes_every_product(run):
 
 def test_run_detects_the_injected_lines(run, truth, data):
     cat = run.catalogue
-    assert cat.meta["rule"] == "or" and set(cat["unit"]) == set(run.units)
+    assert cat.meta["rule"] == "and" and set(cat["unit"]) == set(run.units)
     channel = np.median(np.diff(data.freqs)) / 1e9
     for src in truth["sources"]:
         x, y = src["position"]

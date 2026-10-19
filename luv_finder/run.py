@@ -28,7 +28,7 @@ import numpy as np
 import yaml
 from astropy.table import Table
 
-from .catalogue import _reliability, catalogue, merge_catalogues
+from .catalogue import DETECTION_RULE, _reliability, catalogue, merge_catalogues
 from .data import Metadata, fields_in, iter_chunks, load, target_selection, write_npz
 from .matchedfilter import TEMPLATE_KEYS, search_pointings
 from .model import C_KMS, CONTINUUM_ORDER
@@ -43,7 +43,7 @@ DEFAULTS = {
     "pb_limit": 0.2,
     "units": "auto",
     "filter": {},
-    "reliability": {"floor": 4.0, "k": 3.0, "fidelity_min": 0.6, "rule": "or"},
+    "reliability": {"floor": 4.0, "k": 3.0, "fidelity_min": 0.6, "rule": DETECTION_RULE},
     "near_miss": {"fidelity": 0.2, "max": 20},
     "cores": None,
 }

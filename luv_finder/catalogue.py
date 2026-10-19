@@ -268,6 +268,9 @@ def fidelity(snr_data, snr_noise, floor: float, step: float = 0.25) -> tuple[np.
     return model[np.searchsorted(edges, snr_data, side="right") - 1], (amplitude, sigma), bins
 
 
+#: How the likelihood ratio and the fidelity combine into ``detected``: "and" (both) or "or" (either).
+DETECTION_RULE = "and"
+
 #: Units of the :func:`catalogue` columns.
 UNITS = {
     "dra": "arcsec",
@@ -291,7 +294,12 @@ SEARCH_META = ("jackknife_spread", "hwhm_major", "hwhm_minor", "pa", "spectral_h
 
 
 def catalogue(
-    result: SearchResult, ref=None, floor: float = 4.0, k: float = 3.0, fidelity_min: float = 0.6, rule: str = "or"
+    result: SearchResult,
+    ref=None,
+    floor: float = 4.0,
+    k: float = 3.0,
+    fidelity_min: float = 0.6,
+    rule: str = DETECTION_RULE,
 ) -> Table:
     """Catalogue the line candidates of a search: one row per group of the data, by S/N descending.
 
@@ -301,8 +309,8 @@ def catalogue(
     (:func:`likelihood`, :func:`fidelity`). A group passes the likelihood ratio if
     ``Lambda >= k`` or no jackknife group is as bright: there ``Lambda`` diverges, and its lower
     limit is the last finite value, at the brightest jackknife group. It is ``detected`` if it passes
-    the likelihood ratio or its fidelity is at least ``fidelity_min`` (``rule="or"``), or both
-    (``rule="and"``, where a fidelity that could not be fitted does not count against it). Nothing
+    the likelihood ratio and its fidelity is at least ``fidelity_min`` (``rule="and"``, the default;
+    a fidelity that could not be fitted does not count against it), or either (``rule="or"``). Nothing
     is clipped: the candidates are ``cat[cat["detected"]]``.
 
     Parameters
@@ -366,7 +374,9 @@ def catalogue(
     return cat
 
 
-def _reliability(snr: dict, floor: float, k: float, fidelity_min: float, rule: str = "or") -> tuple[dict, dict]:
+def _reliability(
+    snr: dict, floor: float, k: float, fidelity_min: float, rule: str = DETECTION_RULE
+) -> tuple[dict, dict]:
     """Likelihood ratio, fidelity and detection of the data groups against the jackknife's, as columns and meta."""
     ratio, lower = likelihood(snr["data"], snr["jackknife"])
     fid, (amplitude, sigma), bins = fidelity(snr["data"], snr["jackknife"], floor)
