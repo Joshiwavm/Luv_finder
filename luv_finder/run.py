@@ -28,7 +28,7 @@ import numpy as np
 import yaml
 from astropy.table import Table
 
-from .catalogue import DETECTION_RULE, _reliability, catalogue, merge_catalogues
+from .catalogue import DETECTION_RULE, _reliability, bright_lines, catalogue, merge_catalogues
 from .data import Metadata, fields_in, iter_chunks, load, target_selection, write_npz
 from .matchedfilter import TEMPLATE_KEYS, search_pointings
 from .model import C_KMS, CONTINUUM_ORDER
@@ -485,6 +485,8 @@ class Run:
             )
             spread = np.concatenate([p["jackknife_spread"] for p in m["parts"]])
             lines.append(f"  jackknife S/N spread {spread.min():.2f}-{spread.max():.2f} (1 under H0)")
+            if note := bright_lines(cat):
+                lines.append(f"  {note}")
         noise = [self.weights(u) for u in done if self.path(u, "_weights.npz").exists()]
         scale = [v for w in noise for k, v in w.items() if k.endswith("_noise_scale")]
         if scale:

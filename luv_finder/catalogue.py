@@ -271,6 +271,10 @@ def fidelity(snr_data, snr_noise, floor: float, step: float = 0.25) -> tuple[np.
 #: How the likelihood ratio and the fidelity combine into ``detected``: "and" (both) or "or" (either).
 DETECTION_RULE = "and"
 
+#: S/N from which a line's sidelobes (``sidelobe`` of a few per cent) reach a few sigma elsewhere in the search:
+#: flagged by :func:`bright_lines`, not subtracted.
+BRIGHT_SNR = 100.0
+
 #: Units of the :func:`catalogue` columns.
 UNITS = {
     "dra": "arcsec",
@@ -371,7 +375,21 @@ def catalogue(
     for name, unit in UNITS.items():
         if name in cat.colnames:
             cat[name].unit = unit
+    if note := bright_lines(cat):
+        warnings.warn(note, stacklevel=2)
     return cat
+
+
+def bright_lines(cat: Table) -> str:
+    """A note on the groups at S/N >= :data:`BRIGHT_SNR`, empty if none."""
+    bright = cat[cat["snr"] >= BRIGHT_SNR]
+    if not len(bright):
+        return ""
+    found = ", ".join(f"#{row['id']} (S/N {row['snr']:.0f}, {row['freq_ghz']:.3f} GHz)" for row in bright)
+    return (
+        f"S/N >= {BRIGHT_SNR:g}: {found}; its sidelobes can pass the tests elsewhere, "
+        "so check the groups around it (or subtract it and search the residual)"
+    )
 
 
 def _reliability(

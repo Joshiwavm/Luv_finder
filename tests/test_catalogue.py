@@ -8,8 +8,10 @@ from scipy import special, stats
 
 from luv_finder import MatchedFilter
 from luv_finder.catalogue import (
+    BRIGHT_SNR,
     ResponseCorrelation,
     _reliability,
+    bright_lines,
     catalogue,
     fidelity,
     groups,
@@ -323,3 +325,9 @@ def test_detection_rule_or_contains_and():
     assert both.sum() < either.sum() and np.all(either[both])
     with pytest.raises(ValueError, match="rule"):
         _reliability(snr, 4.0, 3.0, 0.6, "xor")
+
+
+def test_bright_lines_flags_only_groups_at_bright_snr():
+    cat = Table({"id": [1, 2], "snr": [BRIGHT_SNR + 20, BRIGHT_SNR - 1], "freq_ghz": [85.0, 86.0]})
+    assert "#1 (S/N 120, 85.000 GHz)" in bright_lines(cat) and "#2" not in bright_lines(cat)
+    assert bright_lines(cat[1:]) == ""
