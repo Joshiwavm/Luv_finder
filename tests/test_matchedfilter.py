@@ -646,24 +646,27 @@ def test_overlapping_windows_add_in_inverse_variance():
     assert half.result.flux[0, 0, 0, k] == pytest.approx(src.spectrum(first.freq[25]), rel=1e-6)
 
 
-def test_a_line_across_a_window_gap_gets_the_joint_fit():
+@pytest.mark.parametrize("nchan, width, peak", [(40, 300.0, 1.5), (64, 600.0, 1.6)])
+def test_a_line_across_a_window_gap_gets_the_joint_fit(nchan, width, peak):
     """Two windows one channel apart: a line centred on the missing channel sums both windows' channels,
-    each with its own continuum, as one least-squares fit of the template does."""
+    each with its own continuum, as one least-squares fit of the template does. Bright, so its half in
+    each window bends that window's joint continuum into a peak at MASK_SNR at the far edge; masked from
+    the first pass's peaks, that peak is gone and masks nothing."""
     from luv_finder.model import FWHM_TO_SIGMA
 
-    a = _chunk(40, 300)
-    b = dataclasses.replace(_chunk(40, 300, seed=1, spw=1), freq=a.freq + 41 * CHANNEL)
+    a = _chunk(nchan, 300)
+    b = dataclasses.replace(_chunk(nchan, 300, seed=1, spw=1), freq=a.freq + (nchan + 1) * CHANNEL)
     nu = a.freq[-1] + CHANNEL
-    sigma = nu * 300 * FWHM_TO_SIGMA / C_KMS
+    sigma = nu * width * FWHM_TO_SIGMA / C_KMS
     chunks = [
         dataclasses.replace(
-            c, X=(c.w * (0.3 * np.exp(-0.5 * ((c.freq - nu) / sigma) ** 2) + 0.1)[:, None]).astype(complex)
+            c, X=(c.w * (peak * np.exp(-0.5 * ((c.freq - nu) / sigma) ** 2) + 0.1)[:, None]).astype(complex)
         )
         for c in (a, b)
     ]
-    mf = _finder(DataHandler(chunks=chunks, metadata=_metadata(a)), continuum_order=1, dra=0.0, ddec=0.0)
+    mf = _finder(DataHandler(chunks=chunks, metadata=_metadata(a)), continuum_order=1, dra=0.0, ddec=0.0, width=width)
     mf.run()
-    assert np.all(np.diff(mf.frequencies()) > 0) and mf.frequencies().size == 81  # the gap is a centre too
+    assert np.all(np.diff(mf.frequencies()) > 0) and mf.frequencies().size == 2 * nchan + 1  # the gap is a centre too
     num = var = 0.0
     for c in chunks:  # at the phase centre: y = sum_j X, W = sum_j w
         y, W = c.X.real.sum(axis=1), c.w.sum(axis=1).astype(float)

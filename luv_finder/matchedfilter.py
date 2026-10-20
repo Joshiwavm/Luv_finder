@@ -35,6 +35,8 @@ GRID_KEYS = ("dra", "ddec", *TEMPLATE_KEYS)
 #: A line whose response peaks at ``MASK_SNR`` or more at a position is left out of the continuum fit
 #: there, within ``MASK_FWHM`` template FWHM of its peak, so it does not bend the continuum of the others.
 MASK_SNR, MASK_FWHM = 5.0, 1.0
+#: The brightest peaks per position that may mask (a position rarely holds more lines at ``MASK_SNR``).
+MASK_PEAKS = 4
 #: Template FWHMs (km/s) a grid searches unless it names its own.
 WIDTHS = (100.0, 200.0, 300.0, 400.0)
 
@@ -80,11 +82,17 @@ def _spectral(sig, weight, freq, centres, widths, rho, order=None):
     fixed = (weight, freq, centres, widths, profile, basis, gram, c, v0, var_c / var, covered)
     peak, which = _peaks(snr)
 
+    def refit(peak, which, sig, num0):
+        """The masked fit, twice: the second from the first's peaks, where a peak only a brighter line's bent
+        continuum made (at a window's far edge, say) has gone and masks nothing."""
+        first = _masked(peak, which, sig, num0, *fixed)
+        return _masked(*_peaks(first[0]), sig, num0, *fixed)
+
     def row(args):
         """One ``dra`` row: refitted only if a line there reaches ``MASK_SNR``, else the joint fit."""
         snr, error, sig, num0, peak, which = args
         one = (peak[:, None], which[:, None], sig[:, :, None], num0[:, :, None])
-        return jax.lax.cond(peak.any(), lambda: tuple(a[:, :, 0] for a in _masked(*one, *fixed)), lambda: (snr, error))
+        return jax.lax.cond((peak > 0).any(), lambda: tuple(a[:, :, 0] for a in refit(*one)), lambda: (snr, error))
 
     # rows lead, one at a time: under ``cond`` only the branch taken runs
     by_row = (
@@ -96,34 +104,42 @@ def _spectral(sig, weight, freq, centres, widths, rho, order=None):
 
 
 def _peaks(snr):
-    """Peaks of the best-template S/N at ``MASK_SNR`` or more, and their template, ``(shape, dra, ddec, centre)``."""
+    """Best-template S/N where it peaks at ``MASK_SNR`` or more (else 0) and its template, ``(shape, dra, ddec, i)``."""
     best, which = snr.max(axis=1), snr.argmax(axis=1)
     low = jnp.pad(best, ((0, 0), (0, 0), (0, 0), (1, 0)), constant_values=-jnp.inf)[..., :-1]
     high = jnp.pad(best, ((0, 0), (0, 0), (0, 0), (0, 1)), constant_values=-jnp.inf)[..., 1:]
-    return (best >= MASK_SNR) & (best >= low) & (best >= high), which
+    return jnp.where((best >= MASK_SNR) & (best >= low) & (best >= high), best, 0.0), which
 
 
 def _masked(peak, which, sig, num0, weight, freq, centres, widths, profile, basis, gram, c, v0, ratio, covered):
     """The joint fit again, at each position without the channels of its other lines (``MASK_SNR``).
 
-    A line peaking at ``MASK_SNR`` or more at a position masks ``MASK_FWHM`` of its template's FWHM
-    around the peak; each template keeps its own ``MASK_FWHM`` (so an isolated line loses nothing).
-    The least-squares fit of template and polynomial then runs with the channel weights ``m W``: the
-    full sums minus the masked channels' part. The variance is exact for independent channels, scaled
-    by the channel correlation's ``ratio`` of the unmasked fit. Where nothing is masked this is the joint fit.
+    A line peaking at ``MASK_SNR`` or more at a position (``peak``, its S/N; the ``MASK_PEAKS`` brightest)
+    masks ``MASK_FWHM`` of its template's FWHM around the peak, for every template and centre but those
+    it is within ``MASK_FWHM`` of: there it is the centre's own line, whose peak noise or a window edge
+    can shift. Each template also keeps its own ``MASK_FWHM``, so an isolated line loses nothing. The
+    least-squares fit of template and polynomial then runs with the channel weights ``m W``: the full
+    sums minus the masked channels' part. The variance is exact for independent channels, scaled by the
+    channel correlation's ``ratio`` of the unmasked fit. Where nothing is masked this is the joint fit.
     """
     velocity = jnp.abs(freq[None, :] / centres[:, None] - 1) * C_KMS  # (n_centre, n_chan)
     near = (velocity[None] <= MASK_FWHM * widths[:, None, None]).astype(float)  # (n_width, n_centre, n_chan)
-    pick = (peak[..., None] & (which[..., None] == jnp.arange(widths.size))).astype(float)
-    masked = (jnp.einsum("sabiw,wim->sabm", pick, near) > 0).astype(float)  # (n_shape, n_dra, n_ddec, n_chan)
-    other = 1.0 - near  # channels outside each template's own support, (n_width, n_centre, n_chan)
+    strength, at = jax.lax.top_k(
+        peak, min(MASK_PEAKS, peak.shape[-1])
+    )  # the brightest peaks' S/N and centre, (n_shape, n_dra, n_ddec, k)
+    reach = near[jnp.take_along_axis(which, at, axis=-1), at]  # the channels each masks, (..., k, n_chan)
+    offset = jnp.abs(centres[at][..., None, None, :] / centres[:, None] - 1) * C_KMS  # (..., 1, n_centre, k)
+    masks = (strength[..., None, None, :] > 0) & (
+        offset > MASK_FWHM * widths[:, None, None]
+    )  # (..., n_width, n_centre, k)
+    masked = (jnp.einsum("sabwik,sabkm->sabwim", masks.astype(float), reach) > 0) * (1.0 - near)
     # the masked channels' part of every sum of the joint fit, per position and template
     pw = basis[:, :, None] * basis[:, None, :]  # (n_chan, j, k)
-    d_gram = jnp.einsum("sabm,wim,ms,mjk->swabijk", masked, other, weight, pw)
-    d_c = jnp.einsum("sabm,wim,ms,wim,mj->swabij", masked, other, weight, profile, basis)
-    d_v = jnp.einsum("sabm,wim,ms,wim->swabi", masked, other, weight, profile**2)
-    d_num = jnp.einsum("sabm,wim,wim,msab->swabi", masked, other, profile, sig)
-    d_r = jnp.einsum("sabm,wim,mj,msab->swabij", masked, other, basis, sig)
+    d_gram = jnp.einsum("sabwim,ms,mjk->swabijk", masked, weight, pw)
+    d_c = jnp.einsum("sabwim,ms,wim,mj->swabij", masked, weight, profile, basis)
+    d_v = jnp.einsum("sabwim,ms,wim->swabi", masked, weight, profile**2)
+    d_num = jnp.einsum("sabwim,wim,msab->swabi", masked, profile, sig)
+    d_r = jnp.einsum("sabwim,mj,msab->swabij", masked, basis, sig)
     g_m = gram[:, None, None, None, None] - d_gram
     c_m = c[:, :, None, None] - d_c
     r_m = jnp.einsum("mj,msab->sabj", basis, sig)[:, None, :, :, None] - d_r
