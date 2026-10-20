@@ -43,7 +43,8 @@ def _spectral(sig, weight, freq, centres, widths, rho, order=None):
 
     With a continuum, the polynomial is fitted jointly with every template, then again at each
     position without the channels of the other lines that peak there at ``MASK_SNR`` or more
-    (:func:`_masked`), so a bright line does not bend the continuum of the rest.
+    (:func:`_masked`), so a bright line does not bend the continuum of the rest. Only rows of positions
+    that hold such a line are refitted; elsewhere nothing is masked and the joint fit stands.
     """
     spread = centres[None, :, None] * widths[:, None, None] * FWHM_TO_SIGMA / C_KMS
     profile = jnp.exp(-0.5 * ((freq[None, None, :] - centres[None, :, None]) / spread) ** 2)
@@ -70,13 +71,37 @@ def _spectral(sig, weight, freq, centres, widths, rho, order=None):
         var_c = var_c + 2 * rho[lag] * jnp.sum(h[..., :-lag] * h[..., lag:], axis=-1)
     var_c = jnp.where(covered, var_c, 1.0)
     snr = num * jnp.where(covered, 1 / jnp.sqrt(var_c), 0.0)[:, :, None, None, :]
+    error = jnp.where(covered, jnp.sqrt(var_c) / jnp.where(covered, var, 1.0), jnp.nan)
+    error = jnp.broadcast_to(error[:, :, None, None, :], snr.shape)
     if order is None:
-        error = jnp.where(covered, jnp.sqrt(var_c) / jnp.where(covered, var, 1.0), jnp.nan)
-        return snr, jnp.broadcast_to(error[:, :, None, None, :], snr.shape)
-    return _masked(snr, sig, weight, freq, centres, widths, profile, basis, gram, c, num0, v0, var_c / var, covered)
+        return snr, error
+    fixed = (weight, freq, centres, widths, profile, basis, gram, c, v0, var_c / var, covered)
+    peak, which = _peaks(snr)
+
+    def row(args):
+        """One ``dra`` row: refitted only if a line there reaches ``MASK_SNR``, else the joint fit."""
+        snr, error, sig, num0, peak, which = args
+        one = (peak[:, None], which[:, None], sig[:, :, None], num0[:, :, None])
+        return jax.lax.cond(peak.any(), lambda: tuple(a[:, :, 0] for a in _masked(*one, *fixed)), lambda: (snr, error))
+
+    # rows lead, one at a time: under ``cond`` only the branch taken runs
+    by_row = (
+        *(jnp.moveaxis(a, 2, 0) for a in (snr, error, sig, num0)),
+        *(jnp.moveaxis(a, 1, 0) for a in (peak, which)),
+    )
+    rows = jax.lax.map(row, by_row)
+    return tuple(jnp.moveaxis(a, 0, 2) for a in rows)
 
 
-def _masked(snr, sig, weight, freq, centres, widths, profile, basis, gram, c, num0, v0, ratio, covered):
+def _peaks(snr):
+    """Peaks of the best-template S/N at ``MASK_SNR`` or more, and their template, ``(shape, dra, ddec, centre)``."""
+    best, which = snr.max(axis=1), snr.argmax(axis=1)
+    low = jnp.pad(best, ((0, 0), (0, 0), (0, 0), (1, 0)), constant_values=-jnp.inf)[..., :-1]
+    high = jnp.pad(best, ((0, 0), (0, 0), (0, 0), (0, 1)), constant_values=-jnp.inf)[..., 1:]
+    return (best >= MASK_SNR) & (best >= low) & (best >= high), which
+
+
+def _masked(peak, which, sig, num0, weight, freq, centres, widths, profile, basis, gram, c, v0, ratio, covered):
     """The joint fit again, at each position without the channels of its other lines (``MASK_SNR``).
 
     A line peaking at ``MASK_SNR`` or more at a position masks ``MASK_FWHM`` of its template's FWHM
@@ -85,10 +110,6 @@ def _masked(snr, sig, weight, freq, centres, widths, profile, basis, gram, c, nu
     full sums minus the masked channels' part. The variance is exact for independent channels, scaled
     by the channel correlation's ``ratio`` of the unmasked fit. Where nothing is masked this is the joint fit.
     """
-    best, which = snr.max(axis=1), snr.argmax(axis=1)  # (n_shape, n_dra, n_ddec, n_centre)
-    low = jnp.pad(best, ((0, 0), (0, 0), (0, 0), (1, 0)), constant_values=-jnp.inf)[..., :-1]
-    high = jnp.pad(best, ((0, 0), (0, 0), (0, 0), (0, 1)), constant_values=-jnp.inf)[..., 1:]
-    peak = (best >= MASK_SNR) & (best >= low) & (best >= high)
     velocity = jnp.abs(freq[None, :] / centres[:, None] - 1) * C_KMS  # (n_centre, n_chan)
     near = (velocity[None] <= MASK_FWHM * widths[:, None, None]).astype(float)  # (n_width, n_centre, n_chan)
     pick = (peak[..., None] & (which[..., None] == jnp.arange(widths.size))).astype(float)
@@ -364,7 +385,8 @@ class MatchedFilter(_Grid):
         tol = 1e-3 * np.diff(self.freqs).min() if self.freqs.size > 1 else 1.0
         with jax.enable_x64(True):
             for c in tqdm(data.chunks, desc="Windows", leave=False):
-                at = np.flatnonzero((self.freqs > c.freq[0] - tol) & (self.freqs < c.freq[-1] + tol))
+                # the window's centres, a contiguous run of the lattice: a slice, so no copies
+                at = slice(*np.searchsorted(self.freqs, [c.freq[0] - tol, c.freq[-1] + tol], side="right"))
                 snr, error = self._window(c, axes, cov, self.freqs[at])
                 inverse = np.nan_to_num(error**-2.0)
                 w[..., at] += inverse

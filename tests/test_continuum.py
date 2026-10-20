@@ -144,3 +144,27 @@ def test_a_fit_leaves_out_the_other_lines_but_keeps_its_own_channels():
     assert np.all(out.X[dropped] == 0) and np.array_equal(out.w[~dropped], chunk.w[~dropped])
     # the fitted line's own channels stay even inside another's
     assert not np.all(_without(chunk, chunk.freq[LINE_A + 1], 300.0, [other]).w[LINE_A + 1] == 0)
+
+
+def _search(spectra, dra, ddec):
+    from luv_finder import MatchedFilter
+    from luv_finder.matchedfilter import grid_model
+
+    grid = {"dra": dra, "ddec": ddec, "bmin": 0.0, "bmaj": 0.0, "pa": 0.0, "width": [100.0, 300.0]}
+    mf = MatchedFilter(_window(spectra), grid_model(grid), continuum_order=1, channel_noise=None)
+    mf.run()
+    return mf.result
+
+
+def test_rows_without_a_bright_line_skip_the_masked_fit_unchanged():
+    """A row of positions is refitted only if a line there reaches MASK_SNR: each position as if searched alone."""
+    from luv_finder.matchedfilter import MASK_SNR
+
+    spectra, offsets = [_line(LINE_A, 15.0), _line(LINE_A + 3 * FWHM_CHANNELS, 6.0)], [0.0, 40.0]
+    result = _search(spectra, offsets, offsets)
+    best = result.snr.max(axis=(2, 3))
+    assert best[0, 0] >= MASK_SNR and best[0, 1] < MASK_SNR and best[1].max() < MASK_SNR
+    for i, j in np.ndindex(best.shape):
+        alone = _search(spectra, [offsets[i]], [offsets[j]])
+        np.testing.assert_allclose(result.snr[i, j], alone.snr[0, 0], rtol=1e-9, atol=1e-12)
+        np.testing.assert_allclose(result.error[i, j], alone.error[0, 0], rtol=1e-9)

@@ -47,6 +47,9 @@ Assumptions, stated in the paper rather than lifted:
   fitted width is bounded at 70 km/s (`fit.MIN_WIDTH`).
 - A line at S/N >= 100 is flagged (`catalogue.bright_lines`), not subtracted: its
   sidelobes reach a few sigma elsewhere.
+- A line is one Gaussian: two lines within about 2 FWHM at one position are one
+  group and one fit, and a multi-peaked profile can be one group or several (no
+  grouping rule).
 
 The rest of section 1 is about scaling to larger grids.
 
@@ -102,14 +105,6 @@ rotation to the peak the cells can be large: 5 klambda loses
 `sinc(pi 5 klambda 2")` ~ 0.4% at 2" in Band 3, and leaves a few hundred to a
 thousand cells of 196 k rows. Each pass of the fit (`kernel.point_moments`) would be
 100-200x cheaper; worth it for Band 1's 960-channel window or larger mosaics.
-
-### The masked continuum
-
-Masking the lines at S/N >= 5 out of the continuum fit (`matchedfilter._masked`)
-costs x1.07 on a J0459 Band 3 pointing, x1.23 on ASPECS 3 mm and x4.0 on ASPECS
-1.2 mm, where the few rows leave the spectral part dominant. Most position blocks
-hold no peak at S/N >= 5 and need no masked pass: skipping them should bring the
-cost back to that of the joint fit.
 
 ### The position search is a Fourier transform
 
