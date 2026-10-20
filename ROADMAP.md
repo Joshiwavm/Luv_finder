@@ -168,23 +168,6 @@ visibilities, so the Band 1 default grid (21,675 points, 415 k rows in the
   style) and recover them through the same path, to turn the S/N limit into a
   flux limit per coverage (on a mosaic the S/N cut is uniform, the flux limit is
   not).
-- **The 1.2 mm jackknife deficit.** At S/N 4-5.5 the ASPECS 1.2 mm data and the
-  negated data hold 1.07 and 1.09 times the jackknife's groups (3 mm: 1.00 and 1.01;
-  2026-10-19). Not the sparse sampling: a mosaic field there is seen 9-14 times per
-  window, days to months apart, so a pair's partners are hours apart in hour angle,
-  and a `simobserve` mock observed that way (Band 6, `alma.cycle13.2.cfg`, 12
-  integrations at random hour angles in random order, against 12 consecutive;
-  `output/jackknife_sparse/`) shows:
-  - leakage: the jackknife leaves 0.1 of a S/N 50 line at its peak and 3.5 beside it
-    (tracked: 0.2), and 0.02 of a S/N 240 continuum source after the continuum fit
-    (8.7 without). Pairs at one partner's uv instead of their mean leave 9.2. The
-    brightest 1.2 mm line is S/N 9;
-  - the null: over 200 noise draws the jackknife holds 0.99 +- 0.01, 0.97 +- 0.02 and
-    1.05 +- 0.05 times the groups of the data and the negated data at S/N >= 3, 3.5
-    and 4 (tracked: 1.02, 1.02, 0.93).
-  Left: noise constant over a pair cancels in the jackknife, and 0.3% in sigma
-  would do it (counts at S/N T scale by (T^2 + 1) per unit fractional sigma); and
-  the 26-33% of rows the jackknife cannot pair, which the mock pairs all.
 - **Fit across overlapping windows.** Windows that overlap in frequency are combined
   in the search, but `fit_line` uses one window per pointing, so a line in the
   ASPECS 3 mm double-tuned range is fitted with one tuning's data.
@@ -198,8 +181,8 @@ visibilities, so the Band 1 default grid (21,675 points, 415 k rows in the
   narrow templates have more independent trials than broad ones at the same S/N.
   The catalogue pools all templates. Its noise is a Gaussian tail fitted to the
   jackknife groups, as ASPECS fits its negatives; an erf fitted to the binned
-  fidelity failed at 1.2 mm, where the jackknife deficit (above)
-  held the low bins at 0.05 and set the threshold at S/N 7.9 instead of 6.7.
+  fidelity failed at 1.2 mm, where the jackknife's 7% fewer groups near the
+  floor held the low bins at 0.05 and set the threshold at S/N 7.9 instead of 6.7.
 
 ### 2.2 Joint Band 1 and Band 3 identification
 One pointing per band. A line in each band at the same sky position is a redshift
