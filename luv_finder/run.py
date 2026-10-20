@@ -30,7 +30,7 @@ from astropy.table import Table
 
 from .catalogue import DETECTION_RULE, _reliability, bright_lines, catalogue, merge_catalogues
 from .data import Metadata, fields_in, iter_chunks, load, target_selection, write_npz
-from .matchedfilter import TEMPLATE_KEYS, search_pointings
+from .matchedfilter import TEMPLATE_KEYS, WIDTHS, grid_axis, search_pointings, window_groups
 from .model import C_KMS, CONTINUUM_ORDER
 
 #: Name of the config copy every run keeps in its output directory.
@@ -49,17 +49,10 @@ DEFAULTS = {
 }
 
 
-def window_units(freqs: dict[int, np.ndarray]) -> list[list[int]]:
-    """Spectral windows joined where they overlap by more than a channel, in frequency order."""
-    joined = []
-    for lo, hi, spw in sorted((f.min(), f.max(), s) for s, f in freqs.items()):
-        width = np.abs(np.diff(freqs[spw])).max()
-        if joined and lo < joined[-1][1] - width:
-            joined[-1][1] = max(joined[-1][1], hi)
-            joined[-1][2].append(spw)
-        else:
-            joined.append([lo, hi, [spw]])
-    return [sorted(spws) for *_, spws in joined]
+def window_units(freqs: dict[int, np.ndarray], widest: float = max(WIDTHS)) -> list[list[int]]:
+    """Spectral windows joined where they overlap or their gap is narrower than ``widest`` km/s, in frequency order."""
+    spws = list(freqs)
+    return [sorted(spws[k] for k in group) for group in window_groups([freqs[s] for s in spws], widest)]
 
 
 def unit_name(spws) -> str:
@@ -169,7 +162,8 @@ class Run:
         """Unit name -> its spectral windows."""
         units = self.config["units"]
         if units == "auto":
-            units = window_units(_window_freqs(self.config["data"]))
+            widest = float(grid_axis(self.config["grid"], "width", WIDTHS).max())
+            units = window_units(_window_freqs(self.config["data"]), widest)
         return {unit_name(spws): [int(s) for s in spws] for spws in units}
 
     @cached_property

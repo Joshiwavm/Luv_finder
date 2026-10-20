@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import glob
 import os
 import shutil
@@ -11,6 +12,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import yaml
 from astropy.constants import c
+from astropy.coordinates import SkyCoord
 from astropy.io import fits
 from astropy.modeling import models
 
@@ -81,6 +83,15 @@ class MockObservation:
     calibrate_snr : bool
         Re-simulate once with the flux rescaled so that each line's declared
         ``snr`` is its achieved matched-filter S/N. Doubles the runtime.
+    pointings : list of (dra, ddec), optional
+        Pointing centres in arcsec east and north of ``direction``, observed in turn (a mosaic);
+        default one pointing at ``direction``.
+    windows : list of dict, optional
+        Spectral windows ``{freq_center, nchan}``, each observed by its own ``simobserve`` of the
+        same sky (its own noise, seed ``seed + k``) and concatenated into one MS; default the cube's
+        own. The channel width in Hz (``dv`` at ``freq_center``) and the flux scale are shared.
+    image : bool
+        ``tclean`` the MSs and plot the maps (one window only).
     """
 
     def __init__(
@@ -100,6 +111,9 @@ class MockObservation:
         support_folder="support",
         seed=242,
         calibrate_snr=True,
+        pointings=None,
+        windows=None,
+        image=True,
     ):
         if not sources:
             raise ValueError("at least one source is required")
@@ -116,6 +130,11 @@ class MockObservation:
         self.output_folder = output_folder
         self.support_folder = support_folder
         self.seed = seed
+        self.pointings = [tuple(p) for p in pointings] if pointings else [(0.0, 0.0)]
+        self.windows = windows
+        self.image = image
+        if windows and (calibrate_snr or image):
+            raise ValueError("calibrate_snr and image need one spectral window")
         self.cube = None
         self.ms_noiseless = None
         self.ms_noisy = None
@@ -225,13 +244,53 @@ class MockObservation:
         return self.fits_filename
 
     # -------------------------------------------------------------- simulate
+    def _pointing_directions(self) -> list[str]:
+        """``J2000 ...`` of every pointing, offset from ``direction`` (one ``ptgfile`` line each)."""
+        frame, ra, dec = self.direction.split()
+        centre = SkyCoord(ra, dec, frame=frame.lower().replace("j2000", "fk5"))
+        out = []
+        for dra, ddec in self.pointings:
+            p = centre.spherical_offsets_by(dra * u.arcsec, ddec * u.arcsec)
+            out.append(f"{frame} {p.ra.to_string(u.hour, sep='hms', precision=4)} "
+                       f"{p.dec.to_string(u.deg, sep='dms', precision=3, alwayssign=True)}")  # fmt: skip
+        return out
+
     def simulate_observation(self) -> None:
+        """``simobserve`` the cube, or every window's cube and ``concat`` them (``windows``)."""
+        if not self.windows:
+            return self._simobserve()
+        concat = tasks().concat
+        parts = []
+        for k, window in enumerate(self.windows):
+            part = copy.copy(self)
+            part.windows, part.seed = None, self.seed + k
+            part.freq_center = window["freq_center"]
+            # the same channel width in Hz in every window, as the correlator gives
+            scale = (u.Quantity(self.freq_center) / u.Quantity(part.freq_center)).decompose().value
+            part.dv = str(u.Quantity(self.dv) * scale)
+            part.cube_shape = (window["nchan"], *self.cube_shape[1:])
+            part.fits_filename = self.fits_filename.replace("_input", f"_w{k}_input")
+            part.create_cube()
+            part.save_cube()
+            part._simobserve()
+            parts.append(part)
+        cfg = os.path.basename(self.alma_config)
+        os.makedirs(self.project_name, exist_ok=True)
+        self.ms_noiseless = f"{self.project_name}/{self.project_name}." + cfg.replace("cfg", "ms")
+        self.ms_noisy = f"{self.project_name}/{self.project_name}." + cfg.replace("cfg", "noisy.ms")
+        for name in ("ms_noiseless", "ms_noisy"):
+            shutil.rmtree(getattr(self, name), ignore_errors=True)
+            concat(vis=[getattr(part, name) for part in parts], concatvis=getattr(self, name))
+        for part in parts:
+            shutil.rmtree(part.project_name)
+
+    def _simobserve(self) -> None:
         simobserve = tasks().simobserve
         if self.fits_filename is None:
             raise RuntimeError("call save_cube() first")
         os.makedirs(os.path.dirname(self.ptg_file) or ".", exist_ok=True)
         with open(self.ptg_file, "w") as f:
-            f.write(self.direction)
+            f.write("\n".join(self._pointing_directions()))
 
         simobserve(
             project=self.project_name,
@@ -373,12 +432,14 @@ class MockObservation:
         return self.achieved_snr()
 
     def run_all(self, plots_dir: str = "plots") -> str:
-        self.create_cube()
-        self.save_cube()
+        if not self.windows:
+            self.create_cube()
+            self.save_cube()
         self.simulate_observation()
         if self.calibrate_snr:
             final = self._calibrate()
             print(f"achieved matched-filter S/N: {[round(a, 2) for a in final]}")
-        self.run_imaging()
-        self.plot_results(plots_dir)
+        if self.image:
+            self.run_imaging()
+            self.plot_results(plots_dir)
         return self.move_output()

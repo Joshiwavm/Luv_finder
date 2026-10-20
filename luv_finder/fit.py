@@ -2,7 +2,8 @@
 
 The model in pointing p is ``a_p(nu) E(u, v) e^{+i phi}``, ``a_p = PB_p F``: an elliptical Gaussian
 of sky covariance ``(s_ee, s_nn, s_en)`` whose spectrum ``F`` is a Gaussian line on a polynomial
-continuum. Every derivative of ``E e^{+i phi}`` in position and shape is itself times a polynomial
+continuum, its own in every spectral window that holds the line. Every derivative of ``E e^{+i phi}``
+in position and shape is itself times a polynomial
 in (u, v), so one pass over the visibilities (:func:`~luv_finder.kernel.point_moments`) gives
 chi^2, its gradient and the Gauss-Newton matrix ``J^T W J`` in every parameter exactly. Errors are
 ``2 (J^T W J)^-1``, corrected for the channel correlation by a sandwich estimator over the channels.
@@ -116,21 +117,29 @@ def _moments(theta, chunks) -> list:
     return [point_moments(c, theta[0], theta[1], tuple(theta[2:5])) for c in chunks]
 
 
-def _system(theta, moments, chunks, freq, basis, dish):
-    """chi^2, gradient and Gauss-Newton matrix of the window, and its ``S``, ``Q`` spectra, from ``moments``."""
-    chi2, grad, hess, S, Q = 0.0, 0.0, 0.0, 0.0, 0.0
+def _system(theta, moments, chunks, spectral, dish):
+    """chi^2, gradient and Gauss-Newton matrix, and every window's ``S``, ``Q`` spectra, from ``moments``.
+
+    ``spectral`` maps each chunk's window to its ``(freq, basis)``.
+    """
+    chi2, grad, hess = 0.0, 0.0, 0.0
+    S, Q = {spw: 0.0 for spw in spectral}, {spw: 0.0 for spw in spectral}
     for c, (data, weight) in zip(chunks, moments, strict=True):
+        freq, basis = spectral[c.spw]
         args = (theta, freq, basis, c.offset, dish)
         a, da = _amplitude(*args), jax.jacfwd(_amplitude)(*args)
         pb = _beam(theta, freq, c.offset, dish)
         terms = _normal(a, da, data, weight)
         chi2, grad, hess = chi2 + terms[0], grad + terms[1], hess + terms[2]
-        S, Q = S + pb * data[:, 0].real, Q + pb**2 * weight[:, 0]
+        S[c.spw], Q[c.spw] = S[c.spw] + pb * data[:, 0].real, Q[c.spw] + pb**2 * weight[:, 0]
     return chi2, grad, hess, S, Q
 
 
-def _reported(theta, freq, basis):
-    """The :data:`REPORTED` quantities; the axes (sigma) from the covariance's eigenvalues, 0 where unresolved."""
+def _reported(theta, freq, n_continuum, block):
+    """The :data:`REPORTED` quantities; the axes (sigma) from the covariance's eigenvalues, 0 where unresolved.
+
+    The continuum is the one of the window ``freq`` at the line, its coefficients ``block`` onward.
+    """
     s_ee, s_nn, s_en = theta[2:5]
     half, split = (s_ee + s_nn) / 2, jnp.hypot((s_ee - s_nn) / 2, s_en)
     t = 2 * (theta[5] - freq[0]) / (freq[-1] - freq[0]) - 1
@@ -146,45 +155,53 @@ def _reported(theta, freq, basis):
             theta[6],
             theta[7],
             theta[7] * theta[6] * LINE_FLUX,
-            t ** jnp.arange(basis.shape[1]) @ theta[8:],
+            t ** jnp.arange(n_continuum) @ theta[8 + block : 8 + block + n_continuum],
         ]
     )
 
 
-def _correlation_scale(theta, Q, freq, basis, rho) -> np.ndarray:
-    """Factors on the errors of ``theta`` for the channel correlation ``rho``: a sandwich over the channels."""
-    if rho is None or len(rho) == 1:
+def _correlation_scale(theta, windows) -> np.ndarray:
+    """Factors on the errors of ``theta`` for the channel correlation: a sandwich over the channels.
+
+    ``windows``: ``(Q, freq, basis, rho)`` of every window; windows are independent of each other.
+    """
+    if all(rho is None or len(rho) == 1 for *_, rho in windows):
         return np.ones(theta.size)
-    ok = Q > 0
-    root = np.sqrt(Q[ok])
-    J = root[:, None] * np.asarray(jax.jacfwd(_spectrum)(theta, freq, basis))[ok, 5:]
-    a = root * np.asarray(_spectrum(theta, freq, basis))[ok]
-    R = linalg.toeplitz(np.pad(rho, (0, freq.size - len(rho))))[np.ix_(ok, ok)]
+    rows, model, blocks = [], [], []
+    for Q, freq, basis, rho in windows:
+        ok, rho = Q > 0, np.ones(1) if rho is None else rho
+        root = np.sqrt(Q[ok])
+        rows.append(root[:, None] * np.asarray(jax.jacfwd(_spectrum)(theta, freq, basis))[ok, 5:])
+        model.append(root * np.asarray(_spectrum(theta, freq, basis))[ok])
+        blocks.append(linalg.toeplitz(np.pad(rho, (0, freq.size - len(rho))))[np.ix_(ok, ok)])
+    J, a, R = np.vstack(rows), np.concatenate(model), linalg.block_diag(*blocks)
     inverse = np.linalg.pinv(J.T @ J)
     spectral = np.sqrt(np.diag(inverse @ J.T @ R @ J @ inverse) / np.diag(inverse))
     return np.concatenate([np.full(5, np.sqrt(a @ R @ a / (a @ a))), spectral])
 
 
-def _window_chunks(data: DataHandler, dra: float, ddec: float, nu: float, pb_limit: float) -> list[Chunk]:
-    """The window holding ``nu`` Hz, farthest from its edges, of each pointing with PB >= ``pb_limit`` there."""
-    best: dict[int, tuple[float, Chunk]] = {}
-    for c in data.chunks:
-        margin = min(nu - c.freq[0], c.freq[-1] - nu)
-        if margin >= 0 and margin > best.get(c.field, (-1.0, None))[0]:
-            best[c.field] = (margin, c)
+def _window_chunks(data: DataHandler, dra: float, ddec: float, nu: float, width: float, pb_limit: float) -> list[Chunk]:
+    """Every window within one FWHM (``width`` km/s) of ``nu`` Hz, of each pointing with PB >= ``pb_limit``."""
     dish = data.metadata.dish_diameter
     chunks = [
         c
-        for _, c in best.values()
-        if primary_beam(np.hypot(dra - c.offset[0], ddec - c.offset[1]), nu, dish) >= pb_limit
+        for c in data.chunks
+        if np.any(np.abs(c.freq / nu - 1) * C_KMS <= width)
+        and primary_beam(np.hypot(dra - c.offset[0], ddec - c.offset[1]), nu, dish) >= pb_limit
     ]
     if not chunks:
         raise ValueError(
             f"no pointing covers {nu / 1e9:.4f} GHz at ({dra:.2f}, {ddec:.2f}) arcsec with PB >= {pb_limit}"
         )
-    if not all(np.allclose(c.freq, chunks[0].freq, rtol=1e-9, atol=0) for c in chunks[1:]):
-        raise ValueError("the pointings' channel frequencies differ; only one spectral setup can be fitted")
+    for c in chunks:
+        if not np.allclose(c.freq, next(o.freq for o in chunks if o.spw == c.spw), rtol=1e-9, atol=0):
+            raise ValueError(f"the pointings' channel frequencies differ in spw {c.spw}")
     return chunks
+
+
+def home_window(chunks: list[Chunk], nu: float) -> int:
+    """The spw among ``chunks`` that holds ``nu`` Hz farthest from its edges (the nearest, if none holds it)."""
+    return max(chunks, key=lambda c: min(nu - c.freq[0], c.freq[-1] - nu)).spw
 
 
 def _without(chunk: Chunk, nu: float, width: float, others) -> Chunk:
@@ -219,21 +236,38 @@ def fit_line(
 ) -> dict:
     """Fit one line, started from the matched filter's position, template shape (sigma, arcsec) and width.
 
-    ``others``: (GHz, km/s) of other lines at the position, left out of the fit (:func:`_without`).
+    Every window within one FWHM of the line is fitted (:func:`_window_chunks`): the line is shared, and
+    each window has its own continuum. ``others``: (GHz, km/s) of other lines at the position, left out
+    of the fit (:func:`_without`).
     """
-    chunks = _window_chunks(data, dra, ddec, freq_ghz * 1e9, pb_limit)
-    noise = measure_noise(chunks) if channel_noise == "measure" else (channel_noise or {}).get(chunks[0].spw)
-    chunks = [_without(c, freq_ghz * 1e9, width, others) for c in chunks]
-    dish, freq = data.metadata.dish_diameter, np.asarray(chunks[0].freq, dtype=float)
-    rho = None if noise is None else noise.rho
+    nu = freq_ghz * 1e9
+    chunks = _window_chunks(data, dra, ddec, nu, max(width, MIN_WIDTH), pb_limit)
+    spws = sorted({c.spw for c in chunks})
+    if channel_noise == "measure":
+        noise = {spw: measure_noise([c for c in chunks if c.spw == spw]) for spw in spws}
+    else:
+        noise = {spw: (channel_noise or {}).get(spw) for spw in spws}
+    chunks = [_without(c, nu, width, others) for c in chunks]
+    dish = data.metadata.dish_diameter
+    freqs = {spw: np.asarray(next(c.freq for c in chunks if c.spw == spw), dtype=float) for spw in spws}
     n_continuum = 0 if continuum_order is None else continuum_order + 1
+    home = home_window(chunks, nu)  # its continuum is the one reported
 
     with jax.enable_x64(True):
         chunks = [on_device(c) for c in chunks]
-        spectral = (jnp.asarray(freq), jnp.linspace(-1.0, 1.0, freq.size)[:, None] ** jnp.arange(n_continuum))
+        spectral = {}
+        for k, spw in enumerate(spws):  # each window's polynomial in its own block of coefficients
+            basis = np.zeros((freqs[spw].size, n_continuum * len(spws)))
+            basis[:, k * n_continuum : (k + 1) * n_continuum] = np.linspace(-1.0, 1.0, freqs[spw].size)[
+                :, None
+            ] ** np.arange(n_continuum)
+            spectral[spw] = (jnp.asarray(freqs[spw]), jnp.asarray(basis))
+        report = (spectral[home][0], n_continuum, spws.index(home) * n_continuum)
 
         def system(theta, moments):
-            return [np.asarray(x) for x in _system(jnp.asarray(theta), moments, chunks, *spectral, dish)]
+            chi2, grad, hess, S, Q = _system(jnp.asarray(theta), moments, chunks, spectral, dish)
+            spectra = [{spw: np.asarray(x) for spw, x in d.items()} for d in (S, Q)]
+            return np.asarray(chi2), np.asarray(grad), np.asarray(hess), *spectra
 
         def solve(theta, free, at):
             """Newton over ``theta[free]`` in units of the errors, to 1e-3 of them; ``at`` gives chi^2, grad, hess."""
@@ -283,7 +317,15 @@ def fit_line(
 
         # start: the peak and continuum, linear in the model, by one Newton step from zero
         theta0 = np.array(
-            [dra, ddec, *covariance(bmaj, bmin, pa), freq_ghz * 1e9, max(width, MIN_WIDTH), 0.0, *np.zeros(n_continuum)]
+            [
+                dra,
+                ddec,
+                *covariance(bmaj, bmin, pa),
+                freq_ghz * 1e9,
+                max(width, MIN_WIDTH),
+                0.0,
+                *np.zeros(n_continuum * len(spws)),
+            ]
         )
         moments = _moments(theta0, chunks)
         _, grad, hess, _, _ = system(theta0, moments)
@@ -317,11 +359,12 @@ def fit_line(
         converged = result.success and best["ok"]
         _, _, hess, S, Q = system(best["theta"], best["moments"])
         best = best["theta"]
-        factor = _correlation_scale(jnp.asarray(best), Q, *spectral, rho)
+        rho = {spw: None if noise[spw] is None else noise[spw].rho for spw in spws}
+        factor = _correlation_scale(jnp.asarray(best), [(Q[spw], *spectral[spw], rho[spw]) for spw in spws])
         cov = 2 * np.linalg.inv(hess) * np.outer(factor, factor)
-        values = np.array(_reported(jnp.asarray(best), *spectral))
-        J = np.asarray(jax.jacfwd(_reported)(jnp.asarray(best), *spectral))
-        F = np.asarray(_spectrum(jnp.asarray(best), *spectral))
+        values = np.array(_reported(jnp.asarray(best), *report))
+        J = np.asarray(jax.jacfwd(_reported)(jnp.asarray(best), *report))
+        F = {spw: np.asarray(_spectrum(jnp.asarray(best), *spectral[spw])) for spw in spws}
 
     errors = np.sqrt(np.diag(J @ cov @ J.T))
     # an axis on its bound (variance below 1e-6 of its scale) has a one-sided error; a point has no angle
@@ -330,6 +373,9 @@ def fit_line(
     values[4], errors[4] = (np.nan, np.nan) if on_bound.all() else (values[4], errors[4])
     if values[6] <= MIN_WIDTH:  # the width on its bound
         errors[6] = np.nan
+    # every window's spectrum, in frequency order
+    order = np.argsort(np.concatenate([freqs[spw] for spw in spws]))
+    freq, S, Q, F = (np.concatenate([d[spw] for spw in spws])[order] for d in (freqs, S, Q, F))
     ok = Q > 0
     ra, dec = np.degrees(sky_direction(values[:2], data.metadata.ref))
     out = {f"fit_{k}": v for k, v in zip(REPORTED, values, strict=True)}
@@ -337,8 +383,9 @@ def fit_line(
     return out | {
         "fit_ra": ra,
         "fit_dec": dec,
-        "fit_chi2_reduced": float(Q[ok] @ (S[ok] / Q[ok] - F[ok]) ** 2) / max(int(ok.sum()) - 3 - n_continuum, 1),
-        "fit_n_pointings": len(chunks),
+        "fit_chi2_reduced": float(Q[ok] @ (S[ok] / Q[ok] - F[ok]) ** 2)
+        / max(int(ok.sum()) - 3 - n_continuum * len(spws), 1),
+        "fit_n_pointings": len({c.field for c in chunks}),
         "fit_converged": bool(converged),
         "spectrum": {
             "freq_ghz": freq / 1e9,

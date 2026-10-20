@@ -1,0 +1,28 @@
+# ASPECS-like double tuning, small: one 12 m pointing, two windows of 64 x 50 km/s channels that
+# overlap by 31.5 channels, B's grid half a channel off A's, 4 min. 300 km/s lines in the overlap,
+# in A or B only and on B's lower edge. Tests fitting across overlapping windows.
+cube_shape: [64, 128, 128]   # 1" cells: +-64"
+cell: 1arcsec
+dv: 50km/s
+freq_center: 99.5GHz
+integration_time: 4min
+alma_config: alma.cycle13.1.cfg
+direction: J2000 03h32m38.5 -27d47m00.0
+windows:
+  - {freq_center: 99.5GHz, nchan: 64}
+  - {freq_center: 100.039331446GHz, nchan: 64}   # starts at A's channel 32.5
+output_folder: output/ms_files
+support_folder: support
+fits_filename: support/tunings_input.fits
+calibrate_snr: false
+image: false
+
+sources:
+  - position: [0.0, 0.0]       # overlap: A channel 48, B channel 15.5
+    line: {mean: 99.765517, width: 300, snr: 20}
+  - position: [15.0, 0.0]      # A only: channel 14
+    line: {mean: 99.201293, width: 300, snr: 20}
+  - position: [-15.0, 0.0]     # B only: channel 50
+    line: {mean: 100.338038, width: 300, snr: 20}
+  - position: [0.0, 15.0]      # B's lower edge: B channel 1
+    line: {mean: 99.524892, width: 300, snr: 20}

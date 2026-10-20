@@ -102,8 +102,8 @@ def test_reduced_chi2_is_the_direct_sum():
         theta = [*spatial[:2], *covariance(*spatial[2:]), nu0, width, peak, *continuum]
         with jax.enable_x64(True):
             chunks = [on_device(c) for c in data.chunks]
-            args = (jnp.asarray(FREQ), jnp.asarray(basis), 12.0)
-            chi2 = float(_system(jnp.asarray(theta), _moments(theta, chunks), chunks, *args)[0])
+            spectral = {chunks[0].spw: (jnp.asarray(FREQ), jnp.asarray(basis))}
+            chi2 = float(_system(jnp.asarray(theta), _moments(theta, chunks), chunks, spectral, 12.0)[0])
         assert chi2 + own == pytest.approx(direct, rel=1e-10)
 
 
@@ -222,3 +222,47 @@ def test_a_line_narrower_than_the_bound_fits_at_min_width():
     fit = fit_line(_data(line={**LINE, "width": 40.0}), *START, continuum_order=ORDER, channel_noise=None)
     assert fit["fit_width"] == MIN_WIDTH and np.isnan(fit["fit_width_error"])
     assert abs(fit["fit_freq_ghz"] - LINE["nu0"] / 1e9) < 0.1 * DNU / 1e9
+
+
+def _two_windows(shift, line, noise=False, seed=1, n_row=3000) -> DataHandler:
+    """One pointing of a point source, in two windows of N_CHAN channels, the second ``shift`` channels above.
+
+    The continuum is linear in frequency, so a degree-1 polynomial in each window's channels holds it exactly.
+    """
+    rng = np.random.default_rng(seed)
+    u, v = rng.uniform(-3e4, 3e4, (2, n_row)) * C / NU0
+    w = np.ones((N_CHAN, n_row), dtype=np.float32)
+    chunks = []
+    for spw, freq in enumerate((FREQ, FREQ + shift * DNU)):
+        sigma = line["nu0"] * line["width"] * FWHM_TO_SIGMA / C_KMS
+        spectrum = line["peak"] * np.exp(-0.5 * ((freq - line["nu0"]) / sigma) ** 2) + 0.05 + 0.01 * (freq - NU0) / 1e9
+        rows = np.arange(n_row)
+        chunk = Chunk(
+            0, spw, np.zeros(2), freq, u, v, rows * 1.0, rows, np.zeros(n_row, dtype=int), np.zeros(w.shape), w
+        )
+        vis = _model(chunk, spectrum, 12.0, -5.0, 0.0, 0.0, 0.0)
+        if noise:
+            vis = vis + (rng.standard_normal(vis.shape) + 1j * rng.standard_normal(vis.shape))
+        chunks.append(dataclasses.replace(chunk, X=w * vis))
+    return DataHandler(chunks=chunks, metadata=Metadata(12.0, (0.0, 0.0), NU0, 3e4 * np.sqrt(2)))
+
+
+@pytest.mark.parametrize("shift, nu0", [(32.5, NU0 + 16 * DNU), (N_CHAN + 1, NU0 + 32 * DNU)])
+def test_a_line_in_two_windows_is_fitted_in_both(shift, nu0):
+    """In two overlapping windows the line has both windows' information; across a gap, more: a half line
+    alone is nearly degenerate with its window's continuum."""
+    line = {"nu0": nu0, "width": 300.0, "peak": 0.2}
+    both = _two_windows(shift, line)
+    fit = fit_line(both, 12.0, -5.0, nu0 / 1e9, 300.0, continuum_order=1, channel_noise=None)
+    assert fit["fit_peak"] == pytest.approx(0.2, rel=1e-6) and fit["fit_width"] == pytest.approx(300.0, rel=1e-6)
+    assert fit["fit_freq_ghz"] == pytest.approx(nu0 / 1e9, rel=1e-10)
+    alone = [
+        fit_line(DataHandler(chunks=[c], metadata=both.metadata), 12.0, -5.0, nu0 / 1e9, 300.0,
+                 continuum_order=1, channel_noise=None)
+        for c in both.chunks
+    ]  # fmt: skip
+    information = sum(f["fit_peak_error"] ** -2 for f in alone)
+    if shift < N_CHAN:
+        assert fit["fit_peak_error"] ** -2 == pytest.approx(information, rel=0.1)
+    else:
+        assert fit["fit_peak_error"] ** -2 > 2 * information

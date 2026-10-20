@@ -1,0 +1,28 @@
+# Adjacent windows, small: one 12 m pointing, two windows of 64 x 50 km/s channels with one channel
+# missing between them (as ASPECS 3mm.07), 4 min. 600 km/s lines centred on the gap and a quarter
+# FWHM to either side, and a control inside A. Tests lines across a window edge.
+cube_shape: [64, 128, 128]
+cell: 1arcsec
+dv: 50km/s
+freq_center: 99.5GHz
+integration_time: 4min
+alma_config: alma.cycle13.1.cfg
+direction: J2000 03h32m38.5 -27d47m00.0
+windows:
+  - {freq_center: 99.5GHz, nchan: 64}
+  - {freq_center: 100.578662893GHz, nchan: 64}   # starts two channels after A's last
+output_folder: output/ms_files
+support_folder: support
+fits_filename: support/edge_input.fits
+calibrate_snr: false
+image: false
+
+sources:
+  - position: [0.0, 0.0]       # on the missing channel
+    line: {mean: 100.031034, width: 600, snr: 20}
+  - position: [15.0, 0.0]      # a quarter FWHM below: mostly in A
+    line: {mean: 99.981250, width: 600, snr: 20}
+  - position: [-15.0, 0.0]     # a quarter FWHM above: mostly in B
+    line: {mean: 100.080818, width: 600, snr: 20}
+  - position: [0.0, 15.0]      # control inside A: channel 20
+    line: {mean: 99.300862, width: 600, snr: 20}

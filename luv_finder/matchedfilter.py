@@ -35,6 +35,8 @@ GRID_KEYS = ("dra", "ddec", *TEMPLATE_KEYS)
 #: A line whose response peaks at ``MASK_SNR`` or more at a position is left out of the continuum fit
 #: there, within ``MASK_FWHM`` template FWHM of its peak, so it does not bend the continuum of the others.
 MASK_SNR, MASK_FWHM = 5.0, 1.0
+#: Template FWHMs (km/s) a grid searches unless it names its own.
+WIDTHS = (100.0, 200.0, 300.0, 400.0)
 
 
 @partial(jax.jit, static_argnames="order")
@@ -134,13 +136,43 @@ def _masked(peak, which, sig, num0, weight, freq, centres, widths, profile, basi
     return jnp.where(ok, num / root, 0.0), jnp.where(ok, root / jnp.where(ok, var, 1.0), jnp.nan)
 
 
-def _centres(chunks: Sequence[Chunk]) -> np.ndarray:
-    """Trial line frequencies: a lattice at the finest channel width from the lowest channel, through every window."""
+def window_groups(freqs: Sequence[np.ndarray], widest: float) -> list[list[int]]:
+    """Windows (by index) joined in frequency order where they overlap or their gap is narrower than ``widest`` km/s.
+
+    A line no wider than the widest template is then searched and fitted in every window that holds it.
+    """
+    groups: list[list] = []
+    for lo, hi, k in sorted((f.min(), f.max(), k) for k, f in enumerate(freqs)):
+        if groups and lo < groups[-1][1] * (1 + widest / C_KMS):
+            groups[-1][1] = max(groups[-1][1], hi)
+            groups[-1][2].append(k)
+        else:
+            groups.append([lo, hi, [k]])
+    return [sorted(ks) for *_, ks in groups]
+
+
+def _reach(chunks: Sequence[Chunk], widest: float) -> list[tuple[float, float]]:
+    """Each window's trial centres: up to ``widest`` km/s beyond its edges, within its group (:func:`window_groups`).
+
+    Where windows meet, a template centred near the edge of one sums the channels of both: their estimates
+    add by inverse variance, the joint fit of one template with a continuum per window.
+    """
+    spans = [(0.0, 0.0)] * len(chunks)
+    for group in window_groups([c.freq for c in chunks], widest):
+        lo, hi = min(chunks[k].freq[0] for k in group), max(chunks[k].freq[-1] for k in group)
+        for k in group:
+            f0, f1 = chunks[k].freq[0], chunks[k].freq[-1]
+            spans[k] = (max(f0 * (1 - widest / C_KMS), lo), min(f1 * (1 + widest / C_KMS), hi))
+    return spans
+
+
+def _centres(chunks: Sequence[Chunk], widest: float) -> np.ndarray:
+    """Trial line frequencies: a lattice at the finest channel width from the lowest channel, through every group."""
     low = min(c.freq[0] for c in chunks)
     step = min((np.diff(c.freq).min() for c in chunks if c.freq.size > 1), default=1.0)
     k = [
-        np.arange(np.ceil((c.freq[0] - low) / step - 1e-6), np.floor((c.freq[-1] - low) / step + 1e-6) + 1)
-        for c in chunks
+        np.arange(np.ceil((f0 - low) / step - 1e-6), np.floor((f1 - low) / step + 1e-6) + 1)
+        for f0, f1 in _reach(chunks, widest)
     ]
     return low + step * np.unique(np.concatenate(k))
 
@@ -343,7 +375,7 @@ class MatchedFilter(_Grid):
         self.channel_noise = channel_noise
         self.noise: dict[int, ChannelNoise] = {}
         self.axes = self._grid_axes(mod)
-        self.freqs = _centres(data.chunks)
+        self.freqs = _centres(data.chunks, max(self.axes["width"]))
         self.result: SearchResult | None = None
 
     @staticmethod
@@ -383,10 +415,11 @@ class MatchedFilter(_Grid):
         w = np.zeros((bmin.size, len(axes["width"]), len(axes["dra"]), len(axes["ddec"]), self.freqs.size))
         wflux = np.zeros_like(w)
         tol = 1e-3 * np.diff(self.freqs).min() if self.freqs.size > 1 else 1.0
+        reach = _reach(data.chunks, max(self.axes["width"]))
         with jax.enable_x64(True):
-            for c in tqdm(data.chunks, desc="Windows", leave=False):
+            for c, (f0, f1) in zip(tqdm(data.chunks, desc="Windows", leave=False), reach, strict=True):
                 # the window's centres, a contiguous run of the lattice: a slice, so no copies
-                at = slice(*np.searchsorted(self.freqs, [c.freq[0] - tol, c.freq[-1] + tol], side="right"))
+                at = slice(*np.searchsorted(self.freqs, [f0 - tol, f1 + tol], side="right"))
                 snr, error = self._window(c, axes, cov, self.freqs[at])
                 inverse = np.nan_to_num(error**-2.0)
                 w[..., at] += inverse
@@ -418,6 +451,14 @@ class MatchedFilter(_Grid):
         return response_check(self, plots_dir=(plots_dir or ".") if filename else None, name=name, line_ghz=vline)
 
 
+def grid_axis(cfg: dict | None, key: str, default) -> np.ndarray:
+    """One search axis of a grid YAML: a value, a list, or ``{start, stop, step}``; ``default`` if absent."""
+    v = (cfg or {}).get(key, default)
+    if isinstance(v, dict):
+        return np.arange(v["start"], v["stop"], v["step"])
+    return np.atleast_1d(v)
+
+
 def build_grid(data: DataHandler, cfg: dict | None) -> dict:
     """Grid ranges from YAML, positions in the dataset's sky frame (arcsec from the reference)."""
     res = data.metadata.minresolution()
@@ -428,12 +469,6 @@ def build_grid(data: DataHandler, cfg: dict | None) -> dict:
             "normalisation, so every value gives an identical response. Remove it from the grid file."
         )
 
-    def rng(key, default):
-        v = cfg.get(key, default)
-        if isinstance(v, dict):
-            return np.arange(v["start"], v["stop"], v["step"])
-        return np.atleast_1d(v)
-
     half = primary_beam_radius(cfg.get("pb_limit", 0.2), data.freqs.min(), data.metadata.dish_diameter)
     step = res / 2
 
@@ -442,12 +477,12 @@ def build_grid(data: DataHandler, cfg: dict | None) -> dict:
 
     dra, ddec = data.chunks[0].offset
     return {
-        "dra": rng("dra", lattice(dra)),
-        "ddec": rng("ddec", lattice(ddec)),
-        "bmin": rng("bmin", res / 10),
-        "bmaj": rng("bmaj", res / 10),
-        "pa": rng("pa", 0.0),
-        "width": rng("width", [100.0, 200.0, 300.0, 400.0]),
+        "dra": grid_axis(cfg, "dra", lattice(dra)),
+        "ddec": grid_axis(cfg, "ddec", lattice(ddec)),
+        "bmin": grid_axis(cfg, "bmin", res / 10),
+        "bmaj": grid_axis(cfg, "bmaj", res / 10),
+        "pa": grid_axis(cfg, "pa", 0.0),
+        "width": grid_axis(cfg, "width", WIDTHS),
     }
 
 

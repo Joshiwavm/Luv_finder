@@ -89,16 +89,20 @@ def test_run_needs_data_and_output():
         Run({"data": "x.npz"})
 
 
-def test_window_units_join_windows_that_overlap():
-    """Two tunings over 100-102 GHz join; a window touching another at its edge stays apart."""
+def test_window_units_join_windows_that_overlap_or_nearly_meet():
+    """Two tunings over 100-102 GHz join, and so does a window at their edge; a gap joins if narrower than
+    the widest template (400 km/s, 141 MHz at 106 GHz)."""
     ch = 0.01e9
     freqs = {
         0: np.arange(100e9, 101e9, ch),
         1: np.arange(100.5e9, 102e9, ch),
         2: np.arange(102e9 - ch / 2, 103e9, ch),
         3: np.arange(105e9, 106e9, ch),
+        4: np.arange(106.1e9, 107e9, ch),  # 110 MHz after window 3's last channel
+        5: np.arange(107.2e9, 108e9, ch),  # 210 MHz after window 4's
     }
-    assert window_units(freqs) == [[0, 1], [2], [3]]
+    assert window_units(freqs) == [[0, 1, 2], [3, 4], [5]]
+    assert window_units(freqs, widest=100.0) == [[0, 1, 2], [3], [4], [5]]
     assert unit_name([14, 15, 17]) == "spw14+15+17"
 
 

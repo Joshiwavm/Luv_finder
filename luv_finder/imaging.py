@@ -12,7 +12,7 @@ import numpy as np
 from jax_finufft import nufft1
 
 from .data import DataHandler, fields_in, load
-from .fit import _window_chunks
+from .fit import _window_chunks, home_window
 from .kernel import limit_cores
 from .matchedfilter import _beam, _check_freqs, _one_field, _union_lattice, build_grid
 from .model import C_KMS
@@ -169,7 +169,9 @@ def line_maps(data: DataHandler, cat, size: float = 8.0, pb_limit: float = 0.2) 
         if max(pb) < pb_limit:
             maps.append((dra, ddec, np.full((dra.size, ddec.size), np.nan)))
             continue
-        chunks = _window_chunks(data, *centre, nu0, pb_limit)
+        chunks = _window_chunks(data, *centre, nu0, width, pb_limit)
+        home = home_window(chunks, nu0)  # one window: the map is one spectral axis
+        chunks = [c for c in chunks if c.spw == home]
         cubes = [dirty_cube(DataHandler(chunks=[c], metadata=data.metadata), dra, ddec) for c in chunks]
         dra, ddec, cube, ivar = _linear_mosaic(cubes, pb_limit)
         velocity = np.abs(chunks[0].freq / nu0 - 1) * C_KMS
