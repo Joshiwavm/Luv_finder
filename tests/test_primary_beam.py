@@ -103,3 +103,24 @@ def test_simobserve_beam_follows_airy():
 
     assert measured[0] == pytest.approx(1.0, rel=0.01)
     assert measured == pytest.approx(beam, rel=0.06)
+
+
+def test_primary_beam_and_its_slope_are_exact_near_a_pointing_centre():
+    """JAX's Bessel function is NaN at tiny arguments and its derivative wrong up to a few arcsec; the series is not."""
+    import jax
+    import jax.numpy as jnp
+    from scipy.special import j1, jv
+
+    from luv_finder.utils import X_HALF, primary_beam_fwhm
+
+    offsets = np.array([0.0, 1e-9, 1e-6, 1e-3, 0.1, 1.0, 5.0, 8.9, 9.1, 20.0, 40.0])  # x = 0.5 near 9 arcsec
+    with jax.enable_x64(True):
+        beam = np.asarray(primary_beam(jnp.asarray(offsets), 100e9, 12.0, xp=jnp))
+        slope = np.asarray(jax.vmap(jax.grad(lambda r: primary_beam(r, 100e9, 12.0, xp=jnp)))(jnp.asarray(offsets)))
+    np.testing.assert_allclose(beam, primary_beam(offsets, 100e9, 12.0), rtol=1e-12)
+    # d/dr (2 J1(x) / x)^2 = 2 (2 J1(x) / x) (-2 J2(x) / x) dx/dr
+    dx = 2 * X_HALF / primary_beam_fwhm(100e9, 12.0)
+    x = np.maximum(dx * offsets[1:], 1e-300)
+    exact = 2 * (2 * j1(x) / x) * (-2 * jv(2, x) / x) * dx
+    assert slope[0] == 0.0
+    np.testing.assert_allclose(slope[1:], exact, rtol=1e-9, atol=1e-18)

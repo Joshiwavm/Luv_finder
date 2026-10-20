@@ -6,6 +6,8 @@ about 1.13 lambda / D, and CASA models the beam as an Airy pattern scaled so tha
 
 from __future__ import annotations
 
+from math import factorial
+
 import astropy.constants as const
 import jax
 import numpy as np
@@ -27,11 +29,20 @@ FWHM_FACTOR = 1.13
 _X_NULL = jn_zeros(1, 1)[0]
 
 
+#: Below this ``x`` the Airy pattern is its series ``2 J1(x) / x = sum_k (-x^2/4)^k / (k! (k+1)!)``, to
+#: double precision: JAX's ``bessel_jn`` is NaN at ``x <= 1e-6`` and its derivative wrong up to ``x ~ 0.3``
+#: (a few arcsec from a pointing centre), which a fit there needs.
+_X_SERIES = 0.5
+_SERIES = np.array([(-0.25) ** k / (factorial(k) * factorial(k + 1)) for k in range(8)])
+
+
 def _airy(x, xp=np):
     """Airy power pattern ``(2 J1(x) / x)**2``, equal to 1 at ``x = 0``; ``xp`` is numpy or ``jax.numpy``."""
     bessel = j1 if xp is np else lambda z: jax.scipy.special.bessel_jn(z, v=1)[1]
-    safe = xp.where(x == 0, 1.0, x)
-    return xp.where(x == 0, 1.0, (2 * bessel(safe) / safe) ** 2)
+    small = x < _X_SERIES
+    safe, near = xp.where(small, 1.0, x), xp.where(small, x, 0.0)
+    series = sum(c * near ** (2 * k) for k, c in enumerate(_SERIES))
+    return xp.where(small, series**2, (2 * bessel(safe) / safe) ** 2)
 
 
 #: Argument at which the Airy pattern drops to one half.
