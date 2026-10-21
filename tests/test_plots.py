@@ -14,6 +14,7 @@ from matplotlib.figure import Figure
 from luv_finder import Gaussian, MatchedFilter, Model
 from luv_finder.data import reweighted
 from luv_finder.plotting import response_check, spectrum_check, weights_check
+from luv_finder.utils import primary_beam_fwhm
 
 
 def test_spectrum_per_source(data, truth, plots):
@@ -88,19 +89,12 @@ def test_search_figures(data, truth, plots):
     assert isinstance(fig, Figure)
 
 
-def test_layout_and_scan_figures(data, plots):
-    from luv_finder.plotting import mosaic_layout, scan_check, uv_profile
+def test_layout_figure(data, plots):
+    from luv_finder.plotting import mosaic_layout
 
-    pb = data.metadata.primarybeamsize()
+    pb = primary_beam_fwhm(data.metadata.central_frequency, data.metadata.dish_diameter)
     offsets = {0: (0.0, 0.0), 1: (-17.0, -30.0), 2: (17.0, -30.0)}
     assert isinstance(mosaic_layout(offsets, pb, plots_dir=str(plots), marks={"line": (2.0, 20.5)}), Figure)
-    models = {"point": Gaussian(), "2 arcsec": Gaussian(bmin=2.0, bmaj=2.0)}
-    fig = uv_profile({k: data for k in models}, 4.25, 23.5, models, 39.9, plots_dir=str(plots))
-    assert isinstance(fig, Figure)
-    x = np.linspace(0, 4, 9)
-    assert isinstance(
-        scan_check(x, {"demo": np.exp(-((x - 2) ** 2))}, "size", "scan", truth=2.0, plots_dir=str(plots)), Figure
-    )
 
 
 def test_amp_phase_and_dirty_map_figures(data, truth, plots):
@@ -275,13 +269,12 @@ def test_weights_figure(data, plots):
 
 def test_figures_are_saved_only_when_asked(tmp_path):
     """A figure is returned either way; ``<plots_dir>/<name>.png`` is written only with a ``plots_dir``."""
-    from luv_finder.plotting import scan_check
+    from luv_finder.plotting import mosaic_layout
 
-    x = np.arange(5.0)
-    assert isinstance(scan_check(x, {"a": x}, "x", "title"), Figure)
+    assert isinstance(mosaic_layout({0: (0.0, 0.0)}, 60.0), Figure)
     assert not list(tmp_path.iterdir())
-    scan_check(x, {"a": x}, "x", "title", plots_dir=str(tmp_path), name="scan")
-    assert (tmp_path / "scan.png").is_file()
+    mosaic_layout({0: (0.0, 0.0)}, 60.0, plots_dir=str(tmp_path), name="layout")
+    assert (tmp_path / "layout.png").is_file()
 
 
 def test_style_is_scoped():
@@ -289,12 +282,12 @@ def test_style_is_scoped():
     import matplotlib.pyplot as plt
     from matplotlib.markers import TICKUP
 
-    from luv_finder.plotting import scan_check, style
+    from luv_finder.plotting import mosaic_layout, style
 
     before = plt.rcParams["xtick.direction"]
     with style():
         assert plt.rcParams["xtick.direction"] == "in"
-    fig = scan_check(np.arange(3.0), {"a": np.arange(3.0)}, "x", "t")
+    fig = mosaic_layout({0: (0.0, 0.0)}, 60.0)
     assert plt.rcParams["xtick.direction"] == before
     assert fig.axes[0].xaxis.get_major_ticks()[0].tick1line.get_marker() == TICKUP  # bottom ticks point in
 

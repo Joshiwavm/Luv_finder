@@ -466,10 +466,12 @@ class MatchedFilter(_Grid):
     def run(self, jackknife: bool = False, cores: int | None = None) -> None:
         """Fill ``result`` and, with ``jackknife``, ``result.jackknife`` on the same grid, on ``cores`` cores."""
         limit_cores(cores)
-        self.noise = self.data.channel_noise() if self.channel_noise == "measure" else dict(self.channel_noise or {})
+        measure = self.channel_noise == "measure"
+        noise = self.data.jackknife() if jackknife or measure else None  # made once, for both
+        self.noise = self.data.channel_noise(noise) if measure else dict(self.channel_noise or {})
         self.result = self._search(self.data)
         if jackknife:
-            self.result.jackknife = self._search(self.data.jackknife())
+            self.result.jackknife = self._search(noise)
 
     def _search(self, data: DataHandler) -> SearchResult:
         axes = {k: np.asarray(v) for k, v in self.axes.items()}

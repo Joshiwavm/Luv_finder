@@ -16,7 +16,6 @@ under ``output``, so plotting never repeats a search::
 
 from __future__ import annotations
 
-import dataclasses
 import os
 import subprocess
 import sys
@@ -31,7 +30,7 @@ import yaml
 from astropy.table import Table
 
 from .catalogue import DETECTION_RULE, _reliability, bright_lines, catalogue, merge_catalogues
-from .data import Metadata, fields_in, iter_chunks, load, target_selection, write_npz
+from .data import Metadata, WeightScale, fields_in, iter_chunks, load, target_selection, write_npz
 from .matchedfilter import TEMPLATE_KEYS, WIDTHS, grid_axis, search_pointings, window_groups
 from .model import C_KMS, CONTINUUM_ORDER
 
@@ -537,11 +536,8 @@ class Run:
         w = self.weights(block)
         if not all(f"{c.spw}_scale" in w for c in chunks):
             raise ValueError(f"{block} has no weight scales: its data were not reweighted by this run (an NPZ input)")
-        out = []
-        for c in chunks:
-            scale = w[f"{c.spw}_scale"][np.searchsorted(w[f"{c.spw}_scans"], c.scan)].T
-            out.append(dataclasses.replace(c, X=c.X * scale, w=(c.w * scale).astype(np.float32)))
-        return out
+        scales = {s: WeightScale(*(w[f"{s}_{k}"] for k in WeightScale._fields)) for s in {c.spw for c in chunks}}
+        return [c.scaled(scales[c.spw].at(c.scan)) for c in chunks]
 
     # ----------------------------------------------------------------- reports
     def summary(self) -> str:

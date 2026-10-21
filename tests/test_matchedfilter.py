@@ -111,7 +111,7 @@ def test_matches_the_direct_sum():
     for spw, nchan, shift in ((0, 30, 0), (1, 960, 500)):
         chunk = _chunk(nchan, 200, seed=spw, spw=spw, offset=(4.0, -2.0))
         chunk = dataclasses.replace(chunk, freq=chunk.freq + shift * CHANNEL)
-        flag = r.random(chunk.flag.shape) < 0.1
+        flag = r.random(chunk.w.shape) < 0.1
         flag[:3] = True
         w_row = r.uniform(0.5, 2.0, chunk.u.size)
         vis = r.normal(size=flag.shape) + 1j * r.normal(size=flag.shape)
@@ -147,7 +147,7 @@ def test_noise_has_unit_variance_at_every_channel():
     """White noise with unequal weights and flagged channels gives a unit-variance response, edges included."""
     r = np.random.default_rng(7)
     chunk = _chunk(40, 3000, seed=1)
-    flag = np.zeros(chunk.flag.shape, dtype=bool)
+    flag = np.zeros(chunk.w.shape, dtype=bool)
     flag[[0, 17, 18]] = True
     w_row = r.uniform(0.2, 5.0, chunk.u.size)
     noise = (r.normal(size=flag.shape) + 1j * r.normal(size=flag.shape)) / np.sqrt(w_row)
@@ -232,7 +232,7 @@ def test_continuum_fit_keeps_noise_at_unit_variance_at_every_lag():
     for spw in range(4):
         chunk = _chunk(40, 2000, seed=spw, spw=spw)
         chunk = dataclasses.replace(chunk, freq=chunk.freq + 50 * spw * CHANNEL)
-        flag = np.zeros(chunk.flag.shape, dtype=bool)
+        flag = np.zeros(chunk.w.shape, dtype=bool)
         flag[[0, 17, 18]] = True
         w_row = r.uniform(0.2, 5.0, chunk.u.size)
         noise = (r.normal(size=flag.shape) + 1j * r.normal(size=flag.shape)) / np.sqrt(w_row)
@@ -288,7 +288,7 @@ def test_lags_the_continuum_reproduces_are_uncovered():
 def test_flagged_channel_gives_a_finite_response():
     data = _synthetic(50, snr=10.0)
     (chunk,) = data.chunks
-    flag = chunk.flag.copy()
+    flag = chunk.w == 0
     flag[10] = True  # away from the line, so the peak is unchanged
     data.chunks = [dataclasses.replace(chunk, X=np.where(flag, 0, chunk.X), w=_weights(chunk.w, flag))]
     mf = _finder(data, continuum_order=None, dra=0.0, ddec=0.0)

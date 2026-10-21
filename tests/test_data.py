@@ -81,8 +81,8 @@ def test_load_reads_all_or_the_selected_fields_of_an_npz(two_field_npz):
 
 
 def test_metadata_scales(data):
-    assert 10 < data.metadata.primarybeamsize() < 300  # arcsec, band 1-ish at 40 GHz
-    assert data.metadata.minresolution() < data.metadata.primarybeamsize()
+    pb = primary_beam_fwhm(data.metadata.central_frequency, data.metadata.dish_diameter)
+    assert 10 < pb < 300 and data.metadata.minresolution() < pb  # arcsec, band 1-ish at 40 GHz
 
 
 def test_primary_beam_is_unity_on_axis_and_half_at_half_the_fwhm():
@@ -116,13 +116,6 @@ def test_primary_beam_radius_inverts_the_beam():
     assert primary_beam_radius(0.5, 92e9, 12.0) == pytest.approx(fwhm / 2)
     assert primary_beam(primary_beam_radius(0.2, 92e9, 12.0), 92e9, 12.0) == pytest.approx(0.2)
     assert primary_beam_radius(1.0, 92e9, 12.0) == 0.0
-
-
-def test_metadata_primarybeamsize_is_the_fwhm():
-    meta = Metadata(12.0, (0.0, 0.0), 92e9, 1e4)
-    assert meta.primarybeamsize() == pytest.approx(63.3, abs=0.1)
-    assert meta.primarybeamsize() == pytest.approx(primary_beam_fwhm(92e9, 12.0))
-    assert meta.primarybeamsize(7.0) == pytest.approx(63.3 * 12 / 7, abs=0.2)
 
 
 def test_phase_shift_recentres_model(data):
@@ -226,7 +219,7 @@ def _noise_chunk(n_chan=32, n_row=20000, smooth=True, spw=0, seed=0):
 
 def test_channel_noise_of_hanning_noise():
     """Hanning-smoothed unit noise has 3/8 of the power its weights say, correlated 2/3 and 1/6 at lags 1 and 2."""
-    noise = channel_noise([_noise_chunk()])
+    noise = channel_noise([_noise_chunk().jackknife()])
     assert noise.scale == pytest.approx(np.full(32, 0.375), rel=0.05)
     assert noise.rho.size == 3 and noise.rho == pytest.approx(HANNING, abs=0.01)
 
@@ -236,7 +229,7 @@ def test_channel_noise_finds_the_noisy_channels():
     chunk = _noise_chunk(smooth=False)
     X = chunk.X.copy()
     X[5:8] *= 2
-    noise = channel_noise([dataclasses.replace(chunk, X=X)])
+    noise = channel_noise([dataclasses.replace(chunk, X=X).jackknife()])
     expected = np.ones(32)
     expected[5:8] = 4.0
     assert noise.scale == pytest.approx(expected, rel=0.05) and noise.rho.tolist() == [1.0]
@@ -244,7 +237,7 @@ def test_channel_noise_finds_the_noisy_channels():
 
 def test_channel_noise_needs_noise():
     with pytest.raises(ValueError, match="no noise"):
-        channel_noise([_chunk(np.arange(100), np.zeros(100, dtype=int), values=np.ones(100))])
+        channel_noise([_chunk(np.arange(100), np.zeros(100, dtype=int), values=np.ones(100)).jackknife()])
 
 
 def test_channel_noise_per_spectral_window():
@@ -280,7 +273,7 @@ def test_reweighted_weights_match_the_noise():
     chunk = reweighted([_two_scans()])[0]
     assert chunk.w.dtype == np.float32
     assert np.allclose(chunk.vis, _two_scans().X, rtol=1e-6)
-    assert channel_noise([chunk]).scale == pytest.approx(np.ones(4), rel=0.05)
+    assert channel_noise([chunk.jackknife()]).scale == pytest.approx(np.ones(4), rel=0.05)
 
 
 def _alternating(chunk, sky=(0.0, 0.0)):

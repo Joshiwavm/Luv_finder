@@ -258,61 +258,6 @@ def noise_check(mf, plots_dir=None, name="noise"):
 
 
 @_styled
-def uv_profile(datasets, dra, ddec, models, freq_ghz, plots_dir=None, name="uv_profile", bins=25):
-    """Visibility amplitude against uv distance at one channel, data binned and model envelopes.
-
-    ``datasets`` and ``models`` map a label to a single-window :class:`~luv_finder.data.DataHandler`
-    and a source component. Each dataset is phase-shifted onto (``dra``, ``ddec``) and scaled by
-    its least-squares flux against the model envelope, so only the shapes are compared: a
-    resolved source fades on long baselines.
-    """
-    fig, ax = _subplots(figsize=(7, 4.5))
-    for i, (label, data) in enumerate(datasets.items()):
-        (chunk,) = data.chunks
-        k = int(np.argmin(np.abs(chunk.freq / 1e9 - freq_ghz)))
-        one = chunk.channels(slice(k, k + 1))
-        uvdist = np.hypot(*one.uv_waves())[0] / 1e3
-        vis = (one.vis * one.phase(dra, ddec)).real[0]
-        envelope = models[label].envelope(one)[0]
-        w = one.w[0]
-        flux = np.sum(w * vis * envelope) / np.sum(w * envelope**2)
-        edges = np.linspace(0, uvdist.max(), bins + 1)
-        idx = np.digitize(uvdist, edges) - 1
-        sums = np.bincount(idx, w * vis / flux, bins + 1)[:bins]
-        wsum = np.bincount(idx, w, bins + 1)[:bins]
-        centres = 0.5 * (edges[1:] + edges[:-1])
-        ok = wsum > 0
-        ax.plot(centres[ok], sums[ok] / wsum[ok], "o", ms=4, color=f"C{i}", label=f"{label}, data")
-        order = np.argsort(uvdist)
-        ax.plot(uvdist[order], envelope[order], "-", lw=1.2, color=f"C{i}", alpha=0.8, label=f"{label}, model")
-    ax.axhline(0, c="gray", ls="--", lw=0.8)
-    ax.set_xlabel("uv distance [klambda]")
-    ax.set_ylabel("Re(V) / flux")
-    ax.set_title(f"Visibility profile at {freq_ghz:.3f} GHz")
-    ax.legend(fontsize=7, ncol=2)
-    return _save(fig, plots_dir, name)
-
-
-@_styled
-def scan_check(x, curves, xlabel, title, truth=None, plots_dir=None, name="scan"):
-    """Peak S/N against one trial parameter, e.g. template size, width or position angle.
-
-    ``curves`` maps a label to the peak S/N at every value of ``x``; ``truth`` marks the
-    injected value.
-    """
-    fig, ax = _subplots(figsize=(7, 4))
-    for label, y in curves.items():
-        ax.plot(x, y, "o-", ms=3, lw=1.4, label=label)
-    if truth is not None:
-        ax.axvline(truth, c="C3", ls="--", lw=0.8, label="injected")
-    ax.set_xlabel(xlabel)
-    ax.set_ylabel("Peak S/N")
-    ax.set_title(title)
-    ax.legend(fontsize=8)
-    return _save(fig, plots_dir, name)
-
-
-@_styled
 def amp_phase_check(data, positions, plots_dir=None, name="amp_phase", line_ghz=None):
     """Amplitude and phase of the vector-averaged visibility against frequency.
 

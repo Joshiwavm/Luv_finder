@@ -11,7 +11,6 @@ chi^2, its gradient and the Gauss-Newton matrix ``J^T W J`` in every parameter e
 
 from __future__ import annotations
 
-import dataclasses
 import warnings
 
 import jax
@@ -213,8 +212,7 @@ def _without(chunk: Chunk, nu: float, width: float, others) -> Chunk:
     drop &= v > MASK_FWHM * width
     if not drop.any():
         return chunk
-    keep = ~drop[:, None]
-    return dataclasses.replace(chunk, X=chunk.X * keep, w=(chunk.w * keep).astype(chunk.w.dtype))
+    return chunk.scaled(~drop[:, None])
 
 
 def fit_line(
