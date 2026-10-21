@@ -216,7 +216,7 @@ def test_response_shape_figure(plots):
 
     def search(snr, jackknife=None):
         error = np.full(snr.shape, 1e-3)
-        return SearchResult(axes, freqs, snr, snr * error, error, np.ones(shape), jackknife)
+        return SearchResult(axes, freqs, snr, error, np.ones(shape), jackknife)
 
     noisy, jackknife = (n / n.std(axis=(0, 1, 3), keepdims=True) for n in map(noise, (1, 2)))
     data = noisy + np.stack([blob(s) for s in sigmas], 2)

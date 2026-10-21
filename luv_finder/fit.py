@@ -24,11 +24,8 @@ from .data import Chunk, DataHandler, load, sky_direction
 from .data import channel_noise as measure_noise
 from .kernel import DATA_POWERS, WEIGHT_POWERS, limit_cores, on_device, point_moments
 from .matchedfilter import MASK_FWHM, MASK_SNR
-from .model import C_KMS, CONTINUUM_ORDER, FWHM_TO_SIGMA, covariance, rotated
+from .model import C_KMS, CONTINUUM_ORDER, FWHM_TO_SIGMA, LINE_FLUX, covariance, rotated
 from .utils import primary_beam
-
-#: Line flux per peak flux density and FWHM, as :meth:`~luv_finder.matchedfilter.SearchResult.integrated_flux`.
-LINE_FLUX = np.sqrt(2 * np.pi) * FWHM_TO_SIGMA
 
 #: Quantities reported per line, each with an ``_error``, and their units.
 REPORTED = {

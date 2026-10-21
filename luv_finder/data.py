@@ -591,6 +591,28 @@ def fields_in(path) -> list[int]:
     return sorted(int(f) for f in target_selection(path)[0])
 
 
+def pointing(path, field: int) -> tuple[Metadata, np.ndarray, float]:
+    """A field's dataset metadata, phase centre (arcsec, the data's sky frame) and lowest frequency (Hz), from a
+    measurement set, an NPZ or a list of NPZs, without reading its visibilities."""
+    if isinstance(path, list | tuple):
+        parts = [pointing(p, field) for p in path if field in fields_in(p)]
+        return parts[0][0], parts[0][1], min(p[2] for p in parts)
+    if _is_npz(path):
+        with np.load(path) as f:
+            spws = [int(s) for fd, s in f["chunks"] if fd == field]
+            offset, low = f[f"{field}_{spws[0]}_offset"], min(float(f[f"{field}_{s}_freq"].min()) for s in spws)
+        return DataHandler.from_npz(path, []).metadata, offset, low
+    metadata = Metadata.from_ms(path)
+    msmd = tools().msmetadata()
+    msmd.open(str(path))
+    try:
+        offset = sky_offset(_phase_centre(msmd, field), metadata.ref)
+        low = min(float(msmd.chanfreqs(int(s)).min()) for s in target_selection(str(path))[1])
+    finally:
+        msmd.close()
+    return metadata, offset, low
+
+
 def load(path, fields=None) -> DataHandler:
     """The visibilities of ``fields`` (default: all) from a measurement set, an NPZ or a list of one dataset's NPZs."""
     if isinstance(path, list | tuple):

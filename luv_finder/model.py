@@ -13,6 +13,8 @@ from astropy.constants import c
 
 C_KMS = c.to(u.km / u.s).value
 FWHM_TO_SIGMA = 1 / 2.355
+#: Line flux per peak flux density and FWHM of a Gaussian line, ``sqrt(2 pi) / 2.355``.
+LINE_FLUX = np.sqrt(2 * np.pi) * FWHM_TO_SIGMA
 #: Degree of the continuum polynomial fitted with each line, in the search and the fit.
 CONTINUUM_ORDER = 1
 

@@ -67,7 +67,7 @@ def _result(jackknife, step_ra=STEP, channels=None):
 
     def search(snr):
         error = np.full(snr.shape, 1e-3)
-        return SearchResult(axes, freqs, snr, snr * error, error, np.ones((n_dra, n_ddec, n_chan)))
+        return SearchResult(axes, freqs, snr, error, np.ones((n_dra, n_ddec, n_chan)))
 
     data = SPREAD * np.random.default_rng(1).standard_normal(jackknife.shape)
     return dataclasses.replace(search(data), jackknife=search(jackknife))

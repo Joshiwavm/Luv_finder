@@ -11,7 +11,7 @@ from scipy import fft, ndimage, optimize, special, stats
 
 from .data import sky_direction
 from .matchedfilter import TEMPLATE_KEYS, SearchResult
-from .model import C_KMS
+from .model import C_KMS, LINE_FLUX
 from .utils import BLOCK_BYTES
 
 
@@ -366,14 +366,16 @@ def catalogue(
     snr = {name: np.array([g.snr for g in gs]) for name, gs in found.items()}
     i, j, t, c = (np.array([getattr(g, a) for g in found["data"]], dtype=int) for a in "ijtk")
     templates = np.array(list(product(*(result.axes[a] for a in TEMPLATE_KEYS))))[t]
-    line_flux, line_flux_error = (a[i, j, t, c] for a in result.integrated_flux())
     columns = {"id": np.arange(1, i.size + 1), "dra": np.asarray(result.axes["dra"])[i]}
     columns["ddec"] = np.asarray(result.axes["ddec"])[j]
     if ref is not None:
         columns["ra"], columns["dec"] = np.degrees(sky_direction((columns["dra"], columns["ddec"]), ref))
     columns |= {"freq_ghz": result.freqs[c] / 1e9, **dict(zip(TEMPLATE_KEYS, templates.T, strict=True))}
-    columns |= {key: getattr(result, key)[i, j, t, c] for key in ("snr", "flux", "error")}
-    columns |= {"line_flux": line_flux, "line_flux_error": line_flux_error, "coverage": result.coverage[i, j, c]}
+    peak, error = result.snr[i, j, t, c], result.error[i, j, t, c]
+    per_width = templates[:, TEMPLATE_KEYS.index("width")] * LINE_FLUX  # line flux per peak flux density
+    columns |= {"snr": peak, "flux": peak * error, "error": error}
+    columns |= {"line_flux": peak * error * per_width, "line_flux_error": error * per_width}
+    columns["coverage"] = result.coverage[i, j, c]
     columns["n_peaks"] = np.array([g.n_peaks for g in found["data"]], dtype=int)
     reliable, meta = _reliability(snr, floor, k, fidelity_min, rule)
     search = {"jackknife_spread": jackknife_spread(result)} | {key: getattr(nc, key) for key in SEARCH_META[1:]}

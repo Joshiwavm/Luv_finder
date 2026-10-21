@@ -7,17 +7,18 @@ from astropy.table import Table
 
 from luv_finder import DataHandler, Gaussian, MatchedFilter, Model
 from luv_finder.cli.find_lines import main as find_lines
-from luv_finder.data import C, ChannelNoise, Chunk, Metadata, reweighted
+from luv_finder.data import C, ChannelNoise, Chunk, Metadata, load, reweighted
 from luv_finder.fit import COLUMNS as FIT_COLUMNS
 from luv_finder.kernel import default_cores
 from luv_finder.matchedfilter import (
     SearchResult,
     build_grid,
     combine_pointings,
+    grid_model,
     pb_corrected,
     search_pointings,
 )
-from luv_finder.model import CONTINUUM_ORDER, FWHM_TO_SIGMA
+from luv_finder.model import CONTINUUM_ORDER, FWHM_TO_SIGMA, LINE_FLUX
 from luv_finder.utils import primary_beam, primary_beam_radius
 
 C_KMS = 299792.458
@@ -365,9 +366,7 @@ def test_flux_is_the_injected_peak_flux_density():
     assert r.flux[0, 0, 0, 25] == pytest.approx(src.spectrum(FREQ[25]), rel=1e-6)
     profile = np.exp(-0.5 * ((FREQ - FREQ[25]) / (FREQ[25] * 300.0 * FWHM_TO_SIGMA / C_KMS)) ** 2)
     assert r.error[0, 0, 0, 25] == pytest.approx(1 / np.sqrt(400 * np.sum(profile**2)))
-    flux, error = r.integrated_flux()
-    assert flux[0, 0, 0, 25] == pytest.approx(2.0, rel=1e-9)
-    assert error[0, 0, 0, 25] == pytest.approx(r.error[0, 0, 0, 25] * flux[0, 0, 0, 25] / r.flux[0, 0, 0, 25])
+    assert r.flux[0, 0, 0, 25] * 300.0 * LINE_FLUX == pytest.approx(2.0, rel=1e-9)  # the line flux, Jy km/s
 
 
 def test_pb_correction_divides_the_flux_and_masks_the_beam_edge():
@@ -435,7 +434,7 @@ def test_combine_pointings_rejects_other_templates_channels_and_lattices():
         shape = (len(dra), 1, len(width), len(freqs))
         axes = {"dra": list(dra), "ddec": [0.0], "bmin": [0.0], "bmaj": [0.0], "pa": [0.0], "width": list(width)}
         ones = np.ones(shape)
-        return SearchResult(axes, freqs, ones, ones, ones, np.ones((*shape[:2], len(freqs))))
+        return SearchResult(axes, freqs, ones, ones, np.ones((*shape[:2], len(freqs))))
 
     ref = result([0.0, 5.0])
     assert combine_pointings([ref, result([15.0, 20.0])]).axes["dra"] == [0.0, 5.0, 10.0, 15.0, 20.0]
@@ -709,3 +708,24 @@ def test_a_chunk_of_neighbouring_windows_is_the_whole_spectrum_in_its_band():
     np.testing.assert_allclose(chunk.freqs, whole.freqs[at])
     np.testing.assert_allclose(chunk.result.snr, whole.result.snr[..., at], rtol=1e-12, atol=1e-12)
     np.testing.assert_allclose(chunk.result.error, whole.result.error[..., at], rtol=1e-12)
+
+
+def test_search_pointings_in_place_equals_pb_corrected_and_combined(tmp_path):
+    """The search of an NPZ corrects and combines its pointings in place: the same S/N, flux, error and
+    coverage, to round-off, as correcting each pointing's copy and combining them."""
+    src = _line(12.0, 0.0)
+    fields = [_seen_by(offset, src, field=k) for k, offset in enumerate(((0.0, 0.0), (30.0, 0.0)))]
+    npz = str(tmp_path / "two.npz")
+    DataHandler(chunks=[c for d in fields for c in d.chunks], metadata=fields[0].metadata).to_npz(npz)
+    grid = {"dra": [6.0, 12.0, 18.0], "ddec": [0.0], "bmin": 0.0, "bmaj": 0.0, "width": 300.0}
+    found = search_pointings(npz, grid, continuum_order=None, channel_noise=None)
+    corrected = []
+    for k in (0, 1):
+        data = load(npz, [k])
+        mf = MatchedFilter(data, grid_model(build_grid(data, grid)), continuum_order=None, channel_noise=None)
+        mf.run(jackknife=True)
+        corrected.append(pb_corrected(mf.result, data))
+    expected = combine_pointings(corrected)
+    for got, want in ((found, expected), (found.jackknife, expected.jackknife)):
+        for key in ("snr", "flux", "error", "coverage"):
+            np.testing.assert_allclose(getattr(got, key), getattr(want, key), rtol=1e-12, atol=1e-15, err_msg=key)

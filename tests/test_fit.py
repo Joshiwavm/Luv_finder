@@ -9,11 +9,11 @@ from astropy.table import Table
 from luv_finder import DataHandler, Gaussian, MatchedFilter
 from luv_finder.catalogue import catalogue
 from luv_finder.data import ChannelNoise, Chunk, Metadata, sky_offset
-from luv_finder.fit import COLUMNS, LINE_FLUX, _moments, _system, fit_line, fit_lines
+from luv_finder.fit import COLUMNS, _moments, _system, fit_line, fit_lines
 from luv_finder.imaging import line_maps
 from luv_finder.kernel import on_device
 from luv_finder.matchedfilter import build_grid, grid_model, pb_corrected
-from luv_finder.model import C_KMS, FWHM_TO_SIGMA, covariance
+from luv_finder.model import C_KMS, FWHM_TO_SIGMA, LINE_FLUX, covariance
 from luv_finder.plotting import line_maps_check, line_spectra_check
 from luv_finder.utils import C, primary_beam
 
