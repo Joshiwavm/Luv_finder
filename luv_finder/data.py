@@ -79,15 +79,40 @@ class WeightScale(NamedTuple):
 def weight_scale(chunks: Sequence[Chunk]) -> WeightScale:
     """``sum w z^2 / 2 sum w`` per (scan, channel) over a window's integrations of a baseline <= ``MAX_GAP`` apart.
 
-    A pair that spans two scans counts in both, so a scan of one integration is measured too.
+    The integrations pair in their own field, so a pair sees one sky; a (scan, channel) with no such pair (a
+    mosaic field seen once per visit) pairs across fields. A pair that spans two scans counts in both, so a
+    scan of one integration is measured too.
     """
     time, baseline, scan = (np.concatenate([getattr(c, k) for c in chunks]) for k in ("time", "baseline", "scan"))
-    a, b = _pairs(time, baseline, MAX_GAP)
+    field = np.concatenate([np.full(c.time.size, c.field) for c in chunks])
     scans = np.unique(scan)
+    own = _scale_cells(
+        chunks, *_pairs(time, baseline.astype(np.int64) * (field.max() + 1) + field, MAX_GAP), scan, scans
+    )
+    if np.any(own["data"] & (own["den"] == 0)):
+        across = _scale_cells(chunks, *_pairs(time, baseline, MAX_GAP), scan, scans)
+        use = own["den"] > 0
+        own = {k: np.where(use, own[k], across[k]) for k in own}
+    if np.any(own["data"] & (own["den"] == 0)):
+        k = int(np.flatnonzero(np.any(own["data"] & (own["den"] == 0), axis=1))[0])
+        raise ValueError(
+            f"spw {chunks[0].spw}, scan {scans[k] & 0xFFFFFFFF} of execution block {scans[k] >> 32}: no two "
+            f"integrations of a baseline within {MAX_GAP:.0f} s to measure its weights; flag it or raise MAX_GAP"
+        )
+    if np.any((own["den"] > 0) & (own["num"] == 0)):
+        raise ValueError(f"spw {chunks[0].spw} holds no noise to measure; read noiseless data with reweight=False")
+    scale = np.where(own["den"] > 0, own["num"] / np.where(own["den"] > 0, own["den"], 1.0), 1.0)
+    return WeightScale(scans, scale, own["check"], own["error"])
+
+
+def _scale_cells(chunks: Sequence[Chunk], a, b, scan, scans) -> dict:
+    """``num``, ``den`` (of :func:`weight_scale`), the robust ``check``, its ``error`` and whether there are
+    ``data``, per (scan, channel), from the pairs ``a``, ``b``."""
     of_a, of_b, of_row = (np.searchsorted(scans, s) for s in (scan[a], scan[b], scan))
     n_chan = chunks[0].freq.size
-    scale, check = np.ones((scans.size, n_chan)), np.full((scans.size, n_chan), np.nan)
-    error = np.full((scans.size, n_chan), np.nan)
+    out = {k: np.zeros((scans.size, n_chan)) for k in ("num", "den")}
+    out |= {k: np.full((scans.size, n_chan), np.nan) for k in ("check", "error")}
+    out["data"] = np.zeros((scans.size, n_chan), dtype=bool)
     for lo in range(0, n_chan, CHANNEL_BLOCK):
         sl = slice(lo, lo + CHANNEL_BLOCK)
         X, w = (np.concatenate([getattr(c, k)[sl] for c in chunks], axis=1) for k in ("X", "w"))
@@ -97,25 +122,15 @@ def weight_scale(chunks: Sequence[Chunk]) -> WeightScale:
         z2 = np.abs(_vis(X[:, a], wa) - _vis(X[:, b], wb)) ** 2 * wp
         for k in range(scans.size):
             m = (of_a == k) | (of_b == k)
-            num, den = np.sum(wp[:, m] * z2[:, m], axis=1), 2 * np.sum(wp[:, m], axis=1)
-            data = np.sum(w[:, of_row == k], axis=1) > 0
-            if np.any(data & (den == 0)):
-                raise ValueError(
-                    f"spw {chunks[0].spw}, scan {scans[k] & 0xFFFFFFFF} of execution block {scans[k] >> 32}: no two "
-                    f"integrations of a baseline within "
-                    f"{MAX_GAP:.0f} s to measure its weights; flag it or raise MAX_GAP"
-                )
-            if np.any((den > 0) & (num == 0)):
-                raise ValueError(
-                    f"spw {chunks[0].spw} holds no noise to measure; read noiseless data with reweight=False"
-                )
-            scale[k, sl] = np.where(den > 0, num / np.where(den > 0, den, 1.0), 1.0)
-            check[k, sl] = [_robust(z[o]) for z, o in zip(z2[:, m], both[:, m], strict=True)]
+            out["num"][k, sl] = np.sum(wp[:, m] * z2[:, m], axis=1)
+            out["den"][k, sl] = 2 * np.sum(wp[:, m], axis=1)
+            out["data"][k, sl] = np.sum(w[:, of_row == k], axis=1) > 0
+            out["check"][k, sl] = [_robust(z[o]) for z, o in zip(z2[:, m], both[:, m], strict=True)]
             n, w1, w2 = both[:, m].sum(axis=1), np.sum(wp[:, m], axis=1), np.sum(wp[:, m] ** 2, axis=1)
             ok = n > 0
             # the median's variance 1 / ln(2)^2 / n, the weighted mean's, less twice their covariance 1 / n
-            error[k, sl][ok] = np.sqrt((1 / np.log(2) ** 2 - 2) / n[ok] + w2[ok] / w1[ok] ** 2)
-    return WeightScale(scans, scale, check, error)
+            out["error"][k, sl][ok] = np.sqrt((1 / np.log(2) ** 2 - 2) / n[ok] + w2[ok] / w1[ok] ** 2)
+    return out
 
 
 def _robust(z2: np.ndarray) -> float:

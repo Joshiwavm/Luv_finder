@@ -283,15 +283,30 @@ def test_reweighted_weights_match_the_noise():
     assert channel_noise([chunk]).scale == pytest.approx(np.ones(4), rel=0.05)
 
 
-def test_weight_scale_pairs_integrations_close_in_time_across_fields():
-    """A mosaic field seen once per visit pairs with the next field's integration of the same baseline."""
-    a = dataclasses.replace(_two_scans(), field=0, scan=np.zeros(40000, dtype=int))
-    rows = {k: getattr(a, k) for k in ("u", "v", "time", "baseline", "scan")}
-    fields = [
-        dataclasses.replace(a, field=f, X=a.X[:, f::2], w=a.w[:, f::2], **{k: v[f::2] for k, v in rows.items()})
+def _alternating(chunk, sky=(0.0, 0.0)):
+    """``chunk``'s integrations dealt to two fields in turn, each field's visibilities plus its own ``sky``."""
+    rows = {k: getattr(chunk, k) for k in ("u", "v", "time", "baseline", "scan")}
+    return [
+        dataclasses.replace(
+            chunk, field=f, X=chunk.X[:, f::2] + sky[f], w=chunk.w[:, f::2], **{k: v[f::2] for k, v in rows.items()}
+        )
         for f in (0, 1)
     ]
-    assert weight_scale(fields).scale == pytest.approx(weight_scale([a]).scale, rel=1e-12)
+
+
+def test_weight_scale_pairs_integrations_close_in_time_across_fields():
+    """A mosaic field seen once per visit (its next visit after MAX_GAP) pairs with the next field's integration."""
+    a = dataclasses.replace(_two_scans(), field=0, scan=np.zeros(40000, dtype=int))
+    a = dataclasses.replace(a, time=a.time * 10)  # 300 s apart: a field's own visits are 600 s apart
+    assert weight_scale(_alternating(a)).scale == pytest.approx(weight_scale([a]).scale, rel=1e-12)
+
+
+def test_weight_scale_pairs_within_a_field_first():
+    """Fields seen in turn every 30 s, each with its own sky: the pairs stay in their field, so no sky is noise."""
+    a = dataclasses.replace(_two_scans(), field=0, scan=np.zeros(40000, dtype=int))
+    fields = _alternating(a, sky=(3.0, -3.0))
+    assert weight_scale(fields).scale == pytest.approx(weight_scale(_alternating(a)).scale, rel=1e-12)
+    assert weight_scale(fields).scale[0, 2:] == pytest.approx(np.ones(2), rel=0.05)  # channels 0-1 are noisier
 
 
 def test_weight_scale_measures_a_scan_of_one_integration():
