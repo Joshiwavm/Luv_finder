@@ -1,7 +1,8 @@
 """A line search on disk: one YAML file in, every product in one output directory.
 
-:class:`Run` exports the data, searches it unit by unit (spectral windows that overlap in
-frequency are one unit), catalogues and fits the lines, and keeps everything the figures need
+:class:`Run` exports the data block by block (spectral windows that overlap in frequency),
+searches it unit by unit (blocks a line can span, cut into chunks of at most ``max_channels``
+that overlap by a block), catalogues and fits the lines, and keeps everything the figures need
 under ``output``, so plotting never repeats a search::
 
     run = Run("runs/j0459_band3.yaml")
@@ -23,6 +24,7 @@ import time
 from functools import cached_property
 from itertools import product
 from pathlib import Path
+from typing import NamedTuple
 
 import numpy as np
 import yaml
@@ -42,6 +44,7 @@ DEFAULTS = {
     "grid": None,
     "pb_limit": 0.2,
     "units": "auto",
+    "max_channels": None,
     "filter": {},
     "reliability": {"floor": 4.0, "k": 3.0, "fidelity_min": 0.6, "rule": DETECTION_RULE},
     "near_miss": {"fidelity": 0.2, "max": 20},
@@ -57,6 +60,45 @@ def window_units(freqs: dict[int, np.ndarray], widest: float = max(WIDTHS)) -> l
 
 def unit_name(spws) -> str:
     return "spw" + "+".join(f"{s:02d}" for s in spws)
+
+
+class Unit(NamedTuple):
+    """A unit of a run: the blocks it loads, and the trial centres it owns (Hz; None: all of them)."""
+
+    blocks: list[str]
+    core: tuple[float, float] | None
+
+
+def unit_plan(freqs: dict[int, np.ndarray], widest: float = max(WIDTHS), max_channels: int | None = None) -> dict:
+    """Blocks (``{name: spws}``) and units (``{name: Unit}``) of the windows ``freqs``.
+
+    A block is the windows that overlap by more than a channel (the tunings of one range), exported
+    once. A unit is the blocks of :func:`window_units`, cut into chunks of whole blocks of at most
+    ``max_channels`` channels: each owns the trial centres between the gaps to its neighbouring
+    blocks (``core``) and loads those neighbours too, so a line at its edge is whole in it, and a
+    group is catalogued by the one chunk that owns its peak.
+    """
+    blocks, units = {}, {}
+    for group in window_units(freqs, widest):
+        sub = {s: freqs[s] for s in group}
+        channel = max(np.abs(np.diff(f)).max() / f.mean() * C_KMS for f in sub.values())
+        own = window_units(sub, -channel)  # overlapping by more than a channel
+        names = [unit_name(b) for b in own]
+        blocks |= dict(zip(names, own, strict=True))
+        size = [sum(freqs[s].size for s in b) for b in own]
+        lo, hi = [min(freqs[s].min() for s in b) for b in own], [max(freqs[s].max() for s in b) for b in own]
+        if max_channels is None or sum(size) <= max_channels:
+            units[unit_name(group)] = Unit(names, None)
+            continue
+        i = 0
+        while i < len(own):
+            j = i
+            while j + 1 < len(own) and sum(size[i : j + 2]) <= max_channels:
+                j += 1
+            core = ((hi[i - 1] + lo[i]) / 2 if i else -np.inf, (hi[j] + lo[j + 1]) / 2 if j + 1 < len(own) else np.inf)
+            units[unit_name(sorted(s for b in own[i : j + 1] for s in b))] = Unit(names[max(i - 1, 0) : j + 2], core)
+            i = j + 1
+    return {"blocks": blocks, "units": units}
 
 
 def _window_freqs(path: str) -> dict[int, np.ndarray]:
@@ -158,13 +200,31 @@ class Run:
         return self.output / "export" / f"{unit}.npz"
 
     @cached_property
-    def units(self) -> dict[str, list[int]]:
-        """Unit name -> its spectral windows."""
+    def plan(self) -> dict:
+        """:func:`unit_plan` of the data: ``blocks`` (name -> spws, exported once) and ``units`` (name -> Unit)."""
         units = self.config["units"]
         if units == "auto":
-            widest = float(grid_axis(self.config["grid"], "width", WIDTHS).max())
-            units = window_units(_window_freqs(self.config["data"]), widest)
-        return {unit_name(spws): [int(s) for s in spws] for spws in units}
+            widest = float(self.widest)
+            return unit_plan(_window_freqs(self.config["data"]), widest, self.config["max_channels"])
+        blocks = {unit_name(spws): [int(s) for s in spws] for spws in units}
+        return {"blocks": blocks, "units": {name: Unit([name], None) for name in blocks}}
+
+    @property
+    def widest(self) -> float:
+        """The widest template, km/s."""
+        return float(grid_axis(self.config["grid"], "width", WIDTHS).max())
+
+    @property
+    def units(self) -> dict[str, list[int]]:
+        """Unit name -> the spectral windows it loads."""
+        return {
+            name: sorted(s for b in unit.blocks for s in self.plan["blocks"][b])
+            for name, unit in self.plan["units"].items()
+        }
+
+    def exports(self, unit: str) -> list[str]:
+        """The export of every block a unit loads."""
+        return [str(self.export_path(b)) for b in self.plan["units"][unit].blocks]
 
     @cached_property
     def metadata(self) -> Metadata:
@@ -237,23 +297,26 @@ class Run:
 
     def _search_unit(self, unit, spws):
         clock = time.perf_counter()
-        npz = self._export(unit, spws)
+        for block in self.plan["units"][unit].blocks:
+            self._export(block, self.plan["blocks"][block])
         print(f"[{unit}: export {time.perf_counter() - clock:.0f} s]", flush=True)
-        rel = self.config["reliability"]
+        rel, core = self.config["reliability"], self.plan["units"][unit].core
+        # a chunk searches one widest FWHM beyond its core, so the groups at its edges form whole
+        band = None if core is None else (core[0] * (1 - self.widest / C_KMS), core[1] * (1 + self.widest / C_KMS))
         result = search_pointings(
-            str(npz),
+            self.exports(unit),
             self.config["grid"],
             jackknife=True,
             cores=self.config["cores"],
             pb_limit=self.config["pb_limit"],
+            band=band,
             **self.config["filter"],
         )
         print(f"[{unit}: search {time.perf_counter() - clock:.0f} s]", flush=True)
-        cat = catalogue(result, ref=self.metadata.ref, **rel)
+        cat = catalogue(result, ref=self.metadata.ref, band=core, **rel)
         cat["unit"], cat["unit_id"] = unit, cat["id"]
         self._save_maps(unit, result, cat)
         del result
-        self._save_noise(unit, npz)
         part = self.path(unit, ".ecsv.part")
         cat.write(part, format="ascii.ecsv", overwrite=True)
         os.replace(part, self.path(unit, ".ecsv"))
@@ -263,12 +326,29 @@ class Run:
             flush=True,
         )
 
-    def _export(self, unit, spws) -> Path:
-        """The unit's visibilities with corrected weights; the weight scales go to ``_weights.npz``."""
-        npz = self.export_path(unit)
-        if npz.exists():
-            return npz
+    def _export(self, block, spws) -> Path:
+        """A block's visibilities with corrected weights; the weight scales and channel noise go to ``_weights.npz``.
+
+        Units that share a block share its export: one process writes it, the others wait for it.
+        """
+        npz = self.export_path(block)
+        lock = npz.with_suffix(".lock")
         npz.parent.mkdir(parents=True, exist_ok=True)
+        while not npz.exists():
+            try:
+                os.close(os.open(lock, os.O_CREAT | os.O_EXCL))
+            except FileExistsError:
+                time.sleep(10)
+                continue
+            try:
+                if not npz.exists():
+                    self._write_export(block, spws, npz)
+            finally:
+                lock.unlink()
+        return npz
+
+    def _write_export(self, block, spws, npz):
+        self.path(block, "").parent.mkdir(parents=True, exist_ok=True)
         part, data, scales = npz.with_suffix(".npz.part"), self.config["data"], {}
         if data.endswith(".npz"):
             chunks = (c for f in fields_in(data) for c in load(data, [f]).chunks if c.spw in spws)
@@ -277,15 +357,15 @@ class Run:
         write_npz(str(part), self.metadata, chunks)
         os.replace(part, npz)
         np.savez(
-            self.path(unit, "_weights.npz"),
+            self.path(block, "_weights.npz"),
             spws=np.array(sorted(scales), dtype=int),
             **{f"{s}_{k}": getattr(ws, k) for s, ws in scales.items() for k in ("scans", "scale", "check", "error")},
         )
-        return npz
+        self._save_noise(block, npz)
 
-    def _save_noise(self, unit, npz):
-        """Add the channel noise measured on the jackknife (first field) to the unit's ``_weights.npz``."""
-        path = self.path(unit, "_weights.npz")
+    def _save_noise(self, block, npz):
+        """Add the channel noise measured on the jackknife (first field) to the block's ``_weights.npz``."""
+        path = self.path(block, "_weights.npz")
         saved = dict(np.load(path)) if path.exists() else {"spws": np.zeros(0, dtype=int)}
         data = load(str(npz), fields_in(str(npz))[:1])
         for spw, noise in data.channel_noise().items():
@@ -372,9 +452,7 @@ class Run:
             todo &= ~reuse
         for unit in np.unique(cat["unit"][todo]):
             rows = todo & np.asarray(cat["unit"] == unit)
-            done = fit_lines(
-                load(str(self.export_path(unit))), cat, rows=rows, cores=self.config["cores"], **self.fit_options
-            )
+            done = fit_lines(load(self.exports(unit)), cat, rows=rows, cores=self.config["cores"], **self.fit_options)
             for name in COLUMNS:
                 fitted[name][rows] = done[name][rows]
             fitted.meta.setdefault("spectra", {}).update(done.meta.get("spectra", {}))
@@ -397,7 +475,7 @@ class Run:
         fitted = np.isfinite(np.asarray(fit["fit_dra"], dtype=float))
         for unit in np.unique(fit["unit"][fitted]):
             ok = fit[fitted & np.asarray(fit["unit"] == unit)]
-            maps |= dict(zip(ok["id"], line_maps(load(str(self.export_path(unit))), ok), strict=True))
+            maps |= dict(zip(ok["id"], line_maps(load(self.exports(unit)), ok), strict=True))
         np.savez(
             self.output / "line_maps.npz",
             **{f"{i}_{k}": v for i, m in maps.items() for k, v in zip(("dra", "ddec", "moment0"), m, strict=True)},
@@ -431,9 +509,9 @@ class Run:
         with np.load(self.path(unit, "_maps.npz")) as f:
             return dict(f)
 
-    def weights(self, unit: str) -> dict:
-        """A unit's ``_weights.npz`` as a dict of arrays."""
-        with np.load(self.path(unit, "_weights.npz")) as f:
+    def weights(self, block: str) -> dict:
+        """A block's ``_weights.npz`` as a dict of arrays."""
+        with np.load(self.path(block, "_weights.npz")) as f:
             return dict(f)
 
     def line_maps(self) -> dict:
@@ -451,14 +529,14 @@ class Run:
             out.append((m["freqs"], m["widths"], m["group_snr"][k], m["group_jk"][k]))
         return tuple(zip(*out, strict=True)) if out else ((), (), (), ())
 
-    def chunks(self, unit: str, fields=None, as_read: bool = False) -> list:
-        """A unit's exported chunks; ``as_read`` restores the measurement set's weights from ``_weights.npz``."""
-        chunks = load(str(self.export_path(unit)), fields).chunks
+    def chunks(self, block: str, fields=None, as_read: bool = False) -> list:
+        """A block's exported chunks; ``as_read`` restores the measurement set's weights from ``_weights.npz``."""
+        chunks = load(str(self.export_path(block)), fields).chunks
         if not as_read:
             return chunks
-        w = self.weights(unit)
+        w = self.weights(block)
         if not all(f"{c.spw}_scale" in w for c in chunks):
-            raise ValueError(f"{unit} has no weight scales: its data were not reweighted by this run (an NPZ input)")
+            raise ValueError(f"{block} has no weight scales: its data were not reweighted by this run (an NPZ input)")
         out = []
         for c in chunks:
             scale = w[f"{c.spw}_scale"][np.searchsorted(w[f"{c.spw}_scans"], c.scan)].T
@@ -481,7 +559,7 @@ class Run:
             lines.append(f"  jackknife S/N spread {spread.min():.2f}-{spread.max():.2f} (1 under H0)")
             if note := bright_lines(cat):
                 lines.append(f"  {note}")
-        noise = [self.weights(u) for u in done if self.path(u, "_weights.npz").exists()]
+        noise = [self.weights(b) for b in self.plan["blocks"] if self.path(b, "_weights.npz").exists()]
         scale = [v for w in noise for k, v in w.items() if k.endswith("_noise_scale")]
         if scale:
             lines.append(
@@ -504,11 +582,11 @@ class Run:
         return RunPlots(self)
 
     def diagnostics(self, plots_dir=None) -> list:
-        """Do the weights predict the scatter? :meth:`RunPlots.weights` for every window of every exported unit."""
+        """Do the weights predict the scatter? :meth:`RunPlots.weights` for every window of every exported block."""
         return [
-            self.plot.weights(unit, spw=spw, plots_dir=plots_dir)
-            for unit, spws in self.units.items()
-            if self.export_path(unit).exists()
+            self.plot.weights(block, spw=spw, plots_dir=plots_dir)
+            for block, spws in self.plan["blocks"].items()
+            if self.export_path(block).exists()
             for spw in spws
         ]
 
@@ -580,24 +658,24 @@ class RunPlots:
             name="peak_snr",
         )
 
-    def weights(self, unit: str, spw: int | None = None, field: int | None = None, plots_dir=None):
-        """Do the weights predict the scatter? One window of a unit (default its first): one field as read
+    def weights(self, block: str, spw: int | None = None, field: int | None = None, plots_dir=None):
+        """Do the weights predict the scatter? One window of a block (default its first): one field as read
         and reweighted, and all fields pooled."""
         from .plotting import weights_check
 
         run = self.run
-        pooled = run.chunks(unit)
+        pooled = run.chunks(block)
         spw = pooled[0].spw if spw is None else spw
         field = min(c.field for c in pooled if c.spw == spw) if field is None else field
         (fixed,) = [c for c in pooled if c.spw == spw and c.field == field]
-        (raw,) = [c for c in run.chunks(unit, [field], as_read=True) if c.spw == spw]
+        (raw,) = [c for c in run.chunks(block, [field], as_read=True) if c.spw == spw]
         return weights_check(
             [raw, fixed],
             ["as read", "reweighted"],
             plots_dir=self._dir(plots_dir),
-            name=f"weights_{unit}_spw{spw:02d}_field{field}",
+            name=f"weights_{block}_spw{spw:02d}_field{field}",
             pooled=[c for c in pooled if c.spw == spw],
         )
 
 
-__all__ = ["Run", "RunPlots", "duplicates", "unit_name", "window_units"]
+__all__ = ["Run", "RunPlots", "Unit", "duplicates", "unit_name", "unit_plan", "window_units"]

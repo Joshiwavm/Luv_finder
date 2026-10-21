@@ -23,14 +23,14 @@ from luv_finder.utils import primary_beam, primary_beam_radius
 C_KMS = 299792.458
 
 
-def _finder(data, continuum_order=2, channel_noise=None, **grid):
+def _finder(data, continuum_order=2, channel_noise=None, band=None, **grid):
     g = Gaussian()
     g.grid = {"bmin": 0.0, "bmaj": 0.0, "width": 300.0, **grid}
     m = Model()
     m.addcomponent(g)
     # synthetic rows share one baseline at random uv, so their jackknife keeps the sky: give the
     # channel noise instead of measuring it
-    return MatchedFilter(data, m, continuum_order=continuum_order, channel_noise=channel_noise)
+    return MatchedFilter(data, m, continuum_order=continuum_order, channel_noise=channel_noise, band=band)
 
 
 def _chunk(nchan, nvis, seed=0, field=0, spw=0, offset=(0.0, 0.0), freq0=40e9):
@@ -676,3 +676,36 @@ def test_a_line_across_a_window_gap_gets_the_joint_fit(nchan, width, peak):
         num, var = num + h @ y, var + h @ (W * h)
     i = np.argmin(np.abs(mf.freqs - nu))
     assert mf.response[0, i] == pytest.approx(num / np.sqrt(var), rel=1e-9)
+
+
+def test_a_chunk_of_neighbouring_windows_is_the_whole_spectrum_in_its_band():
+    """Five windows one channel apart and a bright line on the gap after the second: a chunk that owns the
+    second and third and loads their neighbours, its centres in a band across that gap, gives the whole
+    search's S/N and error there to round-off, without the fifth window."""
+    from luv_finder.model import FWHM_TO_SIGMA
+
+    nchan, width = 40, 600.0
+    base = _chunk(nchan, 300)
+    shifted = [
+        dataclasses.replace(_chunk(nchan, 300, seed=k, spw=k), freq=base.freq + k * (nchan + 1) * CHANNEL)
+        for k in range(5)
+    ]
+    nu = shifted[1].freq[-1] + CHANNEL
+    sigma = nu * width * FWHM_TO_SIGMA / C_KMS
+    windows = [
+        dataclasses.replace(
+            c, X=(c.w * (1.6 * np.exp(-0.5 * ((c.freq - nu) / sigma) ** 2) + 0.1)[:, None]).astype(complex)
+        )
+        for c in shifted
+    ]
+    whole = _finder(DataHandler(chunks=windows, metadata=_metadata(base)), 1, dra=0.0, ddec=0.0, width=width)
+    whole.run()
+    band = (windows[1].freq[10], windows[2].freq[30])
+    chunk = _finder(
+        DataHandler(chunks=windows[:4], metadata=_metadata(base)), 1, band=band, dra=0.0, ddec=0.0, width=width
+    )
+    chunk.run()
+    at = (whole.freqs >= band[0]) & (whole.freqs <= band[1])
+    np.testing.assert_allclose(chunk.freqs, whole.freqs[at])
+    np.testing.assert_allclose(chunk.result.snr, whole.result.snr[..., at], rtol=1e-12, atol=1e-12)
+    np.testing.assert_allclose(chunk.result.error, whole.result.error[..., at], rtol=1e-12)

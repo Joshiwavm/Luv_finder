@@ -374,7 +374,11 @@ def combine_pointings(results: Iterable[SearchResult]) -> SearchResult:
 
 
 class MatchedFilter(_Grid):
-    """S/N of one field over the ``Model.grid`` axes; ``channel_noise``: "measure", None or ``{spw: ChannelNoise}``."""
+    """S/N of one field over the ``Model.grid`` axes; ``channel_noise``: "measure", None or ``{spw: ChannelNoise}``.
+
+    ``band`` (Hz, low and high) keeps the trial centres there, a chunk of a long spectrum: every window is
+    still fitted over all its centres, so its continuum and its masks are those of the whole spectrum.
+    """
 
     def __init__(
         self,
@@ -382,6 +386,7 @@ class MatchedFilter(_Grid):
         mod: Model,
         continuum_order: int | None = CONTINUUM_ORDER,
         channel_noise: str | dict | None = "measure",
+        band: tuple[float, float] | None = None,
     ):
         if isinstance(channel_noise, str) and channel_noise != "measure":
             raise ValueError(f'channel_noise must be "measure", None or a dict, got {channel_noise!r}')
@@ -391,7 +396,11 @@ class MatchedFilter(_Grid):
         self.channel_noise = channel_noise
         self.noise: dict[int, ChannelNoise] = {}
         self.axes = self._grid_axes(mod)
-        self.freqs = _centres(data.chunks, max(self.axes["width"]))
+        self.lattice = _centres(data.chunks, max(self.axes["width"]))
+        lo, hi = band or (-np.inf, np.inf)
+        self.freqs = self.lattice[(self.lattice >= lo) & (self.lattice <= hi)]
+        if not self.freqs.size:
+            raise ValueError(f"no trial centre in the band {lo / 1e9:.4f}-{hi / 1e9:.4f} GHz")
         self.result: SearchResult | None = None
 
     @staticmethod
@@ -430,13 +439,17 @@ class MatchedFilter(_Grid):
         # windows that overlap in frequency add by inverse variance, (n_shape, n_width, n_dra, n_ddec, n_centre)
         w = np.zeros((bmin.size, len(axes["width"]), len(axes["dra"]), len(axes["ddec"]), self.freqs.size))
         wflux = np.zeros_like(w)
-        tol = 1e-3 * np.diff(self.freqs).min() if self.freqs.size > 1 else 1.0
+        tol = 1e-3 * np.diff(self.lattice).min() if self.lattice.size > 1 else 1.0
         reach = _reach(data.chunks, max(self.axes["width"]))
         with jax.enable_x64(True):
             for c, (f0, f1) in zip(tqdm(data.chunks, desc="Windows", leave=False), reach, strict=True):
-                # the window's centres, a contiguous run of the lattice: a slice, so no copies
-                at = slice(*np.searchsorted(self.freqs, [f0 - tol, f1 + tol], side="right"))
-                snr, error = self._window(c, axes, cov, self.freqs[at])
+                # the window's centres, a contiguous run of the lattice: slices, so no copies
+                full = self.lattice[slice(*np.searchsorted(self.lattice, [f0 - tol, f1 + tol], side="right"))]
+                keep = slice(*np.searchsorted(full, [self.freqs[0] - tol, self.freqs[-1] + tol], side="right"))
+                if keep.start == keep.stop:
+                    continue  # none of its centres is in the band
+                at = slice(*np.searchsorted(self.freqs, [full[keep][0] - tol, full[keep][-1] + tol], side="right"))
+                snr, error = (a[..., keep] for a in self._window(c, axes, cov, full))
                 inverse = np.nan_to_num(error**-2.0)
                 w[..., at] += inverse
                 wflux[..., at] += inverse * snr * np.nan_to_num(error)

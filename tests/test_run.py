@@ -137,3 +137,24 @@ def test_merge_applies_the_run_files_reliability(run):
     again = Run({**run.config, "reliability": {**run.config["reliability"], "rule": other}})
     assert again.merge().meta["rule"] == other
     assert run.merge().meta["rule"] == run.config["reliability"]["rule"]
+
+
+def test_unit_plan_chunks_blocks_with_their_neighbours():
+    """Five adjacent windows and a second tuning inside the third: five blocks, cut into chunks of at most
+    300 channels, each loading its neighbouring blocks and owning the centres between the gaps to them."""
+    from luv_finder.run import unit_plan
+
+    ch = 0.01e9
+    freqs = {s: np.arange(100e9 + s * 1.01e9, 101e9 + s * 1.01e9, ch) for s in range(5)}
+    freqs[5] = freqs[2][:50] + 0.25e9  # a second tuning inside window 2
+    plan = unit_plan(freqs, widest=400.0, max_channels=300)
+    assert plan["blocks"] == {"spw00": [0], "spw01": [1], "spw02+05": [2, 5], "spw03": [3], "spw04": [4]}
+    units = plan["units"]  # greedily: 100 + 100, then 150 + 100, then 100
+    assert list(units) == ["spw00+01", "spw02+03+05", "spw04"]
+    assert units["spw00+01"].blocks == ["spw00", "spw01", "spw02+05"]
+    assert units["spw02+03+05"].blocks == ["spw01", "spw02+05", "spw03", "spw04"]
+    assert units["spw04"].blocks == ["spw03", "spw04"]
+    gap = [(freqs[1].max() + freqs[2].min()) / 2, (freqs[3].max() + freqs[4].min()) / 2]
+    assert units["spw00+01"].core == (-np.inf, gap[0]) and units["spw02+03+05"].core == tuple(gap)
+    assert units["spw04"].core == (gap[1], np.inf)
+    assert unit_plan(freqs, widest=400.0)["units"] == {"spw00+01+02+03+04+05": ([*plan["blocks"]], None)}

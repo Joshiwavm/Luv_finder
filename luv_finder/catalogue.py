@@ -304,6 +304,7 @@ def catalogue(
     k: float = 3.0,
     fidelity_min: float = 0.6,
     rule: str = DETECTION_RULE,
+    band: tuple[float, float] | None = None,
 ) -> Table:
     """Catalogue the line candidates of a search: one row per group of the data, by S/N descending.
 
@@ -331,6 +332,9 @@ def catalogue(
         Fidelity threshold.
     rule : {"or", "and"}
         How the two tests combine into ``detected``.
+    band : (low, high) Hz, optional
+        Keep only the groups (of the data, the jackknife and the negated data) that peak in
+        ``low <= nu < high``: the chunk's own part of a spectrum searched in overlapping chunks.
 
     Returns
     -------
@@ -357,6 +361,8 @@ def catalogue(
         name: groups(values, result, nc, floor)
         for name, values in (("data", result.snr), ("jackknife", result.jackknife.snr), ("negative", -result.snr))
     }
+    if band is not None:
+        found = {name: [g for g in gs if band[0] <= result.freqs[g.k] < band[1]] for name, gs in found.items()}
     snr = {name: np.array([g.snr for g in gs]) for name, gs in found.items()}
     i, j, t, c = (np.array([getattr(g, a) for g in found["data"]], dtype=int) for a in "ijtk")
     templates = np.array(list(product(*(result.axes[a] for a in TEMPLATE_KEYS))))[t]

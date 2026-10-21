@@ -582,7 +582,9 @@ def _is_npz(path) -> bool:
 
 
 def fields_in(path) -> list[int]:
-    """Target fields of a measurement set or an NPZ, sorted; an NPZ is not read beyond its index."""
+    """Target fields of a measurement set, an NPZ or a list of NPZs, sorted; an NPZ is not read beyond its index."""
+    if isinstance(path, list | tuple):
+        return sorted(set().union(*(fields_in(p) for p in path)))
     if _is_npz(path):
         with np.load(path) as f:
             return np.unique(f["chunks"][:, 0]).tolist()
@@ -590,5 +592,8 @@ def fields_in(path) -> list[int]:
 
 
 def load(path, fields=None) -> DataHandler:
-    """The visibilities of ``fields`` (default: all) from a measurement set or an NPZ."""
+    """The visibilities of ``fields`` (default: all) from a measurement set, an NPZ or a list of one dataset's NPZs."""
+    if isinstance(path, list | tuple):
+        parts = [load(p, fields) for p in path]
+        return DataHandler(chunks=[c for d in parts for c in d.chunks], metadata=parts[0].metadata)
     return DataHandler.from_npz(path, fields) if _is_npz(path) else DataHandler(str(path), fields=fields)

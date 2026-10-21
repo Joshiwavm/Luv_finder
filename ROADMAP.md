@@ -149,14 +149,14 @@ visibilities, so the Band 1 default grid (21,675 points, 415 k rows in the
   style) and recover them through the same path, to turn the S/N limit into a
   flux limit per coverage (on a mosaic the S/N cut is uniform, the flux limit is
   not).
-- **Unit size.** Windows join into a unit where they overlap or their gap is narrower
-  than the widest template, so a line across a gap is searched and fitted as one
-  (tested on the `tunings` and `edge` mocks, 2026-10-20). ASPECS tiles its bands with
-  nearly touching windows, so the rule makes one unit per band (3 mm: 17 units -> 1,
-  1.2 mm: 32 -> 1; J0459 Band 1: 4 -> 1): no parallel workers, and by estimate
-  40-80 GB of search arrays per ASPECS field. Cap a unit's size (the boundaries
-  fall back to `run.duplicates`), or stream the windows along frequency so a centre
-  needs only its neighbours.
+- **Memory per trial centre.** Units are chunked to `max_channels` (`unit_plan`; exact on
+  the `edge` mock, 2026-10-21), but a search holds about 23 position x template x centre
+  arrays of a pointing and 13 of the mosaic box (float64; measured on mocks), 127 MB per
+  centre for ASPECS 3 mm and 169 MB at 1.2 mm. Within 48 GB a chunk holds about one
+  window, so each window is also searched as two chunks' neighbour (x2.9 the collapses).
+  Without the copies (`pb_corrected` in place, the mosaic's results in its sums) about
+  78 MB at 3 mm; with float32 mosaic sums about 51 MB, chunks of ~4 windows, +50%.
+  J0459 needs no chunks (24-31 MB per centre, one unit per group).
 - **Weights in an alternating mosaic.** `weight_scale` pairs integrations <= 450 s apart
   in any field. On the `mosaic` mock, whose pointings alternate every 10 s, a pair mixes
   two skies and with bright continuum the weights are 3.3% low in power. Pair within a

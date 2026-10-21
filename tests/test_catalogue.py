@@ -331,3 +331,14 @@ def test_bright_lines_flags_only_groups_at_bright_snr():
     cat = Table({"id": [1, 2], "snr": [BRIGHT_SNR + 20, BRIGHT_SNR - 1], "freq_ghz": [85.0, 86.0]})
     assert "#1 (S/N 120, 85.000 GHz)" in bright_lines(cat) and "#2" not in bright_lines(cat)
     assert bright_lines(cat[1:]) == ""
+
+
+def test_chunks_of_a_spectrum_share_its_groups_out():
+    """Catalogues of two bands, split at any frequency, hold the groups of the whole one, each once."""
+    result = _result(_field(2.0, 1.0, 90.0, 2.0))
+    whole = catalogue(result)
+    mid = result.freqs[result.freqs.size // 2 + 1]
+    parts = [catalogue(result, band=band) for band in ((-np.inf, mid), (mid, np.inf))]
+    for name in ("data", "jackknife", "negative"):
+        pooled = sorted(v for p in parts for v in p.meta[f"snr_{name}"])
+        assert pooled == sorted(whole.meta[f"snr_{name}"]), name
