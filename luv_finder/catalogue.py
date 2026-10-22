@@ -3,7 +3,6 @@ from __future__ import annotations
 import warnings
 from collections.abc import Sequence
 from dataclasses import dataclass
-from itertools import product
 
 import numpy as np
 from astropy.table import Table, vstack
@@ -365,7 +364,7 @@ def catalogue(
         found = {name: [g for g in gs if band[0] <= result.freqs[g.k] < band[1]] for name, gs in found.items()}
     snr = {name: np.array([g.snr for g in gs]) for name, gs in found.items()}
     i, j, t, c = (np.array([getattr(g, a) for g in found["data"]], dtype=int) for a in "ijtk")
-    templates = np.array(list(product(*(result.axes[a] for a in TEMPLATE_KEYS))))[t]
+    templates = result.templates[t]
     columns = {"id": np.arange(1, i.size + 1), "dra": np.asarray(result.axes["dra"])[i]}
     columns["ddec"] = np.asarray(result.axes["ddec"])[j]
     if ref is not None:
@@ -400,23 +399,28 @@ def bright_lines(cat: Table) -> str:
     )
 
 
+def passes(ratio, lower, fid, k: float, fidelity_min: float) -> tuple[np.ndarray, np.ndarray]:
+    """Which groups pass the likelihood ratio (``>= k`` or a lower limit) and which the fidelity (NaN: neither)."""
+    return (np.asarray(ratio) >= k) | np.asarray(lower, dtype=bool), np.asarray(fid) >= fidelity_min
+
+
 def _reliability(
     snr: dict, floor: float, k: float, fidelity_min: float, rule: str = DETECTION_RULE
 ) -> tuple[dict, dict]:
     """Likelihood ratio, fidelity and detection of the data groups against the jackknife's, as columns and meta."""
     ratio, lower = likelihood(snr["data"], snr["jackknife"])
     fid, (amplitude, sigma), bins = fidelity(snr["data"], snr["jackknife"], floor)
-    passes = (ratio >= k) | lower
+    lr, fid_ok = passes(ratio, lower, fid, k, fidelity_min)
     if rule == "or":
-        detected = passes | (fid >= fidelity_min)
+        detected = lr | fid_ok
     elif rule == "and":
-        detected = passes & ((fid >= fidelity_min) | np.isnan(fid))
+        detected = lr & (fid_ok | np.isnan(fid))
     else:
         raise ValueError(f'rule is "or" or "and", not {rule!r}')
     columns = {"likelihood": ratio, "likelihood_lower_limit": lower, "fidelity": fid, "detected": detected}
     meta = {"floor": float(floor), "k": float(k), "fidelity_min": float(fidelity_min), "rule": rule}
     meta |= {"noise_amplitude": float(amplitude), "noise_sigma": float(sigma)}
-    for key, passed in (("snr_likelihood", ratio >= k), ("snr_fidelity", fid >= fidelity_min)):
+    for key, passed in (("snr_likelihood", ratio >= k), ("snr_fidelity", fid_ok)):
         meta[key] = float(snr["data"][passed].min()) if passed.any() else np.nan
     meta |= {f"snr_{name}": values.tolist() for name, values in snr.items()}
     meta["fidelity_bins"] = {key: values.tolist() for key, values in bins.items()}

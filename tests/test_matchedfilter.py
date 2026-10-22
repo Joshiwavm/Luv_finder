@@ -177,6 +177,9 @@ def test_rows_follow_grid_params():
 def test_grid_rejects_total_flux(data):
     with pytest.raises(ValueError, match="not searchable"):
         _finder(data, total_flux=np.array([1.0, 2.0]))
+    for key in ("total_flux", "widths"):
+        with pytest.raises(ValueError, match=f"'{key}'"):
+            build_grid(data, {key: [1.0]})
 
 
 def test_grid_expansion(data):

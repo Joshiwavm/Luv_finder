@@ -27,8 +27,8 @@ from tqdm import tqdm
 
 from .data import ChannelNoise, Chunk, DataHandler, fields_in, load, pointing
 from .kernel import _blocks, limit_cores
-from .model import C_KMS, CONTINUUM_ORDER, FWHM_TO_SIGMA, Gaussian, Model, covariance
-from .utils import ARCSEC, primary_beam, primary_beam_radius
+from .model import C_KMS, CONTINUUM_ORDER, Gaussian, Model, continuum_basis, covariance, line_profile
+from .utils import ARCSEC, primary_beam_at, primary_beam_radius
 
 TEMPLATE_KEYS = ("bmin", "bmaj", "pa", "width")
 GRID_KEYS = ("dra", "ddec", *TEMPLATE_KEYS)
@@ -50,17 +50,16 @@ def _spectral(sig, weight, freq, centres, widths, rho, order=None):
 
     With a continuum, the polynomial is fitted jointly with every template, then again at each
     position without the channels of the other lines that peak there at ``MASK_SNR`` or more
-    (:func:`_masked`), so a bright line does not bend the continuum of the rest. Only rows of positions
-    that hold such a line are refitted; elsewhere nothing is masked and the joint fit stands.
+    (:func:`_masked`), so a bright line does not bend the continuum of the rest. Only positions
+    holding such a line are refitted; elsewhere nothing is masked and the joint fit stands.
     """
-    spread = centres[None, :, None] * widths[:, None, None] * FWHM_TO_SIGMA / C_KMS
-    profile = jnp.exp(-0.5 * ((freq[None, None, :] - centres[None, :, None]) / spread) ** 2)
+    profile = line_profile(freq[None, None, :], centres[None, :, None], widths[:, None, None], jnp)
     num = num0 = jnp.einsum("wim,msab->swabi", profile, sig)
     var = v0 = jnp.einsum("wim,ms->swi", profile**2, weight)
     h = jnp.broadcast_to(profile, (weight.shape[1], *profile.shape))
     covered = var > 0
     if order is not None:
-        basis = jnp.linspace(-1.0, 1.0, freq.size)[:, None] ** jnp.arange(order + 1)
+        basis = continuum_basis(freq.size, order + 1, jnp)
         eye = jnp.eye(order + 1)
         gram = jnp.einsum("mj,mk,ms->sjk", basis, basis, weight)
         trace = jnp.trace(gram, axis1=1, axis2=2)[:, None, None]
@@ -91,19 +90,19 @@ def _spectral(sig, weight, freq, centres, widths, rho, order=None):
         first = _masked(peak, which, sig, num0, *fixed)
         return _masked(*_peaks(first[0]), sig, num0, *fixed)
 
-    def row(args):
-        """One ``dra`` row: refitted only if a line there reaches ``MASK_SNR``, else the joint fit."""
+    def position(args):
+        """One position: refitted only if a line there reaches ``MASK_SNR``, else the joint fit."""
         snr, error, sig, num0, peak, which = args
-        one = (peak[:, None], which[:, None], sig[:, :, None], num0[:, :, None])
-        return jax.lax.cond((peak > 0).any(), lambda: tuple(a[:, :, 0] for a in refit(*one)), lambda: (snr, error))
+        one = (peak[:, None, None], which[:, None, None], sig[:, :, None, None], num0[:, :, None, None])
+        return jax.lax.cond((peak > 0).any(), lambda: tuple(a[:, :, 0, 0] for a in refit(*one)), lambda: (snr, error))
 
-    # rows lead, one at a time: under ``cond`` only the branch taken runs
-    by_row = (
-        *(jnp.moveaxis(a, 2, 0) for a in (snr, error, sig, num0)),
-        *(jnp.moveaxis(a, 1, 0) for a in (peak, which)),
-    )
-    rows = jax.lax.map(row, by_row)
-    return tuple(jnp.moveaxis(a, 0, 2) for a in rows)
+    def lead(a, at):
+        """Positions (axes ``at``, ``at + 1``) first and flat, mapped one at a time: ``cond`` runs one branch."""
+        return jnp.moveaxis(a, (at, at + 1), (0, 1)).reshape(-1, *a.shape[:at], *a.shape[at + 2 :])
+
+    n_dra, n_ddec = snr.shape[2:4]
+    out = jax.lax.map(position, (*(lead(a, 2) for a in (snr, error, sig, num0)), lead(peak, 1), lead(which, 1)))
+    return tuple(jnp.moveaxis(a.reshape(n_dra, n_ddec, *a.shape[1:]), (0, 1), (2, 3)) for a in out)
 
 
 def _peaks(snr):
@@ -155,13 +154,14 @@ def _masked(peak, which, sig, num0, weight, freq, centres, widths, profile, basi
     return jnp.where(ok, num / root, 0.0), jnp.where(ok, root / jnp.where(ok, var, 1.0), jnp.nan)
 
 
-def window_groups(freqs: Sequence[np.ndarray], widest: float) -> list[list[int]]:
-    """Windows (by index) joined in frequency order where they overlap or their gap is narrower than ``widest`` km/s.
+def window_groups(freqs: dict, widest: float = max(WIDTHS)) -> list[list]:
+    """Windows (``{key: freq}``) joined where they overlap or their gap is narrower than ``widest`` km/s.
 
     A line no wider than the widest template is then searched and fitted in every window that holds it.
+    The groups, each a sorted list of keys, come in frequency order.
     """
     groups: list[list] = []
-    for lo, hi, k in sorted((f.min(), f.max(), k) for k, f in enumerate(freqs)):
+    for lo, hi, k in sorted((f.min(), f.max(), k) for k, f in freqs.items()):
         if groups and lo < groups[-1][1] * (1 + widest / C_KMS):
             groups[-1][1] = max(groups[-1][1], hi)
             groups[-1][2].append(k)
@@ -177,7 +177,7 @@ def _reach(chunks: Sequence[Chunk], widest: float) -> list[tuple[float, float]]:
     add by inverse variance, the joint fit of one template with a continuum per window.
     """
     spans = [(0.0, 0.0)] * len(chunks)
-    for group in window_groups([c.freq for c in chunks], widest):
+    for group in window_groups(dict(enumerate(c.freq for c in chunks)), widest):
         lo, hi = min(chunks[k].freq[0] for k in group), max(chunks[k].freq[-1] for k in group)
         for k in group:
             f0, f1 = chunks[k].freq[0], chunks[k].freq[-1]
@@ -206,8 +206,8 @@ def _one_field(data: DataHandler) -> None:
 
 def _beam(dra, ddec, offset, freqs, dish_diameter) -> np.ndarray:
     """Primary beam of the pointing at ``offset`` on the ``dra x ddec`` grid, ``(n_dra, n_ddec, n_chan)``."""
-    distance = np.hypot(np.asarray(dra)[:, None] - offset[0], np.asarray(ddec)[None, :] - offset[1])
-    return primary_beam(distance[:, :, None], freqs, dish_diameter)
+    dra, ddec = np.asarray(dra)[:, None, None], np.asarray(ddec)[None, :, None]
+    return primary_beam_at(dra, ddec, offset, freqs, dish_diameter)
 
 
 def _same(a, b) -> bool:
@@ -254,6 +254,11 @@ class _Grid:
         ]
 
     @property
+    def templates(self) -> np.ndarray:
+        """Every template, a row of :data:`TEMPLATE_KEYS` values, in the order of the S/N's template axes."""
+        return np.array(list(product(*(self.axes[k] for k in TEMPLATE_KEYS))), dtype=float)
+
+    @property
     def best_index(self) -> int:
         """Row of the highest response; NaN (masked) values are ignored."""
         return int(np.nanargmax(np.fmax.reduce(self.response, axis=1)))
@@ -295,12 +300,13 @@ class SearchResult(_Grid):
 
 def _estimate(w: np.ndarray, wflux: np.ndarray, empty: float) -> tuple[np.ndarray, np.ndarray]:
     """S/N and error from inverse-variance sums ``w`` and ``w flux``, in their place; ``empty`` S/N where ``w == 0``."""
-    covered = w > 0
+    empties = w <= 0
     with np.errstate(divide="ignore", invalid="ignore"):
         np.sqrt(w, out=w)
         np.divide(wflux, w, out=wflux)
         np.divide(1.0, w, out=w)
-    wflux[~covered], w[~covered] = empty, np.nan
+    np.copyto(wflux, empty, where=empties)
+    np.copyto(w, np.nan, where=empties)
     return wflux, w
 
 
@@ -314,7 +320,7 @@ def _correct(result: SearchResult, data: DataHandler, pb_limit: float) -> Search
     keep = pb >= pb_limit
     scale = np.where(keep, pb, np.nan)[:, :, None]
     for r in filter(None, (result, result.jackknife)):
-        r.snr[~np.broadcast_to(keep[:, :, None], r.snr.shape)] = np.nan
+        np.copyto(r.snr, np.nan, where=~keep[:, :, None])
         r.error /= scale
         r.coverage = np.where(keep, pb, 0.0)
     return result
@@ -367,7 +373,9 @@ class _Mosaic:
         _check_freqs([self.freqs, other.freqs])
         ira, idec = self.grow(other.axes["dra"], other.axes["ddec"])
         for name in ("w", "wflux", "coverage"):
-            getattr(self, name)[np.ix_(ira, idec)] += getattr(other, name)
+            total, part = getattr(self, name), getattr(other, name)
+            for k, i in enumerate(ira):  # a row at a time: no pointing-size gather
+                total[i, idec] += part[k]
         if self.jackknife is None or other.jackknife is None:
             self.jackknife = None
         else:
@@ -475,7 +483,7 @@ class MatchedFilter(_Grid):
 
     def _search(self, data: DataHandler) -> SearchResult:
         axes = {k: np.asarray(v) for k, v in self.axes.items()}
-        bmin, bmaj, pa = (np.asarray(s) for s in zip(*product(axes["bmin"], axes["bmaj"], axes["pa"]), strict=True))
+        bmin, bmaj, pa = self.templates[:: len(axes["width"]), :3].T
         cov = covariance(bmaj * ARCSEC, bmin * ARCSEC, pa)
         # windows that overlap in frequency add by inverse variance, (n_dra, n_ddec, n_template, n_centre)
         layout = (len(axes["dra"]), len(axes["ddec"]), bmin.size * len(axes["width"]))
@@ -491,28 +499,28 @@ class MatchedFilter(_Grid):
                 if keep.start == keep.stop:
                     continue  # none of its centres is in the band
                 at = slice(*np.searchsorted(self.freqs, [full[keep][0] - tol, full[keep][-1] + tol], side="right"))
-                snr, error = (
-                    a[..., keep].transpose(2, 3, 0, 1, 4).reshape(*layout, -1) for a in self._window(c, axes, cov, full)
-                )
-                with np.errstate(divide="ignore", invalid="ignore"):
-                    w[..., at] += np.nan_to_num(error**-2.0)
-                    wflux[..., at] += np.nan_to_num(snr / error)
-                del snr, error
+                for rows, *pair in self._window(c, axes, cov, full):
+                    # (n_rows, n_ddec, n_template, n_centre), the templates in the order of the grid
+                    shape = (*pair[0].shape[2:4], -1, at.stop - at.start)
+                    snr, error = (a[..., keep].transpose(2, 3, 0, 1, 4).reshape(shape) for a in pair)
+                    with np.errstate(divide="ignore", invalid="ignore"):
+                        w[rows, ..., at] += np.nan_to_num(error**-2.0)
+                        wflux[rows, ..., at] += np.nan_to_num(snr / error)
         snr, error = _estimate(w, wflux, 0.0)
         coverage = np.broadcast_to(1.0, (*snr.shape[:2], snr.shape[-1]))
         return SearchResult(dict(self.axes), self.freqs, snr, error, coverage)
 
-    def _window(self, chunk: Chunk, axes: dict, cov: tuple, centres: np.ndarray) -> tuple:
-        """S/N and error of one window at ``centres``, ``(n_shape, n_width, n_dra, n_ddec, n_centre)``."""
-        snr, error = [], []
+    def _window(self, chunk: Chunk, axes: dict, cov: tuple, centres: np.ndarray):
+        """S/N and error of one window at ``centres`` per block of ``dra`` rows: (rows, snr, error), the arrays
+        ``(n_shape, n_width, n_rows, n_ddec, n_centre)``."""
         rho = jnp.asarray(self.noise[chunk.spw].rho if chunk.spw in self.noise else np.ones(1))
         freq, centres, widths = jnp.asarray(chunk.freq), jnp.asarray(centres), jnp.asarray(axes["width"])
         per_row = SPECTRAL_ARRAYS * 8 * len(cov[0]) * widths.size * len(axes["ddec"]) * centres.size
+        start = 0
         for n, collapsed in _blocks(chunk, axes["dra"], axes["ddec"], cov, per_row):
-            block, err = _spectral(*collapsed, freq, centres, widths, rho, order=self.continuum_order)
-            snr.append(np.asarray(block)[:, :, :n])
-            error.append(np.asarray(err)[:, :, :n])
-        return np.concatenate(snr, axis=2), np.concatenate(error, axis=2)
+            snr, error = _spectral(*collapsed, freq, centres, widths, rho, order=self.continuum_order)
+            yield slice(start, start + n), np.asarray(snr)[:, :, :n], np.asarray(error)[:, :, :n]
+            start += n
 
     def plot_response(self, filename: str | None = None, vline: float | None = None):
         """The best grid point's S/N spectrum, saved to ``filename`` if given (:mod:`luv_finder.plotting`)."""
@@ -539,10 +547,11 @@ def _grid(metadata, offset, low: float, cfg: dict | None) -> dict:
     """:func:`build_grid` of a pointing at ``offset`` whose lowest frequency is ``low`` Hz."""
     res = metadata.minresolution()
     cfg = dict(cfg or {})
-    if "total_flux" in cfg:
+    unknown = sorted(set(cfg) - {*GRID_KEYS, "pb_limit"})
+    if unknown:
         raise ValueError(
-            "total_flux is not a search axis: it cancels in the matched-filter kernel "
-            "normalisation, so every value gives an identical response. Remove it from the grid file."
+            f"grid keys {unknown} are not {[*GRID_KEYS, 'pb_limit']}; total_flux in particular cancels in the "
+            "kernel normalisation, so every value gives an identical response"
         )
 
     half = primary_beam_radius(cfg.get("pb_limit", 0.2), low, metadata.dish_diameter)

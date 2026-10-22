@@ -59,6 +59,11 @@ def primary_beam(offset_arcsec, freq_hz, dish_diameter, fwhm_factor=FWHM_FACTOR,
     return _airy(2 * X_HALF * xp.asarray(offset_arcsec, dtype=float) / fwhm, xp)
 
 
+def primary_beam_at(dra, ddec, offset, freq_hz, dish_diameter, xp=np):
+    """:func:`primary_beam` at (``dra``, ``ddec``) arcsec of the pointing centred on ``offset``."""
+    return primary_beam(xp.hypot(dra - offset[0], ddec - offset[1]), freq_hz, dish_diameter, xp=xp)
+
+
 def primary_beam_radius(level, freq_hz, dish_diameter, fwhm_factor=FWHM_FACTOR):
     """Offset in arcsec at which the main lobe falls to ``level`` (``0 < level <= 1``)."""
     if not 0 < level <= 1:

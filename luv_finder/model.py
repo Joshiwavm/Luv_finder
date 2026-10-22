@@ -19,6 +19,16 @@ LINE_FLUX = np.sqrt(2 * np.pi) * FWHM_TO_SIGMA
 CONTINUUM_ORDER = 1
 
 
+def line_profile(freq, centre, width, xp=np):
+    """Unit-peak Gaussian line at ``freq`` (Hz), centred on ``centre`` (Hz), of FWHM ``width`` (km/s)."""
+    return xp.exp(-0.5 * ((freq - centre) / (centre * width * FWHM_TO_SIGMA / C_KMS)) ** 2)
+
+
+def continuum_basis(n_chan: int, terms: int, xp=np):
+    """The continuum's ``terms`` polynomials, powers of the channel index mapped to [-1, 1]: ``(n_chan, terms)``."""
+    return xp.linspace(-1.0, 1.0, n_chan)[:, None] ** xp.arange(terms)
+
+
 def covariance(bmaj, bmin, pa, xp=np):
     """Sky covariance ``(s_ee, s_nn, s_en)`` of a Gaussian of axes (sigma) ``bmaj``, ``bmin`` at ``pa`` deg E of N."""
     return rotated(bmaj**2, bmin**2, pa, xp)
@@ -87,8 +97,7 @@ class Gaussian:
     def spectrum(self, freq: np.ndarray) -> np.ndarray:
         """Line profile in Jy at ``freq`` (Hz)."""
         flux_hz = self.total_flux * self.nu_center / C_KMS
-        amp = flux_hz / (self.width * np.sqrt(2 * np.pi))
-        return amp * np.exp(-0.5 * ((freq - self.nu_center) / self.width) ** 2)
+        return flux_hz / (self.width * np.sqrt(2 * np.pi)) * line_profile(freq, self.nu_center, self._width)
 
     def _uvgauss_1D2D(self, chunk) -> np.ndarray:
         """Model visibilities on the uv coverage of ``chunk``, (n_chan, n_row) complex."""

@@ -2,7 +2,8 @@ import numpy as np
 import pytest
 from astropy.table import Table
 
-from luv_finder.run import RUN_FILE, Run, duplicates, unit_name, window_units
+from luv_finder.matchedfilter import window_groups
+from luv_finder.run import RUN_FILE, Run, duplicates, unit_name
 
 
 @pytest.fixture(scope="module")
@@ -89,7 +90,7 @@ def test_run_needs_data_and_output():
         Run({"data": "x.npz"})
 
 
-def test_window_units_join_windows_that_overlap_or_nearly_meet():
+def test_window_groups_join_windows_that_overlap_or_nearly_meet():
     """Two tunings over 100-102 GHz join, and so does a window at their edge; a gap joins if narrower than
     the widest template (400 km/s, 141 MHz at 106 GHz)."""
     ch = 0.01e9
@@ -101,8 +102,8 @@ def test_window_units_join_windows_that_overlap_or_nearly_meet():
         4: np.arange(106.1e9, 107e9, ch),  # 110 MHz after window 3's last channel
         5: np.arange(107.2e9, 108e9, ch),  # 210 MHz after window 4's
     }
-    assert window_units(freqs) == [[0, 1, 2], [3, 4], [5]]
-    assert window_units(freqs, widest=100.0) == [[0, 1, 2], [3], [4], [5]]
+    assert window_groups(freqs) == [[0, 1, 2], [3, 4], [5]]
+    assert window_groups(freqs, widest=100.0) == [[0, 1, 2], [3], [4], [5]]
     assert unit_name([14, 15, 17]) == "spw14+15+17"
 
 

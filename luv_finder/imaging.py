@@ -16,7 +16,7 @@ from .fit import _window_chunks, home_window
 from .kernel import limit_cores
 from .matchedfilter import _beam, _check_freqs, _one_field, _union_lattice, build_grid
 from .model import C_KMS
-from .utils import ARCSEC, C, primary_beam
+from .utils import ARCSEC, C
 
 
 @dataclass(frozen=True, eq=False)
@@ -161,15 +161,14 @@ def line_maps(data: DataHandler, cat, size: float = 8.0, pb_limit: float = 0.2) 
     to one of them.
     """
     step = data.metadata.minresolution() / 4
-    dish, maps = data.metadata.dish_diameter, []
+    maps = []
     for row in cat[np.isfinite(cat["fit_dra"])]:
         centre, nu0, width = (row["fit_dra"], row["fit_ddec"]), row["fit_freq_ghz"] * 1e9, row["fit_width"]
         dra, ddec = (step * np.arange(np.ceil((x - size) / step), np.floor((x + size) / step) + 1) for x in centre)
-        pb = [primary_beam(np.hypot(centre[0] - c.offset[0], centre[1] - c.offset[1]), nu0, dish) for c in data.chunks]
-        if max(pb) < pb_limit:
+        chunks = _window_chunks(data, *centre, nu0, width, pb_limit)
+        if not chunks:
             maps.append((dra, ddec, np.full((dra.size, ddec.size), np.nan)))
             continue
-        chunks = _window_chunks(data, *centre, nu0, width, pb_limit)
         home = home_window(chunks, nu0)  # one window: the map is one spectral axis
         chunks = [c for c in chunks if c.spw == home]
         cubes = [dirty_cube(DataHandler(chunks=[c], metadata=data.metadata), dra, ddec) for c in chunks]

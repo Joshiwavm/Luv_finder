@@ -21,7 +21,6 @@ import subprocess
 import sys
 import time
 from functools import cached_property
-from itertools import product
 from pathlib import Path
 from typing import NamedTuple
 
@@ -51,12 +50,6 @@ DEFAULTS = {
 }
 
 
-def window_units(freqs: dict[int, np.ndarray], widest: float = max(WIDTHS)) -> list[list[int]]:
-    """Spectral windows joined where they overlap or their gap is narrower than ``widest`` km/s, in frequency order."""
-    spws = list(freqs)
-    return [sorted(spws[k] for k in group) for group in window_groups([freqs[s] for s in spws], widest)]
-
-
 def unit_name(spws) -> str:
     return "spw" + "+".join(f"{s:02d}" for s in spws)
 
@@ -72,16 +65,16 @@ def unit_plan(freqs: dict[int, np.ndarray], widest: float = max(WIDTHS), max_cha
     """Blocks (``{name: spws}``) and units (``{name: Unit}``) of the windows ``freqs``.
 
     A block is the windows that overlap by more than a channel (the tunings of one range), exported
-    once. A unit is the blocks of :func:`window_units`, cut into chunks of whole blocks of at most
-    ``max_channels`` channels: each owns the trial centres between the gaps to its neighbouring
+    once. A unit is the blocks of one :func:`~luv_finder.matchedfilter.window_groups` group, cut into chunks of
+    whole blocks of at most ``max_channels`` channels: each owns the trial centres between the gaps to its neighbouring
     blocks (``core``) and loads those neighbours too, so a line at its edge is whole in it, and a
     group is catalogued by the one chunk that owns its peak.
     """
     blocks, units = {}, {}
-    for group in window_units(freqs, widest):
+    for group in window_groups(freqs, widest):
         sub = {s: freqs[s] for s in group}
         channel = max(np.abs(np.diff(f)).max() / f.mean() * C_KMS for f in sub.values())
-        own = window_units(sub, -channel)  # overlapping by more than a channel
+        own = window_groups(sub, -channel)  # overlapping by more than a channel
         names = [unit_name(b) for b in own]
         blocks |= dict(zip(names, own, strict=True))
         size = [sum(freqs[s].size for s in b) for b in own]
@@ -381,7 +374,7 @@ class Run:
         dra, ddec = np.asarray(result.axes["dra"]), np.asarray(result.axes["ddec"])
         i = np.abs(dra[None, :] - np.asarray(cat["dra"])[:, None]).argmin(axis=1)
         j = np.abs(ddec[None, :] - np.asarray(cat["ddec"])[:, None]).argmin(axis=1)
-        templates = np.array(list(product(*(result.axes[k] for k in TEMPLATE_KEYS))), dtype=float)
+        templates = result.templates
         with np.errstate(all="ignore"):
             np.savez(
                 self.path(unit, "_maps.npz"),
@@ -674,4 +667,4 @@ class RunPlots:
         )
 
 
-__all__ = ["Run", "RunPlots", "Unit", "duplicates", "unit_name", "unit_plan", "window_units"]
+__all__ = ["Run", "RunPlots", "Unit", "duplicates", "unit_name", "unit_plan"]

@@ -20,11 +20,10 @@ from astropy.table import Table
 from scipy import linalg, optimize
 
 from .data import Chunk, DataHandler, load, sky_direction
-from .data import channel_noise as measure_noise
 from .kernel import DATA_POWERS, WEIGHT_POWERS, limit_cores, on_device, point_moments
 from .matchedfilter import MASK_FWHM, MASK_SNR
-from .model import C_KMS, CONTINUUM_ORDER, FWHM_TO_SIGMA, LINE_FLUX, covariance, rotated
-from .utils import primary_beam
+from .model import C_KMS, CONTINUUM_ORDER, LINE_FLUX, continuum_basis, covariance, line_profile, rotated
+from .utils import primary_beam_at
 
 #: Quantities reported per line, each with an ``_error``, and their units.
 REPORTED = {
@@ -75,20 +74,14 @@ for _row, _power, _value in (
 
 def _spectrum(theta, freq, basis):
     """``F``; ``theta`` is dra, ddec (arcsec), s_ee, s_nn, s_en (arcsec^2), nu0 (Hz), width (km/s), peak, c (Jy)."""
-    sigma = theta[5] * theta[6] * FWHM_TO_SIGMA / C_KMS
-    return theta[7] * jnp.exp(-0.5 * ((freq - theta[5]) / sigma) ** 2) + basis @ theta[8:]
-
-
-def _beam(theta, freq, offset, dish):
-    return primary_beam(jnp.hypot(theta[0] - offset[0], theta[1] - offset[1]), freq, dish, xp=jnp)
+    return theta[7] * line_profile(freq, theta[5], theta[6], jnp) + basis @ theta[8:]
 
 
 def _amplitude(theta, freq, basis, offset, dish):
     """``a = PB F`` of one pointing per channel."""
-    return _beam(theta, freq, offset, dish) * _spectrum(theta, freq, basis)
+    return primary_beam_at(theta[0], theta[1], offset, freq, dish, jnp) * _spectrum(theta, freq, basis)
 
 
-@jax.jit
 def _normal(a, da, data, weight):
     """chi^2 (less ``sum w |V|^2``), its gradient and ``2 J^T W J`` of one pointing from its moments."""
     gamma = jnp.zeros((da.shape[1], len(DATA_POWERS)), dtype=complex).at[:5].set(_GAMMA)
@@ -121,14 +114,19 @@ def _system(theta, moments, chunks, spectral, dish):
     chi2, grad, hess = 0.0, 0.0, 0.0
     S, Q = {spw: 0.0 for spw in spectral}, {spw: 0.0 for spw in spectral}
     for c, (data, weight) in zip(chunks, moments, strict=True):
-        freq, basis = spectral[c.spw]
-        args = (theta, freq, basis, c.offset, dish)
-        a, da = _amplitude(*args), jax.jacfwd(_amplitude)(*args)
-        pb = _beam(theta, freq, c.offset, dish)
-        terms = _normal(a, da, data, weight)
+        terms = _pointing(theta, *spectral[c.spw], c.offset, dish, data, weight)
         chi2, grad, hess = chi2 + terms[0], grad + terms[1], hess + terms[2]
-        S[c.spw], Q[c.spw] = S[c.spw] + pb * data[:, 0].real, Q[c.spw] + pb**2 * weight[:, 0]
+        S[c.spw], Q[c.spw] = S[c.spw] + terms[3], Q[c.spw] + terms[4]
     return chi2, grad, hess, S, Q
+
+
+@jax.jit
+def _pointing(theta, freq, basis, offset, dish, data, weight):
+    """One pointing's :func:`_normal` terms and its ``PB sig``, ``PB^2 W`` spectra."""
+    args = (theta, freq, basis, offset, dish)
+    a, da = _amplitude(*args), jax.jacfwd(_amplitude)(*args)
+    pb = primary_beam_at(theta[0], theta[1], offset, freq, dish, jnp)
+    return *_normal(a, da, data, weight), pb * data[:, 0].real, pb**2 * weight[:, 0]
 
 
 def _reported(theta, freq, n_continuum, block):
@@ -177,18 +175,14 @@ def _correlation_scale(theta, windows) -> np.ndarray:
 
 
 def _window_chunks(data: DataHandler, dra: float, ddec: float, nu: float, width: float, pb_limit: float) -> list[Chunk]:
-    """Every window within one FWHM (``width`` km/s) of ``nu`` Hz, of each pointing with PB >= ``pb_limit``."""
+    """Windows within one FWHM (``width`` km/s) of ``nu`` Hz of the pointings with PB >= ``pb_limit``; maybe none."""
     dish = data.metadata.dish_diameter
     chunks = [
         c
         for c in data.chunks
         if np.any(np.abs(c.freq / nu - 1) * C_KMS <= width)
-        and primary_beam(np.hypot(dra - c.offset[0], ddec - c.offset[1]), nu, dish) >= pb_limit
+        and primary_beam_at(dra, ddec, c.offset, nu, dish) >= pb_limit
     ]
-    if not chunks:
-        raise ValueError(
-            f"no pointing covers {nu / 1e9:.4f} GHz at ({dra:.2f}, {ddec:.2f}) arcsec with PB >= {pb_limit}"
-        )
     for c in chunks:
         if not np.allclose(c.freq, next(o.freq for o in chunks if o.spw == c.spw), rtol=1e-9, atol=0):
             raise ValueError(f"the pointings' channel frequencies differ in spw {c.spw}")
@@ -237,11 +231,12 @@ def fit_line(
     """
     nu = freq_ghz * 1e9
     chunks = _window_chunks(data, dra, ddec, nu, max(width, MIN_WIDTH), pb_limit)
+    if not chunks:
+        raise ValueError(f"no pointing covers {freq_ghz:.4f} GHz at ({dra:.2f}, {ddec:.2f}) arcsec, PB >= {pb_limit}")
     spws = sorted({c.spw for c in chunks})
     if channel_noise == "measure":
-        noise = {spw: measure_noise([c for c in chunks if c.spw == spw]) for spw in spws}
-    else:
-        noise = {spw: (channel_noise or {}).get(spw) for spw in spws}
+        channel_noise = data.channel_noise()
+    noise = {spw: (channel_noise or {}).get(spw) for spw in spws}
     chunks = [_without(c, nu, width, others) for c in chunks]
     dish = data.metadata.dish_diameter
     freqs = {spw: np.asarray(next(c.freq for c in chunks if c.spw == spw), dtype=float) for spw in spws}
@@ -253,9 +248,7 @@ def fit_line(
         spectral = {}
         for k, spw in enumerate(spws):  # each window's polynomial in its own block of coefficients
             basis = np.zeros((freqs[spw].size, n_continuum * len(spws)))
-            basis[:, k * n_continuum : (k + 1) * n_continuum] = np.linspace(-1.0, 1.0, freqs[spw].size)[
-                :, None
-            ] ** np.arange(n_continuum)
+            basis[:, k * n_continuum : (k + 1) * n_continuum] = continuum_basis(freqs[spw].size, n_continuum)
             spectral[spw] = (jnp.asarray(freqs[spw]), jnp.asarray(basis))
         report = (spectral[home][0], n_continuum, spws.index(home) * n_continuum)
 

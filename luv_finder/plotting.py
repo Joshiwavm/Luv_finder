@@ -377,12 +377,8 @@ def _templates(result):
 
     The shape is named only when the search has more than one.
     """
-    from itertools import product
-
-    from .matchedfilter import TEMPLATE_KEYS
-
-    combos = list(product(*(result.axes[k] for k in TEMPLATE_KEYS)))
-    shapes = [c[:-1] for c in combos]
+    combos = result.templates
+    shapes = [tuple(c[:-1]) for c in combos]
     many = len(set(shapes)) > 1
     parts = [([f'{bmaj:g}" x {bmin:g}" pa {pa:g}'] if many else []) + [f"{w:g} km/s"] for bmin, bmaj, pa, w in combos]
     return parts, shapes, np.array([c[-1] for c in combos])
@@ -719,10 +715,12 @@ FRAMES = {"likelihood": "k", "fidelity": "0.8"}
 
 def passes(cat) -> np.ndarray:
     """Which reliability test each row passes: ``both``, ``likelihood``, ``fidelity`` or ``none``."""
-    if not {"likelihood", "likelihood_lower_limit", "fidelity"} <= set(cat.colnames) or "k" not in cat.meta:
+    from .catalogue import passes as tests
+
+    columns = ("likelihood", "likelihood_lower_limit", "fidelity")
+    if not set(columns) <= set(cat.colnames) or "k" not in cat.meta:
         return np.full(len(cat), "both")
-    lr = (np.asarray(cat["likelihood"]) >= cat.meta["k"]) | np.asarray(cat["likelihood_lower_limit"], dtype=bool)
-    fid = np.asarray(cat["fidelity"]) >= cat.meta["fidelity_min"]
+    lr, fid = tests(*(cat[c] for c in columns), cat.meta["k"], cat.meta["fidelity_min"])
     return np.where(lr & fid, "both", np.where(lr, "likelihood", np.where(fid, "fidelity", "none")))
 
 
