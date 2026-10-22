@@ -256,12 +256,7 @@
         </div>
         <article role="main" id="furo-main-content">
           <h1>Source code for luv_finder.model</h1><div class="highlight"><pre>
-<span></span><span class="sd">"""Parametric UV-domain source models.</span>
-
-<span class="sd">Parameter naming convention: every component attribute is exposed as</span>
-<span class="sd">``src_{component_index:02d}_{attribute}`` (e.g. ``src_00_nu_center``). The</span>
-<span class="sd">matched filter parses this key to route values back onto the component.</span>
-<span class="sd">"""</span>
+<span></span><span class="sd">"""The source model, a Gaussian line from a Gaussian source evaluated in the UV plane, and its shared formulas."""</span>
 
 <span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
 
@@ -269,17 +264,37 @@
 <span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">astropy.constants</span><span class="w"> </span><span class="kn">import</span> <span class="n">c</span>
 
+<span class="kn">from</span><span class="w"> </span><span class="nn">.utils</span><span class="w"> </span><span class="kn">import</span> <span class="n">ARCSEC</span>
+
 <span class="n">C_KMS</span> <span class="o">=</span> <span class="n">c</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">u</span><span class="o">.</span><span class="n">km</span> <span class="o">/</span> <span class="n">u</span><span class="o">.</span><span class="n">s</span><span class="p">)</span><span class="o">.</span><span class="n">value</span>
 <span class="n">FWHM_TO_SIGMA</span> <span class="o">=</span> <span class="mi">1</span> <span class="o">/</span> <span class="mf">2.355</span>
+<span class="c1">#: Line flux per peak flux density and FWHM of a Gaussian line, ``sqrt(2 pi) / 2.355``.</span>
+<span class="n">LINE_FLUX</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="mi">2</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">pi</span><span class="p">)</span> <span class="o">*</span> <span class="n">FWHM_TO_SIGMA</span>
 <span class="c1">#: Degree of the continuum polynomial fitted with each line, in the search and the fit.</span>
 <span class="n">CONTINUUM_ORDER</span> <span class="o">=</span> <span class="mi">1</span>
+
+
+<div class="viewcode-block" id="line_profile">
+<a class="viewcode-back" href="../../generated/luv_finder.model.html#luv_finder.model.line_profile">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">line_profile</span><span class="p">(</span><span class="n">freq</span><span class="p">,</span> <span class="n">centre</span><span class="p">,</span> <span class="n">width</span><span class="p">,</span> <span class="n">xp</span><span class="o">=</span><span class="n">np</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">"""Unit-peak Gaussian line at ``freq`` (Hz), centred on ``centre`` (Hz), of FWHM ``width`` (km/s)."""</span>
+    <span class="k">return</span> <span class="n">xp</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="o">-</span><span class="mf">0.5</span> <span class="o">*</span> <span class="p">((</span><span class="n">freq</span> <span class="o">-</span> <span class="n">centre</span><span class="p">)</span> <span class="o">/</span> <span class="p">(</span><span class="n">centre</span> <span class="o">*</span> <span class="n">width</span> <span class="o">*</span> <span class="n">FWHM_TO_SIGMA</span> <span class="o">/</span> <span class="n">C_KMS</span><span class="p">))</span> <span class="o">**</span> <span class="mi">2</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="continuum_basis">
+<a class="viewcode-back" href="../../generated/luv_finder.model.html#luv_finder.model.continuum_basis">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">continuum_basis</span><span class="p">(</span><span class="n">n_chan</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">terms</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">xp</span><span class="o">=</span><span class="n">np</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">"""The continuum's ``terms`` polynomials, powers of the channel index mapped to [-1, 1]: ``(n_chan, terms)``."""</span>
+    <span class="k">return</span> <span class="n">xp</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span><span class="o">-</span><span class="mf">1.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">,</span> <span class="n">n_chan</span><span class="p">)[:,</span> <span class="kc">None</span><span class="p">]</span> <span class="o">**</span> <span class="n">xp</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">terms</span><span class="p">)</span></div>
+
 
 
 <div class="viewcode-block" id="covariance">
 <a class="viewcode-back" href="../../generated/luv_finder.model.html#luv_finder.model.covariance">[docs]</a>
 <span class="k">def</span><span class="w"> </span><span class="nf">covariance</span><span class="p">(</span><span class="n">bmaj</span><span class="p">,</span> <span class="n">bmin</span><span class="p">,</span> <span class="n">pa</span><span class="p">,</span> <span class="n">xp</span><span class="o">=</span><span class="n">np</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">"""Sky covariance ``(s_ee, s_nn, s_en)`` of a Gaussian of axes (sigma) ``bmaj``, ``bmin`` at ``pa`` deg E of N."""</span>
-    <span class="k">return</span> <span class="n">rotated</span><span class="p">(</span><span class="n">bmaj</span><span class="o">**</span><span class="mi">2</span><span class="p">,</span> <span class="n">bmin</span><span class="o">**</span><span class="mi">2</span><span class="p">,</span> <span class="n">pa</span><span class="p">,</span> <span class="n">xp</span><span class="p">)</span></div>
+<span class="w">    </span><span class="sd">"""Sky covariance ``(s_ee, s_nn, s_en)`` of a Gaussian of FWHM ``bmaj``, ``bmin`` at ``pa`` deg E of N."""</span>
+    <span class="k">return</span> <span class="n">rotated</span><span class="p">((</span><span class="n">bmaj</span> <span class="o">*</span> <span class="n">FWHM_TO_SIGMA</span><span class="p">)</span> <span class="o">**</span> <span class="mi">2</span><span class="p">,</span> <span class="p">(</span><span class="n">bmin</span> <span class="o">*</span> <span class="n">FWHM_TO_SIGMA</span><span class="p">)</span> <span class="o">**</span> <span class="mi">2</span><span class="p">,</span> <span class="n">pa</span><span class="p">,</span> <span class="n">xp</span><span class="p">)</span></div>
 
 
 
@@ -305,100 +320,43 @@
 <div class="viewcode-block" id="Gaussian">
 <a class="viewcode-back" href="../../generated/luv_finder.model.html#luv_finder.model.Gaussian">[docs]</a>
 <span class="k">class</span><span class="w"> </span><span class="nc">Gaussian</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">"""2D spatial x 1D spectral Gaussian evaluated directly in the UV plane."""</span>
+<span class="w">    </span><span class="sd">"""2D spatial x 1D spectral Gaussian evaluated directly in the UV plane.</span>
+
+<span class="sd">    Position (arcsec), FWHM axes ``bmaj``, ``bmin`` (arcsec) at ``pa`` (deg E of N), line flux ``total_flux``</span>
+<span class="sd">    (Jy km/s) at ``nu_center`` (Hz) of FWHM ``width`` (km/s).</span>
+<span class="sd">    """</span>
 
     <span class="n">positive</span> <span class="o">=</span> <span class="kc">True</span>
 
     <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">dra</span><span class="o">=</span><span class="mf">0.0</span><span class="p">,</span> <span class="n">ddec</span><span class="o">=</span><span class="mf">0.0</span><span class="p">,</span> <span class="n">total_flux</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">bmin</span><span class="o">=</span><span class="mf">0.0</span><span class="p">,</span> <span class="n">bmaj</span><span class="o">=</span><span class="mf">0.0</span><span class="p">,</span> <span class="n">pa</span><span class="o">=</span><span class="mf">0.0</span><span class="p">,</span> <span class="n">nu_center</span><span class="o">=</span><span class="mf">0.0</span><span class="p">,</span> <span class="n">width</span><span class="o">=</span><span class="mf">100.0</span><span class="p">):</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">dra</span> <span class="o">=</span> <span class="n">dra</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">ddec</span> <span class="o">=</span> <span class="n">ddec</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_bmin</span> <span class="o">=</span> <span class="n">bmin</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_bmaj</span> <span class="o">=</span> <span class="n">bmaj</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">bmin</span> <span class="o">=</span> <span class="n">bmin</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">bmaj</span> <span class="o">=</span> <span class="n">bmaj</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">pa</span> <span class="o">=</span> <span class="n">pa</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">total_flux</span> <span class="o">=</span> <span class="n">total_flux</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">nu_center</span> <span class="o">=</span> <span class="n">nu_center</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_width</span> <span class="o">=</span> <span class="n">width</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">width</span> <span class="o">=</span> <span class="n">width</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">profile</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_uvgauss_1D2D</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">grid</span><span class="p">:</span> <span class="nb">dict</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
-
-    <span class="c1"># arcsec &lt;-&gt; rad accessors -------------------------------------------------</span>
-    <span class="nd">@property</span>
-    <span class="k">def</span><span class="w"> </span><span class="nf">bmin</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-        <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">deg2rad</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_bmin</span> <span class="o">/</span> <span class="mi">3600</span><span class="p">)</span>
-
-    <span class="nd">@bmin</span><span class="o">.</span><span class="n">setter</span>
-    <span class="k">def</span><span class="w"> </span><span class="nf">bmin</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">v</span><span class="p">):</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_bmin</span> <span class="o">=</span> <span class="n">v</span>
-
-    <span class="nd">@property</span>
-    <span class="k">def</span><span class="w"> </span><span class="nf">bmaj</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-        <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">deg2rad</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_bmaj</span> <span class="o">/</span> <span class="mi">3600</span><span class="p">)</span>
-
-    <span class="nd">@bmaj</span><span class="o">.</span><span class="n">setter</span>
-    <span class="k">def</span><span class="w"> </span><span class="nf">bmaj</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">v</span><span class="p">):</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_bmaj</span> <span class="o">=</span> <span class="n">v</span>
-
-    <span class="nd">@property</span>
-    <span class="k">def</span><span class="w"> </span><span class="nf">width</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-<span class="w">        </span><span class="sd">"""Spectral sigma in Hz."""</span>
-        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">nu_center</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">_width</span> <span class="o">*</span> <span class="n">FWHM_TO_SIGMA</span> <span class="o">/</span> <span class="n">C_KMS</span>
-
-    <span class="nd">@width</span><span class="o">.</span><span class="n">setter</span>
-    <span class="k">def</span><span class="w"> </span><span class="nf">width</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">v</span><span class="p">):</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_width</span> <span class="o">=</span> <span class="n">v</span>
 
 <div class="viewcode-block" id="Gaussian.envelope">
 <a class="viewcode-back" href="../../generated/luv_finder.model.html#luv_finder.model.Gaussian.envelope">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">envelope</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">chunk</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">"""Spatial envelope A(u, v): the source's visibility amplitude, 1 at zero spacing, (n_chan, n_row)."""</span>
-        <span class="k">return</span> <span class="n">envelope</span><span class="p">(</span><span class="o">*</span><span class="n">chunk</span><span class="o">.</span><span class="n">uv_waves</span><span class="p">(),</span> <span class="n">covariance</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">bmaj</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">bmin</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">pa</span><span class="p">))</span></div>
+        <span class="k">return</span> <span class="n">envelope</span><span class="p">(</span><span class="o">*</span><span class="n">chunk</span><span class="o">.</span><span class="n">uv_waves</span><span class="p">(),</span> <span class="n">covariance</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">bmaj</span> <span class="o">*</span> <span class="n">ARCSEC</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">bmin</span> <span class="o">*</span> <span class="n">ARCSEC</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">pa</span><span class="p">))</span></div>
 
 
 <div class="viewcode-block" id="Gaussian.spectrum">
 <a class="viewcode-back" href="../../generated/luv_finder.model.html#luv_finder.model.Gaussian.spectrum">[docs]</a>
     <span class="k">def</span><span class="w"> </span><span class="nf">spectrum</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">freq</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">"""Line profile in Jy at ``freq`` (Hz)."""</span>
-        <span class="n">flux_hz</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">total_flux</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">nu_center</span> <span class="o">/</span> <span class="n">C_KMS</span>
-        <span class="n">amp</span> <span class="o">=</span> <span class="n">flux_hz</span> <span class="o">/</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">width</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="mi">2</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">pi</span><span class="p">))</span>
-        <span class="k">return</span> <span class="n">amp</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="o">-</span><span class="mf">0.5</span> <span class="o">*</span> <span class="p">((</span><span class="n">freq</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">nu_center</span><span class="p">)</span> <span class="o">/</span> <span class="bp">self</span><span class="o">.</span><span class="n">width</span><span class="p">)</span> <span class="o">**</span> <span class="mi">2</span><span class="p">)</span></div>
+        <span class="n">peak</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">total_flux</span> <span class="o">/</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">width</span> <span class="o">*</span> <span class="n">LINE_FLUX</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">peak</span> <span class="o">*</span> <span class="n">line_profile</span><span class="p">(</span><span class="n">freq</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">nu_center</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">width</span><span class="p">)</span></div>
 
 
     <span class="k">def</span><span class="w"> </span><span class="nf">_uvgauss_1D2D</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">chunk</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">"""Model visibilities on the uv coverage of ``chunk``, (n_chan, n_row) complex."""</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">spectrum</span><span class="p">(</span><span class="n">chunk</span><span class="o">.</span><span class="n">freq</span><span class="p">)[:,</span> <span class="kc">None</span><span class="p">]</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">envelope</span><span class="p">(</span><span class="n">chunk</span><span class="p">)</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">conj</span><span class="p">(</span><span class="n">chunk</span><span class="o">.</span><span class="n">phase</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">dra</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">ddec</span><span class="p">))</span></div>
-
-
-
-<div class="viewcode-block" id="Model">
-<a class="viewcode-back" href="../../generated/luv_finder.model.html#luv_finder.model.Model">[docs]</a>
-<span class="k">class</span><span class="w"> </span><span class="nc">Model</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">"""Container of source components with a flat, prefixed parameter list."""</span>
-
-    <span class="n">Gaussian</span> <span class="o">=</span> <span class="n">Gaussian</span>
-
-    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">ncomp</span> <span class="o">=</span> <span class="mi">0</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">params</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">profile</span><span class="p">:</span> <span class="nb">list</span> <span class="o">=</span> <span class="p">[]</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">type</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">grid</span><span class="p">:</span> <span class="nb">dict</span> <span class="o">=</span> <span class="p">{}</span>
-
-    <span class="k">def</span><span class="w"> </span><span class="nf">addcomponent</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">comp</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-        <span class="n">prefix</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">"src_</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">ncomp</span><span class="si">:</span><span class="s2">02d</span><span class="si">}</span><span class="s2">_"</span>
-        <span class="k">for</span> <span class="n">key</span> <span class="ow">in</span> <span class="n">comp</span><span class="o">.</span><span class="vm">__dict__</span><span class="p">:</span>
-            <span class="k">if</span> <span class="n">key</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">"profile"</span><span class="p">,</span> <span class="s2">"grid"</span><span class="p">):</span>
-                <span class="k">continue</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">params</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">prefix</span> <span class="o">+</span> <span class="n">key</span><span class="o">.</span><span class="n">lstrip</span><span class="p">(</span><span class="s2">"_"</span><span class="p">))</span>
-        <span class="k">if</span> <span class="n">comp</span><span class="o">.</span><span class="n">grid</span><span class="p">:</span>
-            <span class="k">for</span> <span class="n">key</span><span class="p">,</span> <span class="n">rng</span> <span class="ow">in</span> <span class="n">comp</span><span class="o">.</span><span class="n">grid</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">grid</span><span class="p">[</span><span class="n">prefix</span> <span class="o">+</span> <span class="n">key</span><span class="p">]</span> <span class="o">=</span> <span class="n">rng</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">profile</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">comp</span><span class="o">.</span><span class="n">profile</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">type</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">comp</span><span class="o">.</span><span class="vm">__class__</span><span class="o">.</span><span class="vm">__name__</span><span class="p">)</span>
-        <span class="nb">setattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">type</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">lower</span><span class="p">(),</span> <span class="n">comp</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">ncomp</span> <span class="o">+=</span> <span class="mi">1</span>
-
-    <span class="k">def</span><span class="w"> </span><span class="nf">component</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">idx</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span><span class="p">):</span>
-        <span class="k">return</span> <span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">type</span><span class="p">[</span><span class="n">idx</span><span class="p">]</span><span class="o">.</span><span class="n">lower</span><span class="p">())</span></div>
 
 </pre></div>
         </article>

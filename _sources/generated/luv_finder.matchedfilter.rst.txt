@@ -8,8 +8,13 @@
 
    .. autosummary::
    
+      GRID_DEFAULTS
       MASK_SNR
       MASK_FWHM
+      MASK_PEAKS
+      SPECTRAL_ARRAYS
+      POINT
+      WIDTHS
    
    .. rubric:: Functions
 
@@ -17,9 +22,10 @@
    
       build_grid
       combine_pointings
-      grid_model
+      grid_axis
       pb_corrected
       search_pointings
+      window_groups
    
    .. rubric:: Classes
 

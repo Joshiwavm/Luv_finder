@@ -16,7 +16,6 @@
    .. autosummary::
    
       amp_phase_check
-      contact_sheet
       dirty_maps_check
       erf_curve
       filter_responses
@@ -31,11 +30,8 @@
       response_check
       response_shape_check
       responses_check
-      scan_check
       snr_map
-      source_size_check
       spectrum_check
       style
-      uv_profile
       weights_check
    

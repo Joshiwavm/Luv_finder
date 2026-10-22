@@ -289,68 +289,56 @@ inside <a class="reference internal" href="#luv_finder.plotting.style" title="lu
 <tr class="row-odd"><td><p><a class="reference internal" href="#luv_finder.plotting.amp_phase_check" title="luv_finder.plotting.amp_phase_check"><code class="xref py py-obj docutils literal notranslate"><span class="pre">amp_phase_check</span></code></a>(data, positions[, ...])</p></td>
 <td><p>Amplitude and phase of the vector-averaged visibility against frequency.</p></td>
 </tr>
-<tr class="row-even"><td><p><a class="reference internal" href="#luv_finder.plotting.contact_sheet" title="luv_finder.plotting.contact_sheet"><code class="xref py py-obj docutils literal notranslate"><span class="pre">contact_sheet</span></code></a>(plots_dir[, title])</p></td>
-<td><p>Write an index.html showing every PNG in <code class="docutils literal notranslate"><span class="pre">plots_dir</span></code>.</p></td>
-</tr>
-<tr class="row-odd"><td><p><a class="reference internal" href="#luv_finder.plotting.dirty_maps_check" title="luv_finder.plotting.dirty_maps_check"><code class="xref py py-obj docutils literal notranslate"><span class="pre">dirty_maps_check</span></code></a>(dra, ddec, moment8, ...[, ...])</p></td>
+<tr class="row-even"><td><p><a class="reference internal" href="#luv_finder.plotting.dirty_maps_check" title="luv_finder.plotting.dirty_maps_check"><code class="xref py py-obj docutils literal notranslate"><span class="pre">dirty_maps_check</span></code></a>(dra, ddec, moment8, ...[, ...])</p></td>
 <td><p>Moment-8 (S/N), continuum (mJy/beam), and the moment-8 with continuum contours.</p></td>
 </tr>
-<tr class="row-even"><td><p><a class="reference internal" href="#luv_finder.plotting.erf_curve" title="luv_finder.plotting.erf_curve"><code class="xref py py-obj docutils literal notranslate"><span class="pre">erf_curve</span></code></a>(snr, fidelity)</p></td>
+<tr class="row-odd"><td><p><a class="reference internal" href="#luv_finder.plotting.erf_curve" title="luv_finder.plotting.erf_curve"><code class="xref py py-obj docutils literal notranslate"><span class="pre">erf_curve</span></code></a>(snr, fidelity)</p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">(centre,</span> <span class="pre">width)</span></code> of <code class="docutils literal notranslate"><span class="pre">F</span> <span class="pre">=</span> <span class="pre">(1</span> <span class="pre">+</span> <span class="pre">erf((S/N</span> <span class="pre">-</span> <span class="pre">centre)</span> <span class="pre">/</span> <span class="pre">sqrt(2)</span> <span class="pre">width))</span> <span class="pre">/</span> <span class="pre">2</span></code> fitted to fidelity points.</p></td>
 </tr>
-<tr class="row-odd"><td><p><a class="reference internal" href="#luv_finder.plotting.filter_responses" title="luv_finder.plotting.filter_responses"><code class="xref py py-obj docutils literal notranslate"><span class="pre">filter_responses</span></code></a>(freqs, snr, widths, labels)</p></td>
+<tr class="row-even"><td><p><a class="reference internal" href="#luv_finder.plotting.filter_responses" title="luv_finder.plotting.filter_responses"><code class="xref py py-obj docutils literal notranslate"><span class="pre">filter_responses</span></code></a>(freqs, snr, widths, labels)</p></td>
 <td><p>The matched-filter response of every group: S/N against frequency for each template, one panel each.</p></td>
 </tr>
-<tr class="row-even"><td><p><a class="reference internal" href="#luv_finder.plotting.line_maps_check" title="luv_finder.plotting.line_maps_check"><code class="xref py py-obj docutils literal notranslate"><span class="pre">line_maps_check</span></code></a>(maps, cat[, plots_dir, name])</p></td>
+<tr class="row-odd"><td><p><a class="reference internal" href="#luv_finder.plotting.line_maps_check" title="luv_finder.plotting.line_maps_check"><code class="xref py py-obj docutils literal notranslate"><span class="pre">line_maps_check</span></code></a>(maps, cat[, plots_dir, name])</p></td>
 <td><p>Moment-0 map of every fitted line (<a class="reference internal" href="luv_finder.imaging.html#luv_finder.imaging.line_maps" title="luv_finder.imaging.line_maps"><code class="xref py py-func docutils literal notranslate"><span class="pre">luv_finder.imaging.line_maps()</span></code></a>), the fitted position marked.</p></td>
 </tr>
-<tr class="row-odd"><td><p><a class="reference internal" href="#luv_finder.plotting.line_spectra_check" title="luv_finder.plotting.line_spectra_check"><code class="xref py py-obj docutils literal notranslate"><span class="pre">line_spectra_check</span></code></a>(cat[, span, plots_dir, name])</p></td>
+<tr class="row-even"><td><p><a class="reference internal" href="#luv_finder.plotting.line_spectra_check" title="luv_finder.plotting.line_spectra_check"><code class="xref py py-obj docutils literal notranslate"><span class="pre">line_spectra_check</span></code></a>(cat[, span, plots_dir, name])</p></td>
 <td><p>Each fitted line's spectrum and best fit within <code class="docutils literal notranslate"><span class="pre">span</span></code> FWHM of its centre, both over the fitted peak.</p></td>
 </tr>
-<tr class="row-even"><td><p><a class="reference internal" href="#luv_finder.plotting.mosaic_layout" title="luv_finder.plotting.mosaic_layout"><code class="xref py py-obj docutils literal notranslate"><span class="pre">mosaic_layout</span></code></a>(offsets, primary_beam[, ...])</p></td>
+<tr class="row-odd"><td><p><a class="reference internal" href="#luv_finder.plotting.mosaic_layout" title="luv_finder.plotting.mosaic_layout"><code class="xref py py-obj docutils literal notranslate"><span class="pre">mosaic_layout</span></code></a>(offsets, primary_beam[, ...])</p></td>
 <td><p>Pointing centres and half-power primary beams in the dataset's sky frame.</p></td>
 </tr>
-<tr class="row-odd"><td><p><a class="reference internal" href="#luv_finder.plotting.noise_check" title="luv_finder.plotting.noise_check"><code class="xref py py-obj docutils literal notranslate"><span class="pre">noise_check</span></code></a>(mf[, plots_dir, name])</p></td>
+<tr class="row-even"><td><p><a class="reference internal" href="#luv_finder.plotting.noise_check" title="luv_finder.plotting.noise_check"><code class="xref py py-obj docutils literal notranslate"><span class="pre">noise_check</span></code></a>(mf[, plots_dir, name])</p></td>
 <td><p>Response statistics of the data against its jackknife and a unit Gaussian.</p></td>
 </tr>
-<tr class="row-even"><td><p><a class="reference internal" href="#luv_finder.plotting.passes" title="luv_finder.plotting.passes"><code class="xref py py-obj docutils literal notranslate"><span class="pre">passes</span></code></a>(cat)</p></td>
+<tr class="row-odd"><td><p><a class="reference internal" href="#luv_finder.plotting.passes" title="luv_finder.plotting.passes"><code class="xref py py-obj docutils literal notranslate"><span class="pre">passes</span></code></a>(cat)</p></td>
 <td><p>Which reliability test each row passes: <code class="docutils literal notranslate"><span class="pre">both</span></code>, <code class="docutils literal notranslate"><span class="pre">likelihood</span></code>, <code class="docutils literal notranslate"><span class="pre">fidelity</span></code> or <code class="docutils literal notranslate"><span class="pre">none</span></code>.</p></td>
 </tr>
-<tr class="row-odd"><td><p><a class="reference internal" href="#luv_finder.plotting.peak_snr_map" title="luv_finder.plotting.peak_snr_map"><code class="xref py py-obj docutils literal notranslate"><span class="pre">peak_snr_map</span></code></a>(maps[, marks, plots_dir, name])</p></td>
+<tr class="row-even"><td><p><a class="reference internal" href="#luv_finder.plotting.peak_snr_map" title="luv_finder.plotting.peak_snr_map"><code class="xref py py-obj docutils literal notranslate"><span class="pre">peak_snr_map</span></code></a>(maps[, marks, plots_dir, name])</p></td>
 <td><p>Peak S/N on the sky from saved maps <code class="docutils literal notranslate"><span class="pre">(dra,</span> <span class="pre">ddec,</span> <span class="pre">peak)</span></code> (one or several), their maximum.</p></td>
 </tr>
-<tr class="row-even"><td><p><a class="reference internal" href="#luv_finder.plotting.pointings_check" title="luv_finder.plotting.pointings_check"><code class="xref py py-obj docutils literal notranslate"><span class="pre">pointings_check</span></code></a>(freqs_ghz, pointings, ...[, ...])</p></td>
+<tr class="row-odd"><td><p><a class="reference internal" href="#luv_finder.plotting.pointings_check" title="luv_finder.plotting.pointings_check"><code class="xref py py-obj docutils literal notranslate"><span class="pre">pointings_check</span></code></a>(freqs_ghz, pointings, ...[, ...])</p></td>
 <td><p>One position seen through several pointings of a mosaic, and the combination.</p></td>
 </tr>
-<tr class="row-odd"><td><p><a class="reference internal" href="#luv_finder.plotting.reliability_check" title="luv_finder.plotting.reliability_check"><code class="xref py py-obj docutils literal notranslate"><span class="pre">reliability_check</span></code></a>(cat[, plots_dir, name])</p></td>
+<tr class="row-even"><td><p><a class="reference internal" href="#luv_finder.plotting.reliability_check" title="luv_finder.plotting.reliability_check"><code class="xref py py-obj docutils literal notranslate"><span class="pre">reliability_check</span></code></a>(cat[, plots_dir, name])</p></td>
 <td><p>Counts, likelihood ratio and fidelity of a catalogue against the jackknife, its noise reference.</p></td>
 </tr>
-<tr class="row-even"><td><p><a class="reference internal" href="#luv_finder.plotting.response_check" title="luv_finder.plotting.response_check"><code class="xref py py-obj docutils literal notranslate"><span class="pre">response_check</span></code></a>(mf[, plots_dir, name, line_ghz])</p></td>
+<tr class="row-odd"><td><p><a class="reference internal" href="#luv_finder.plotting.response_check" title="luv_finder.plotting.response_check"><code class="xref py py-obj docutils literal notranslate"><span class="pre">response_check</span></code></a>(mf[, plots_dir, name, line_ghz])</p></td>
 <td><p>Matched-filter response of the best grid point, with the jackknife overlaid.</p></td>
 </tr>
-<tr class="row-odd"><td><p><a class="reference internal" href="#luv_finder.plotting.response_shape_check" title="luv_finder.plotting.response_shape_check"><code class="xref py py-obj docutils literal notranslate"><span class="pre">response_shape_check</span></code></a>(nc, result[, peaks, ...])</p></td>
+<tr class="row-even"><td><p><a class="reference internal" href="#luv_finder.plotting.response_shape_check" title="luv_finder.plotting.response_shape_check"><code class="xref py py-obj docutils literal notranslate"><span class="pre">response_shape_check</span></code></a>(nc, result[, peaks, ...])</p></td>
 <td><p>The null correlation rho of the response against what bright lines actually look like.</p></td>
 </tr>
-<tr class="row-even"><td><p><a class="reference internal" href="#luv_finder.plotting.responses_check" title="luv_finder.plotting.responses_check"><code class="xref py py-obj docutils literal notranslate"><span class="pre">responses_check</span></code></a>(freqs, curves, title[, ...])</p></td>
+<tr class="row-odd"><td><p><a class="reference internal" href="#luv_finder.plotting.responses_check" title="luv_finder.plotting.responses_check"><code class="xref py py-obj docutils literal notranslate"><span class="pre">responses_check</span></code></a>(freqs, curves, title[, ...])</p></td>
 <td><p>Several S/N spectra on one axis, e.g. the phase centre against the source positions.</p></td>
-</tr>
-<tr class="row-odd"><td><p><a class="reference internal" href="#luv_finder.plotting.scan_check" title="luv_finder.plotting.scan_check"><code class="xref py py-obj docutils literal notranslate"><span class="pre">scan_check</span></code></a>(x, curves, xlabel, title[, ...])</p></td>
-<td><p>Peak S/N against one trial parameter, e.g. template size, width or position angle.</p></td>
 </tr>
 <tr class="row-even"><td><p><a class="reference internal" href="#luv_finder.plotting.snr_map" title="luv_finder.plotting.snr_map"><code class="xref py py-obj docutils literal notranslate"><span class="pre">snr_map</span></code></a>(mf[, plots_dir, name, marks])</p></td>
 <td><p>Peak S/N over channels, widths and sizes at every (dra, ddec) of the grid.</p></td>
 </tr>
-<tr class="row-odd"><td><p><a class="reference internal" href="#luv_finder.plotting.source_size_check" title="luv_finder.plotting.source_size_check"><code class="xref py py-obj docutils literal notranslate"><span class="pre">source_size_check</span></code></a>(freqs, expected, noisy, ...)</p></td>
-<td><p>Response at the true source position: noiseless expectation and one noisy draw.</p></td>
-</tr>
-<tr class="row-even"><td><p><a class="reference internal" href="#luv_finder.plotting.spectrum_check" title="luv_finder.plotting.spectrum_check"><code class="xref py py-obj docutils literal notranslate"><span class="pre">spectrum_check</span></code></a>(data, dra, ddec[, model, ...])</p></td>
+<tr class="row-odd"><td><p><a class="reference internal" href="#luv_finder.plotting.spectrum_check" title="luv_finder.plotting.spectrum_check"><code class="xref py py-obj docutils literal notranslate"><span class="pre">spectrum_check</span></code></a>(data, dra, ddec[, model, ...])</p></td>
 <td><p>Real and imaginary visibility spectra: data, jackknife and model.</p></td>
 </tr>
-<tr class="row-odd"><td><p><a class="reference internal" href="#luv_finder.plotting.style" title="luv_finder.plotting.style"><code class="xref py py-obj docutils literal notranslate"><span class="pre">style</span></code></a>()</p></td>
+<tr class="row-even"><td><p><a class="reference internal" href="#luv_finder.plotting.style" title="luv_finder.plotting.style"><code class="xref py py-obj docutils literal notranslate"><span class="pre">style</span></code></a>()</p></td>
 <td><p>The Luv_finder figure style as a context manager: <code class="docutils literal notranslate"><span class="pre">with</span> <span class="pre">style():</span> <span class="pre">...</span></code>.</p></td>
-</tr>
-<tr class="row-even"><td><p><a class="reference internal" href="#luv_finder.plotting.uv_profile" title="luv_finder.plotting.uv_profile"><code class="xref py py-obj docutils literal notranslate"><span class="pre">uv_profile</span></code></a>(datasets, dra, ddec, models, freq_ghz)</p></td>
-<td><p>Visibility amplitude against uv distance at one channel, data binned and model envelopes.</p></td>
 </tr>
 <tr class="row-odd"><td><p><a class="reference internal" href="#luv_finder.plotting.weights_check" title="luv_finder.plotting.weights_check"><code class="xref py py-obj docutils literal notranslate"><span class="pre">weights_check</span></code></a>(chunks, labels[, plots_dir, ...])</p></td>
 <td><p>Do the weights predict the scatter? Re V at the phase centre per channel, its spread and <code class="docutils literal notranslate"><span class="pre">&lt;1/w&gt;^1/2</span></code>.</p></td>
@@ -377,12 +365,6 @@ inside <a class="reference internal" href="#luv_finder.plotting.style" title="lu
 <p><code class="docutils literal notranslate"><span class="pre">positions</span></code> maps a label to a (dra, ddec) the visibilities are phase-shifted onto first.
 On a source the phase stays near zero across its line and the amplitude rises; elsewhere the
 phase wanders and the amplitude is the noise floor.</p>
-</dd></dl>
-
-<dl class="py function">
-<dt class="sig sig-object py" id="luv_finder.plotting.contact_sheet">
-<span class="sig-prename descclassname"><span class="pre">luv_finder.plotting.</span></span><span class="sig-name descname"><span class="pre">contact_sheet</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">plots_dir</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.15)"><span class="pre">str</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">title</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.15)"><span class="pre">str</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">'Luv_finder</span> <span class="pre">diagnostics'</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.15)"><span class="pre">str</span></a></span></span><a class="reference internal" href="../_modules/luv_finder/plotting.html#contact_sheet"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#luv_finder.plotting.contact_sheet" title="Link to this definition">¶</a></dt>
-<dd><p>Write an index.html showing every PNG in <code class="docutils literal notranslate"><span class="pre">plots_dir</span></code>.</p>
 </dd></dl>
 
 <dl class="py function">
@@ -521,28 +503,12 @@ analytic <code class="docutils literal notranslate"><span class="pre">sqrt(2</sp
 </dd></dl>
 
 <dl class="py function">
-<dt class="sig sig-object py" id="luv_finder.plotting.scan_check">
-<span class="sig-prename descclassname"><span class="pre">luv_finder.plotting.</span></span><span class="sig-name descname"><span class="pre">scan_check</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">x</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">curves</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">xlabel</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">title</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">truth</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">plots_dir</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">name</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'scan'</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/luv_finder/plotting.html#scan_check"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#luv_finder.plotting.scan_check" title="Link to this definition">¶</a></dt>
-<dd><p>Peak S/N against one trial parameter, e.g. template size, width or position angle.</p>
-<p><code class="docutils literal notranslate"><span class="pre">curves</span></code> maps a label to the peak S/N at every value of <code class="docutils literal notranslate"><span class="pre">x</span></code>; <code class="docutils literal notranslate"><span class="pre">truth</span></code> marks the
-injected value.</p>
-</dd></dl>
-
-<dl class="py function">
 <dt class="sig sig-object py" id="luv_finder.plotting.snr_map">
 <span class="sig-prename descclassname"><span class="pre">luv_finder.plotting.</span></span><span class="sig-name descname"><span class="pre">snr_map</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">mf</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">plots_dir</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">name</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'snr_map'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">marks</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/luv_finder/plotting.html#snr_map"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#luv_finder.plotting.snr_map" title="Link to this definition">¶</a></dt>
 <dd><p>Peak S/N over channels, widths and sizes at every (dra, ddec) of the grid.</p>
 <p>The data and, when it was run, the jackknife are shown side by side on one colour scale.
 <code class="docutils literal notranslate"><span class="pre">marks</span></code> maps a label to a (dra, ddec) position to circle, e.g. an injected source. Positions
 where the response is NaN (outside every primary beam of a mosaic) are left blank.</p>
-</dd></dl>
-
-<dl class="py function">
-<dt class="sig sig-object py" id="luv_finder.plotting.source_size_check">
-<span class="sig-prename descclassname"><span class="pre">luv_finder.plotting.</span></span><span class="sig-name descname"><span class="pre">source_size_check</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">freqs</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">expected</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">noisy</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">declared</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">title</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">plots_dir</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">name</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'source_size'</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/luv_finder/plotting.html#source_size_check"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#luv_finder.plotting.source_size_check" title="Link to this definition">¶</a></dt>
-<dd><p>Response at the true source position: noiseless expectation and one noisy draw.</p>
-<p><code class="docutils literal notranslate"><span class="pre">declared</span></code> is the S/N the mock was calibrated to; a filter matched to the
-source reaches it with the expectation curve.</p>
 </dd></dl>
 
 <dl class="py function">
@@ -558,16 +524,6 @@ the reference and peaks once shifted; the jackknife should stay consistent with 
 <dt class="sig sig-object py" id="luv_finder.plotting.style">
 <span class="sig-prename descclassname"><span class="pre">luv_finder.plotting.</span></span><span class="sig-name descname"><span class="pre">style</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../_modules/luv_finder/plotting.html#style"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#luv_finder.plotting.style" title="Link to this definition">¶</a></dt>
 <dd><p>The Luv_finder figure style as a context manager: <code class="docutils literal notranslate"><span class="pre">with</span> <span class="pre">style():</span> <span class="pre">...</span></code>.</p>
-</dd></dl>
-
-<dl class="py function">
-<dt class="sig sig-object py" id="luv_finder.plotting.uv_profile">
-<span class="sig-prename descclassname"><span class="pre">luv_finder.plotting.</span></span><span class="sig-name descname"><span class="pre">uv_profile</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">datasets</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dra</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">ddec</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">models</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">freq_ghz</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">plots_dir</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">name</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'uv_profile'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">bins</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">25</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/luv_finder/plotting.html#uv_profile"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#luv_finder.plotting.uv_profile" title="Link to this definition">¶</a></dt>
-<dd><p>Visibility amplitude against uv distance at one channel, data binned and model envelopes.</p>
-<p><code class="docutils literal notranslate"><span class="pre">datasets</span></code> and <code class="docutils literal notranslate"><span class="pre">models</span></code> map a label to a single-window <a class="reference internal" href="luv_finder.data.html#luv_finder.data.DataHandler" title="luv_finder.data.DataHandler"><code class="xref py py-class docutils literal notranslate"><span class="pre">DataHandler</span></code></a>
-and a source component. Each dataset is phase-shifted onto (<code class="docutils literal notranslate"><span class="pre">dra</span></code>, <code class="docutils literal notranslate"><span class="pre">ddec</span></code>) and scaled by
-its least-squares flux against the model envelope, so only the shapes are compared: a
-resolved source fades on long baselines.</p>
 </dd></dl>
 
 <dl class="py function">
@@ -643,7 +599,6 @@ window’s chunks of every field, tests the reweighting, which is fitted per sca
 <li><a class="reference internal" href="#luv_finder.plotting.FRAMES"><code class="docutils literal notranslate"><span class="pre">FRAMES</span></code></a></li>
 <li><a class="reference internal" href="#luv_finder.plotting.STYLE"><code class="docutils literal notranslate"><span class="pre">STYLE</span></code></a></li>
 <li><a class="reference internal" href="#luv_finder.plotting.amp_phase_check"><code class="docutils literal notranslate"><span class="pre">amp_phase_check()</span></code></a></li>
-<li><a class="reference internal" href="#luv_finder.plotting.contact_sheet"><code class="docutils literal notranslate"><span class="pre">contact_sheet()</span></code></a></li>
 <li><a class="reference internal" href="#luv_finder.plotting.dirty_maps_check"><code class="docutils literal notranslate"><span class="pre">dirty_maps_check()</span></code></a></li>
 <li><a class="reference internal" href="#luv_finder.plotting.erf_curve"><code class="docutils literal notranslate"><span class="pre">erf_curve()</span></code></a></li>
 <li><a class="reference internal" href="#luv_finder.plotting.filter_responses"><code class="docutils literal notranslate"><span class="pre">filter_responses()</span></code></a></li>
@@ -658,12 +613,9 @@ window’s chunks of every field, tests the reweighting, which is fitted per sca
 <li><a class="reference internal" href="#luv_finder.plotting.response_check"><code class="docutils literal notranslate"><span class="pre">response_check()</span></code></a></li>
 <li><a class="reference internal" href="#luv_finder.plotting.response_shape_check"><code class="docutils literal notranslate"><span class="pre">response_shape_check()</span></code></a></li>
 <li><a class="reference internal" href="#luv_finder.plotting.responses_check"><code class="docutils literal notranslate"><span class="pre">responses_check()</span></code></a></li>
-<li><a class="reference internal" href="#luv_finder.plotting.scan_check"><code class="docutils literal notranslate"><span class="pre">scan_check()</span></code></a></li>
 <li><a class="reference internal" href="#luv_finder.plotting.snr_map"><code class="docutils literal notranslate"><span class="pre">snr_map()</span></code></a></li>
-<li><a class="reference internal" href="#luv_finder.plotting.source_size_check"><code class="docutils literal notranslate"><span class="pre">source_size_check()</span></code></a></li>
 <li><a class="reference internal" href="#luv_finder.plotting.spectrum_check"><code class="docutils literal notranslate"><span class="pre">spectrum_check()</span></code></a></li>
 <li><a class="reference internal" href="#luv_finder.plotting.style"><code class="docutils literal notranslate"><span class="pre">style()</span></code></a></li>
-<li><a class="reference internal" href="#luv_finder.plotting.uv_profile"><code class="docutils literal notranslate"><span class="pre">uv_profile()</span></code></a></li>
 <li><a class="reference internal" href="#luv_finder.plotting.weights_check"><code class="docutils literal notranslate"><span class="pre">weights_check()</span></code></a></li>
 </ul>
 </li>

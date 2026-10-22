@@ -9,6 +9,7 @@
    .. autosummary::
    
       DETECTION_RULE
+      RELIABILITY
       BRIGHT_SNR
       UNITS
       SEARCH_META
@@ -19,11 +20,13 @@
    
       bright_lines
       catalogue
+      duplicates
       fidelity
       groups
       jackknife_spread
       likelihood
       merge_catalogues
+      passes
       response_correlation
    
    .. rubric:: Classes

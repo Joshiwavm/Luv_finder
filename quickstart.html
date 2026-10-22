@@ -264,45 +264,58 @@
         <article role="main" id="furo-main-content">
           <section id="quickstart">
 <h1>Quickstart<a class="headerlink" href="#quickstart" title="Link to this heading">¶</a></h1>
-<section id="command-line">
-<h2>Command line<a class="headerlink" href="#command-line" title="Link to this heading">¶</a></h2>
-<p>The <code class="docutils literal notranslate"><span class="pre">smoke</span></code> preset is deliberately tiny (ACA, 24 channels) and runs end to end
-in seconds:</p>
+<section id="a-quick-look">
+<h2>A quick look<a class="headerlink" href="#a-quick-look" title="Link to this heading">¶</a></h2>
+<p><code class="docutils literal notranslate"><span class="pre">luv-find</span></code> searches a measurement set or NPZ, corrects every pointing for its
+primary beam, combines them, saves the best grid point’s S/N spectrum to <code class="docutils literal notranslate"><span class="pre">plots/</span></code>
+and prints it. The <code class="docutils literal notranslate"><span class="pre">smoke</span></code> preset (ACA, 24 channels) runs in seconds:</p>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>luv-mock<span class="w"> </span>configs/mocks/smoke.yaml
 luv-find<span class="w"> </span>--ms<span class="w"> </span>output/ms_files/smoke/smoke.aca.cycle13.noisy.ms<span class="w"> </span>--grid<span class="w"> </span>configs/grids/smoke.yaml<span class="w"> </span>--jackknife
 </pre></div>
 </div>
-<p>The science preset uses the 12 m array. Exporting the measurement set to NPZ once
-lets every later step run without CASA:</p>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>luv-mock<span class="w"> </span>configs/mocks/line13_line9.yaml
-luv-export<span class="w"> </span>--ms<span class="w"> </span>output/ms_files/line13_line9/line13_line9.alma.cycle13.3.noisy.ms<span class="w"> </span>--out<span class="w"> </span>line13_line9.npz
-luv-find<span class="w"> </span>--ms<span class="w"> </span>line13_line9.npz<span class="w"> </span>--grid<span class="w"> </span>configs/grids/line13_line9.yaml<span class="w"> </span>--jackknife<span class="w"> </span>--out<span class="w"> </span>response.npz
+<p><code class="docutils literal notranslate"><span class="pre">--field</span> <span class="pre">N</span></code> searches one pointing, <code class="docutils literal notranslate"><span class="pre">--out</span> <span class="pre">response.npz</span></code> keeps the responses, and
+<code class="docutils literal notranslate"><span class="pre">--continuum-order</span></code> and <code class="docutils literal notranslate"><span class="pre">--cores</span></code> set the filter.</p>
+</section>
+<section id="a-catalogue">
+<h2>A catalogue<a class="headerlink" href="#a-catalogue" title="Link to this heading">¶</a></h2>
+<p>Catalogues come from a run: one YAML file in, every product in one directory.</p>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="c1"># run.yaml in the repository root; relative paths are relative to this file</span>
+<span class="nt">data</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">output/ms_files/line13_line9/line13_line9.alma.cycle13.3.noisy.ms</span>
+<span class="nt">output</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">output/line13_line9</span>
+<span class="nt">grid</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">configs/grids/line13_line9.yaml</span><span class="w">   </span><span class="c1"># or the grid itself, as a mapping</span>
 </pre></div>
 </div>
-<p><code class="docutils literal notranslate"><span class="pre">luv-find</span></code> prints the best grid point and saves its S/N spectrum to <code class="docutils literal notranslate"><span class="pre">plots/</span></code>.</p>
+<p>Optional keys are <code class="docutils literal notranslate"><span class="pre">name</span></code>, <code class="docutils literal notranslate"><span class="pre">pb_limit</span></code>, <code class="docutils literal notranslate"><span class="pre">max_channels</span></code> (the channels a unit of the
+search holds at most), <code class="docutils literal notranslate"><span class="pre">filter</span></code> (<code class="docutils literal notranslate"><span class="pre">continuum_order</span></code>, <code class="docutils literal notranslate"><span class="pre">channel_noise</span></code>),
+<code class="docutils literal notranslate"><span class="pre">reliability</span></code> (<code class="docutils literal notranslate"><span class="pre">floor</span></code>, <code class="docutils literal notranslate"><span class="pre">k</span></code>, <code class="docutils literal notranslate"><span class="pre">fidelity_min</span></code>, <code class="docutils literal notranslate"><span class="pre">rule</span></code>), <code class="docutils literal notranslate"><span class="pre">near_miss</span></code>
+(<code class="docutils literal notranslate"><span class="pre">fidelity</span></code>, <code class="docutils literal notranslate"><span class="pre">max</span></code>) and <code class="docutils literal notranslate"><span class="pre">cores</span></code>; an unknown key raises an error.</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>luv-run<span class="w"> </span>run.yaml<span class="w"> </span>search<span class="w">      </span><span class="c1"># export, search and catalogue every unit; --workers N shares them</span>
+luv-run<span class="w"> </span>run.yaml<span class="w"> </span>fit<span class="w">         </span><span class="c1"># fit the detections and near misses in the visibilities</span>
+luv-run<span class="w"> </span>run.yaml<span class="w"> </span>summary
+luv-run<span class="w"> </span>run.yaml<span class="w"> </span>plots
+</pre></div>
+</div>
+<p>The output holds <code class="docutils literal notranslate"><span class="pre">catalogue.ecsv</span></code> (every group, with its likelihood ratio, fidelity
+and <code class="docutils literal notranslate"><span class="pre">detected</span></code>), <code class="docutils literal notranslate"><span class="pre">lines_fit.ecsv</span></code> (the fitted lines), <code class="docutils literal notranslate"><span class="pre">line_maps.npz</span></code> (their
+moment-0 maps), <code class="docutils literal notranslate"><span class="pre">export/</span></code> and <code class="docutils literal notranslate"><span class="pre">units/</span></code> (each unit’s catalogue, maps and weights).
+What is on disk is not redone, and <code class="docutils literal notranslate"><span class="pre">Run.open(output)</span></code> reopens a run for its figures.</p>
 </section>
 <section id="python">
 <h2>Python<a class="headerlink" href="#python" title="Link to this heading">¶</a></h2>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">luv_finder.data</span><span class="w"> </span><span class="kn">import</span> <span class="n">load</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">luv_finder.matchedfilter</span><span class="w"> </span><span class="kn">import</span> <span class="n">MatchedFilter</span><span class="p">,</span> <span class="n">build_grid</span><span class="p">,</span> <span class="n">grid_model</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">luv_finder.matchedfilter</span><span class="w"> </span><span class="kn">import</span> <span class="n">MatchedFilter</span><span class="p">,</span> <span class="n">build_grid</span>
 
-<span class="n">data</span> <span class="o">=</span> <span class="n">load</span><span class="p">(</span><span class="s2">"line13_line9.npz"</span><span class="p">)</span>
-<span class="n">grid</span> <span class="o">=</span> <span class="n">build_grid</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="p">{</span><span class="s2">"width"</span><span class="p">:</span> <span class="p">[</span><span class="mf">200.0</span><span class="p">,</span> <span class="mf">300.0</span><span class="p">]})</span>
-<span class="n">mf</span> <span class="o">=</span> <span class="n">MatchedFilter</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">grid_model</span><span class="p">(</span><span class="n">grid</span><span class="p">))</span>
+<span class="n">data</span> <span class="o">=</span> <span class="n">load</span><span class="p">(</span><span class="s2">"line13_line9.npz"</span><span class="p">,</span> <span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+<span class="n">mf</span> <span class="o">=</span> <span class="n">MatchedFilter</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">build_grid</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="p">{</span><span class="s2">"width"</span><span class="p">:</span> <span class="p">[</span><span class="mf">200.0</span><span class="p">,</span> <span class="mf">300.0</span><span class="p">]}))</span>
 <span class="n">mf</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="n">jackknife</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
 <span class="nb">print</span><span class="p">(</span><span class="n">mf</span><span class="o">.</span><span class="n">best_params</span><span class="p">,</span> <span class="n">mf</span><span class="o">.</span><span class="n">response</span><span class="o">.</span><span class="n">max</span><span class="p">())</span>
 </pre></div>
 </div>
-</section>
-<section id="reading-the-output">
-<h2>Reading the output<a class="headerlink" href="#reading-the-output" title="Link to this heading">¶</a></h2>
-<p><code class="docutils literal notranslate"><span class="pre">mf.response</span></code> is the matched-filter statistic: unit variance under the null
-hypothesis, so the peak height of a line is its signal-to-noise ratio, and
-<code class="docutils literal notranslate"><span class="pre">mf.response_jackknife</span></code> shows the noise on the same axis. Column <code class="docutils literal notranslate"><span class="pre">i</span></code> is a
-line template centred on channel <code class="docutils literal notranslate"><span class="pre">i</span></code>; rows follow <code class="docutils literal notranslate"><span class="pre">mf.grid_params</span></code>, the
-product of the <code class="docutils literal notranslate"><span class="pre">dra,</span> <span class="pre">ddec,</span> <span class="pre">bmin,</span> <span class="pre">bmaj,</span> <span class="pre">pa,</span> <span class="pre">width</span></code> axes in that order. A mock’s
-declared <code class="docutils literal notranslate"><span class="pre">snr</span></code> is the S/N the filter recovers.</p>
-<p>For a mosaic, the catalogue and the line fit, see the guides.</p>
+<p><code class="docutils literal notranslate"><span class="pre">mf.response</span></code> is the statistic T(x): unit variance under H0, so the peak height of a
+line is its SNR, and <code class="docutils literal notranslate"><span class="pre">mf.response_jackknife</span></code> shows the noise on the same axis.
+Column <code class="docutils literal notranslate"><span class="pre">i</span></code> is a template centred on trial frequency <code class="docutils literal notranslate"><span class="pre">i</span></code>; rows follow
+<code class="docutils literal notranslate"><span class="pre">mf.grid_params</span></code>, the product of the <code class="docutils literal notranslate"><span class="pre">dra,</span> <span class="pre">ddec,</span> <span class="pre">bmin,</span> <span class="pre">bmaj,</span> <span class="pre">pa,</span> <span class="pre">width</span></code> axes in
+that order. A mock’s declared <code class="docutils literal notranslate"><span class="pre">snr</span></code> is the SNR the filter recovers.</p>
 </section>
 </section>
 
@@ -362,9 +375,9 @@ declared <code class="docutils literal notranslate"><span class="pre">snr</span>
           <div class="toc-tree">
             <ul>
 <li><a class="reference internal" href="#">Quickstart</a><ul>
-<li><a class="reference internal" href="#command-line">Command line</a></li>
+<li><a class="reference internal" href="#a-quick-look">A quick look</a></li>
+<li><a class="reference internal" href="#a-catalogue">A catalogue</a></li>
 <li><a class="reference internal" href="#python">Python</a></li>
-<li><a class="reference internal" href="#reading-the-output">Reading the output</a></li>
 </ul>
 </li>
 </ul>

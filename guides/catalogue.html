@@ -273,7 +273,7 @@ throughout:</p>
 <ol class="arabic simple">
 <li><p>the S/N is the filter’s, normalised by its exact variance under the correlation
 between channels measured on the jackknife per spectral window
-(<code class="xref py py-func docutils literal notranslate"><span class="pre">channel_correlation()</span></code>), so it has unit variance under the null
+(<a class="reference internal" href="../generated/luv_finder.data.html#luv_finder.data.channel_noise" title="luv_finder.data.channel_noise"><code class="xref py py-func docutils literal notranslate"><span class="pre">channel_noise()</span></code></a>), so it has unit variance under H0
 (<a class="reference internal" href="../generated/luv_finder.catalogue.html#luv_finder.catalogue.jackknife_spread" title="luv_finder.catalogue.jackknife_spread"><code class="xref py py-func docutils literal notranslate"><span class="pre">jackknife_spread()</span></code></a> checks it);</p></li>
 <li><p>the correlation function of the jackknife response is measured; it is also the
 expected shape of a matched line’s response (Vio &amp; Andreani 2021), so its half-power
@@ -282,7 +282,9 @@ ellipsoid in position and frequency is what one source occupies;</p></li>
 ellipsoid, for the data, the jackknife and (as a diagnostic) the negated data;</p></li>
 <li><p>every data group gets the likelihood ratio <code class="docutils literal notranslate"><span class="pre">N_data(&gt;=</span> <span class="pre">S/N)</span> <span class="pre">/</span> <span class="pre">N_jackknife(&gt;=</span> <span class="pre">S/N)</span></code>
 (van Marrewijk et al. 2025, required &gt;= 3) and the fidelity <code class="docutils literal notranslate"><span class="pre">1</span> <span class="pre">-</span> <span class="pre">N_jackknife</span> <span class="pre">/</span> <span class="pre">N_data</span></code>
-per S/N bin, fitted with an error function (Walter et al. 2016, required &gt;= 0.6).</p></li>
+per S/N bin, <code class="docutils literal notranslate"><span class="pre">N_jackknife</span></code> from a Gaussian tail fitted to the jackknife groups
+(González-López et al. 2019, required &gt;= 0.6). <code class="docutils literal notranslate"><span class="pre">detected</span></code> needs both (<code class="docutils literal notranslate"><span class="pre">rule=&quot;and&quot;</span></code>,
+the default) or either (<code class="docutils literal notranslate"><span class="pre">&quot;or&quot;</span></code>); the defaults are <code class="docutils literal notranslate"><span class="pre">catalogue.RELIABILITY</span></code>.</p></li>
 </ol>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">luv_finder.catalogue</span><span class="w"> </span><span class="kn">import</span> <span class="n">catalogue</span>
 
@@ -291,7 +293,10 @@ per S/N bin, fitted with an error function (Walter et al. 2016, required &gt;= 0
 <span class="n">cat</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="s2">"lines.ecsv"</span><span class="p">,</span> <span class="nb">format</span><span class="o">=</span><span class="s2">"ascii.ecsv"</span><span class="p">)</span>
 </pre></div>
 </div>
-<p>or <code class="docutils literal notranslate"><span class="pre">luv-find</span> <span class="pre">...</span> <span class="pre">--jackknife</span> <span class="pre">--catalogue</span> <span class="pre">lines.ecsv</span></code>.</p>
+<p>A run (<a class="reference internal" href="../quickstart.html"><span class="doc">Quickstart</span></a>) does this per unit and merges the units with
+<a class="reference internal" href="../generated/luv_finder.catalogue.html#luv_finder.catalogue.merge_catalogues" title="luv_finder.catalogue.merge_catalogues"><code class="xref py py-func docutils literal notranslate"><span class="pre">merge_catalogues()</span></code></a>, which recomputes the reliability over
+the whole volume and counts a line found by two units once (<code class="docutils literal notranslate"><span class="pre">duplicate_of</span></code>). The
+template’s <code class="docutils literal notranslate"><span class="pre">bmaj</span></code>, <code class="docutils literal notranslate"><span class="pre">bmin</span></code> and <code class="docutils literal notranslate"><span class="pre">width</span></code> columns are FWHM.</p>
 </section>
 <section id="fitting-the-detected-lines">
 <h2>Fitting the detected lines<a class="headerlink" href="#fitting-the-detected-lines" title="Link to this heading">¶</a></h2>
@@ -299,15 +304,16 @@ per S/N bin, fitted with an error function (Walter et al. 2016, required &gt;= 0
 detected line by least squares in the visibilities: an elliptical Gaussian source
 (position and sky covariance) whose spectrum is a Gaussian line on a polynomial continuum,
 times each pointing’s primary beam at the source, jointly in every pointing whose primary
-beam covers the line (PB &gt;= 0.2), in the spectral window holding it.</p>
+beam covers the line (PB &gt;= 0.2) and every spectral window within one FWHM of it, each
+window with its own continuum.</p>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">luv_finder.fit</span><span class="w"> </span><span class="kn">import</span> <span class="n">fit_lines</span>
 
 <span class="n">fitted</span> <span class="o">=</span> <span class="n">fit_lines</span><span class="p">(</span><span class="s2">"mosaic.npz"</span><span class="p">,</span> <span class="n">cat</span><span class="p">)</span>  <span class="c1"># or the search's DataHandler</span>
 <span class="n">fitted</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="s2">"lines.ecsv"</span><span class="p">,</span> <span class="nb">format</span><span class="o">=</span><span class="s2">"ascii.ecsv"</span><span class="p">,</span> <span class="n">overwrite</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
 </pre></div>
 </div>
-<p>or <code class="docutils literal notranslate"><span class="pre">luv-find</span> <span class="pre">...</span> <span class="pre">--jackknife</span> <span class="pre">--catalogue</span> <span class="pre">lines.ecsv</span> <span class="pre">--fit</span></code>. The fitted columns
-(<code class="docutils literal notranslate"><span class="pre">fit_dra</span></code>, <code class="docutils literal notranslate"><span class="pre">fit_ddec</span></code>, <code class="docutils literal notranslate"><span class="pre">fit_ra</span></code>, <code class="docutils literal notranslate"><span class="pre">fit_dec</span></code>; <code class="docutils literal notranslate"><span class="pre">fit_bmaj</span></code>, <code class="docutils literal notranslate"><span class="pre">fit_bmin</span></code> as sigma
+<p><code class="docutils literal notranslate"><span class="pre">luv-run</span> <span class="pre">run.yaml</span> <span class="pre">fit</span></code> fits a run’s detections and near misses. The fitted columns
+(<code class="docutils literal notranslate"><span class="pre">fit_dra</span></code>, <code class="docutils literal notranslate"><span class="pre">fit_ddec</span></code>, <code class="docutils literal notranslate"><span class="pre">fit_ra</span></code>, <code class="docutils literal notranslate"><span class="pre">fit_dec</span></code>; <code class="docutils literal notranslate"><span class="pre">fit_bmaj</span></code>, <code class="docutils literal notranslate"><span class="pre">fit_bmin</span></code> as FWHM
 and <code class="docutils literal notranslate"><span class="pre">fit_pa</span></code>; <code class="docutils literal notranslate"><span class="pre">fit_freq_ghz</span></code>, <code class="docutils literal notranslate"><span class="pre">fit_width</span></code> as FWHM in km/s, <code class="docutils literal notranslate"><span class="pre">fit_peak</span></code>,
 <code class="docutils literal notranslate"><span class="pre">fit_line_flux</span></code> and <code class="docutils literal notranslate"><span class="pre">fit_continuum</span></code> at the line centre, each with an <code class="docutils literal notranslate"><span class="pre">_error</span></code>) are
 intrinsic, PB-corrected values. An unresolved axis lands on zero size, with a NaN error.
@@ -317,8 +323,8 @@ moment-0 maps.</p>
 </section>
 <section id="diagnostic-figures">
 <h2>Diagnostic figures<a class="headerlink" href="#diagnostic-figures" title="Link to this heading">¶</a></h2>
-<p><a class="reference internal" href="../generated/luv_finder.plotting.html#module-luv_finder.plotting" title="luv_finder.plotting"><code class="xref py py-mod docutils literal notranslate"><span class="pre">luv_finder.plotting</span></code></a> holds every figure; each takes a directory and returns the
-path written. <a class="reference internal" href="../generated/luv_finder.plotting.html#luv_finder.plotting.reliability_check" title="luv_finder.plotting.reliability_check"><code class="xref py py-func docutils literal notranslate"><span class="pre">reliability_check()</span></code></a> shows the counts, the
+<p><a class="reference internal" href="../generated/luv_finder.plotting.html#module-luv_finder.plotting" title="luv_finder.plotting"><code class="xref py py-mod docutils literal notranslate"><span class="pre">luv_finder.plotting</span></code></a> holds every figure; each returns its figure and writes it
+to <code class="docutils literal notranslate"><span class="pre">plots_dir</span></code> when one is given. <a class="reference internal" href="../generated/luv_finder.plotting.html#luv_finder.plotting.reliability_check" title="luv_finder.plotting.reliability_check"><code class="xref py py-func docutils literal notranslate"><span class="pre">reliability_check()</span></code></a> shows the counts, the
 likelihood ratio and the fidelity; <a class="reference internal" href="../generated/luv_finder.plotting.html#luv_finder.plotting.response_shape_check" title="luv_finder.plotting.response_shape_check"><code class="xref py py-func docutils literal notranslate"><span class="pre">response_shape_check()</span></code></a> the
 response correlation against real lines; <a class="reference internal" href="../generated/luv_finder.plotting.html#luv_finder.plotting.line_spectra_check" title="luv_finder.plotting.line_spectra_check"><code class="xref py py-func docutils literal notranslate"><span class="pre">line_spectra_check()</span></code></a>
 and <a class="reference internal" href="../generated/luv_finder.plotting.html#luv_finder.plotting.line_maps_check" title="luv_finder.plotting.line_maps_check"><code class="xref py py-func docutils literal notranslate"><span class="pre">line_maps_check()</span></code></a> the fitted lines. <code class="docutils literal notranslate"><span class="pre">pytest</span> <span class="pre">--plots</span></code>

@@ -8,7 +8,6 @@
 
    .. autosummary::
    
-      LINE_FLUX
       REPORTED
       MIN_WIDTH
       COLUMNS
@@ -21,4 +20,5 @@
       empty_fit
       fit_line
       fit_lines
+      home_window
    

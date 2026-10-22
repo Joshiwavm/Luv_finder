@@ -272,9 +272,10 @@ integrations differenced, is the noise reference: it calibrates the S/N, the
 shape a source leaves in the search, and the false-alarm rate. Mosaics are
 corrected for the primary beam and combined, and candidates are catalogued with
 a likelihood ratio and a fidelity, then fitted in the visibilities.</p>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>pip<span class="w"> </span>install<span class="w"> </span>-e<span class="w"> </span><span class="s2">".[casa,dev]"</span>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>pip<span class="w"> </span>install<span class="w"> </span>-e<span class="w"> </span><span class="s2">".[casa]"</span>
 luv-mock<span class="w"> </span>configs/mocks/smoke.yaml
 luv-find<span class="w"> </span>--ms<span class="w"> </span>output/ms_files/smoke/smoke.aca.cycle13.noisy.ms<span class="w"> </span>--grid<span class="w"> </span>configs/grids/smoke.yaml<span class="w"> </span>--jackknife
+luv-run<span class="w"> </span>run.yaml<span class="w"> </span>search<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>luv-run<span class="w"> </span>run.yaml<span class="w"> </span>fit<span class="w">   </span><span class="c1"># a catalogue, see the quickstart</span>
 </pre></div>
 </div>
 <div class="toctree-wrapper compound">

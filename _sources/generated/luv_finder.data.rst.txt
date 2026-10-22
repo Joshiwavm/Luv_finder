@@ -12,6 +12,8 @@
       READ_BLOCK
       MAX_GAP
       CHANNEL_BLOCK
+      MAX_LAG
+      LAG_SIGNIFICANCE
       FREQUENCY_FRAMES
    
    .. rubric:: Functions
@@ -24,6 +26,7 @@
       iter_chunks
       load
       pair_weight
+      pointing
       reweighted
       sky_direction
       sky_offset

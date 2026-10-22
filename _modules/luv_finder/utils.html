@@ -256,7 +256,7 @@
         </div>
         <article role="main" id="furo-main-content">
           <h1>Source code for luv_finder.utils</h1><div class="highlight"><pre>
-<span></span><span class="sd">"""Shared constants, the analytic ALMA primary beam and the mock-weight helper.</span>
+<span></span><span class="sd">"""Shared constants and the analytic ALMA primary beam.</span>
 
 <span class="sd">The primary beam follows the ALMA Technical Handbook: the measured FWHM of the 12 m and 7 m antennas is</span>
 <span class="sd">about 1.13 lambda / D, and CASA models the beam as an Airy pattern scaled so that its FWHM matches.</span>
@@ -264,16 +264,18 @@
 
 <span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
 
+<span class="kn">from</span><span class="w"> </span><span class="nn">math</span><span class="w"> </span><span class="kn">import</span> <span class="n">factorial</span>
+
 <span class="kn">import</span><span class="w"> </span><span class="nn">astropy.constants</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">const</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">jax</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">scipy.optimize</span><span class="w"> </span><span class="kn">import</span> <span class="n">brentq</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">scipy.special</span><span class="w"> </span><span class="kn">import</span> <span class="n">j1</span><span class="p">,</span> <span class="n">jn_zeros</span>
 
-<span class="kn">from</span><span class="w"> </span><span class="nn">._casa</span><span class="w"> </span><span class="kn">import</span> <span class="n">tools</span>
-
 <span class="n">C</span> <span class="o">=</span> <span class="n">const</span><span class="o">.</span><span class="n">c</span><span class="o">.</span><span class="n">value</span>
 <span class="n">ARCSEC</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">deg2rad</span><span class="p">(</span><span class="mi">1</span> <span class="o">/</span> <span class="mi">3600</span><span class="p">)</span>
+<span class="c1">#: Primary-beam level down to which a pointing is searched, fitted and imaged.</span>
+<span class="n">PB_LIMIT</span> <span class="o">=</span> <span class="mf">0.2</span>
 
 <span class="c1">#: Arrays processed in blocks stay near this size in memory.</span>
 <span class="n">BLOCK_BYTES</span> <span class="o">=</span> <span class="mi">2</span><span class="o">**</span><span class="mi">31</span>
@@ -285,79 +287,55 @@
 <span class="n">_X_NULL</span> <span class="o">=</span> <span class="n">jn_zeros</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span>
 
 
+<span class="c1">#: Below this ``x`` the Airy pattern is its series ``2 J1(x) / x = sum_k (-x^2/4)^k / (k! (k+1)!)``, to</span>
+<span class="c1">#: double precision: JAX's ``bessel_jn`` is NaN at ``x &lt;= 1e-6`` and its derivative wrong up to ``x ~ 0.3``</span>
+<span class="c1">#: (a few arcsec from a pointing centre), which a fit there needs.</span>
+<span class="n">_X_SERIES</span> <span class="o">=</span> <span class="mf">0.5</span>
+<span class="n">_SERIES</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([(</span><span class="o">-</span><span class="mf">0.25</span><span class="p">)</span> <span class="o">**</span> <span class="n">k</span> <span class="o">/</span> <span class="p">(</span><span class="n">factorial</span><span class="p">(</span><span class="n">k</span><span class="p">)</span> <span class="o">*</span> <span class="n">factorial</span><span class="p">(</span><span class="n">k</span> <span class="o">+</span> <span class="mi">1</span><span class="p">))</span> <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">8</span><span class="p">)])</span>
+
+
 <span class="k">def</span><span class="w"> </span><span class="nf">_airy</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">xp</span><span class="o">=</span><span class="n">np</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">"""Airy power pattern ``(2 J1(x) / x)**2``, equal to 1 at ``x = 0``; ``xp`` is numpy or ``jax.numpy``."""</span>
     <span class="n">bessel</span> <span class="o">=</span> <span class="n">j1</span> <span class="k">if</span> <span class="n">xp</span> <span class="ow">is</span> <span class="n">np</span> <span class="k">else</span> <span class="k">lambda</span> <span class="n">z</span><span class="p">:</span> <span class="n">jax</span><span class="o">.</span><span class="n">scipy</span><span class="o">.</span><span class="n">special</span><span class="o">.</span><span class="n">bessel_jn</span><span class="p">(</span><span class="n">z</span><span class="p">,</span> <span class="n">v</span><span class="o">=</span><span class="mi">1</span><span class="p">)[</span><span class="mi">1</span><span class="p">]</span>
-    <span class="n">safe</span> <span class="o">=</span> <span class="n">xp</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">x</span> <span class="o">==</span> <span class="mi">0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">,</span> <span class="n">x</span><span class="p">)</span>
-    <span class="k">return</span> <span class="n">xp</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">x</span> <span class="o">==</span> <span class="mi">0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">,</span> <span class="p">(</span><span class="mi">2</span> <span class="o">*</span> <span class="n">bessel</span><span class="p">(</span><span class="n">safe</span><span class="p">)</span> <span class="o">/</span> <span class="n">safe</span><span class="p">)</span> <span class="o">**</span> <span class="mi">2</span><span class="p">)</span>
+    <span class="n">small</span> <span class="o">=</span> <span class="n">x</span> <span class="o">&lt;</span> <span class="n">_X_SERIES</span>
+    <span class="n">safe</span><span class="p">,</span> <span class="n">near</span> <span class="o">=</span> <span class="n">xp</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">small</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">,</span> <span class="n">x</span><span class="p">),</span> <span class="n">xp</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">small</span><span class="p">,</span> <span class="n">x</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">)</span>
+    <span class="n">series</span> <span class="o">=</span> <span class="nb">sum</span><span class="p">(</span><span class="n">c</span> <span class="o">*</span> <span class="n">near</span> <span class="o">**</span> <span class="p">(</span><span class="mi">2</span> <span class="o">*</span> <span class="n">k</span><span class="p">)</span> <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">c</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">_SERIES</span><span class="p">))</span>
+    <span class="k">return</span> <span class="n">xp</span><span class="o">.</span><span class="n">where</span><span class="p">(</span><span class="n">small</span><span class="p">,</span> <span class="n">series</span><span class="o">**</span><span class="mi">2</span><span class="p">,</span> <span class="p">(</span><span class="mi">2</span> <span class="o">*</span> <span class="n">bessel</span><span class="p">(</span><span class="n">safe</span><span class="p">)</span> <span class="o">/</span> <span class="n">safe</span><span class="p">)</span> <span class="o">**</span> <span class="mi">2</span><span class="p">)</span>
 
 
 <span class="c1">#: Argument at which the Airy pattern drops to one half.</span>
 <span class="n">X_HALF</span> <span class="o">=</span> <span class="n">brentq</span><span class="p">(</span><span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="n">_airy</span><span class="p">(</span><span class="n">x</span><span class="p">)</span> <span class="o">-</span> <span class="mf">0.5</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">,</span> <span class="n">_X_NULL</span><span class="p">)</span>
 
 
-<span class="k">def</span><span class="w"> </span><span class="nf">primary_beam_fwhm</span><span class="p">(</span><span class="n">freq_hz</span><span class="p">,</span> <span class="n">dish_diameter</span><span class="p">,</span> <span class="n">fwhm_factor</span><span class="o">=</span><span class="n">FWHM_FACTOR</span><span class="p">):</span>
-    <span class="k">return</span> <span class="n">fwhm_factor</span> <span class="o">*</span> <span class="n">C</span> <span class="o">/</span> <span class="p">(</span><span class="n">freq_hz</span> <span class="o">*</span> <span class="n">dish_diameter</span> <span class="o">*</span> <span class="n">ARCSEC</span><span class="p">)</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">primary_beam_fwhm</span><span class="p">(</span><span class="n">freq_hz</span><span class="p">,</span> <span class="n">dish_diameter</span><span class="p">):</span>
+    <span class="k">return</span> <span class="n">FWHM_FACTOR</span> <span class="o">*</span> <span class="n">C</span> <span class="o">/</span> <span class="p">(</span><span class="n">freq_hz</span> <span class="o">*</span> <span class="n">dish_diameter</span> <span class="o">*</span> <span class="n">ARCSEC</span><span class="p">)</span>
 
 
 <div class="viewcode-block" id="primary_beam">
 <a class="viewcode-back" href="../../generated/luv_finder.utils.html#luv_finder.utils.primary_beam">[docs]</a>
-<span class="k">def</span><span class="w"> </span><span class="nf">primary_beam</span><span class="p">(</span><span class="n">offset_arcsec</span><span class="p">,</span> <span class="n">freq_hz</span><span class="p">,</span> <span class="n">dish_diameter</span><span class="p">,</span> <span class="n">fwhm_factor</span><span class="o">=</span><span class="n">FWHM_FACTOR</span><span class="p">,</span> <span class="n">xp</span><span class="o">=</span><span class="n">np</span><span class="p">):</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">primary_beam</span><span class="p">(</span><span class="n">offset_arcsec</span><span class="p">,</span> <span class="n">freq_hz</span><span class="p">,</span> <span class="n">dish_diameter</span><span class="p">,</span> <span class="n">xp</span><span class="o">=</span><span class="n">np</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">"""Primary-beam attenuation in [0, 1] at an angular offset from the pointing centre."""</span>
-    <span class="n">fwhm</span> <span class="o">=</span> <span class="n">primary_beam_fwhm</span><span class="p">(</span><span class="n">freq_hz</span><span class="p">,</span> <span class="n">dish_diameter</span><span class="p">,</span> <span class="n">fwhm_factor</span><span class="p">)</span>
+    <span class="n">fwhm</span> <span class="o">=</span> <span class="n">primary_beam_fwhm</span><span class="p">(</span><span class="n">freq_hz</span><span class="p">,</span> <span class="n">dish_diameter</span><span class="p">)</span>
     <span class="k">return</span> <span class="n">_airy</span><span class="p">(</span><span class="mi">2</span> <span class="o">*</span> <span class="n">X_HALF</span> <span class="o">*</span> <span class="n">xp</span><span class="o">.</span><span class="n">asarray</span><span class="p">(</span><span class="n">offset_arcsec</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">float</span><span class="p">)</span> <span class="o">/</span> <span class="n">fwhm</span><span class="p">,</span> <span class="n">xp</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="primary_beam_at">
+<a class="viewcode-back" href="../../generated/luv_finder.utils.html#luv_finder.utils.primary_beam_at">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">primary_beam_at</span><span class="p">(</span><span class="n">dra</span><span class="p">,</span> <span class="n">ddec</span><span class="p">,</span> <span class="n">offset</span><span class="p">,</span> <span class="n">freq_hz</span><span class="p">,</span> <span class="n">dish_diameter</span><span class="p">,</span> <span class="n">xp</span><span class="o">=</span><span class="n">np</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">""":func:`primary_beam` at (``dra``, ``ddec``) arcsec of the pointing centred on ``offset``."""</span>
+    <span class="k">return</span> <span class="n">primary_beam</span><span class="p">(</span><span class="n">xp</span><span class="o">.</span><span class="n">hypot</span><span class="p">(</span><span class="n">dra</span> <span class="o">-</span> <span class="n">offset</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">ddec</span> <span class="o">-</span> <span class="n">offset</span><span class="p">[</span><span class="mi">1</span><span class="p">]),</span> <span class="n">freq_hz</span><span class="p">,</span> <span class="n">dish_diameter</span><span class="p">,</span> <span class="n">xp</span><span class="o">=</span><span class="n">xp</span><span class="p">)</span></div>
 
 
 
 <div class="viewcode-block" id="primary_beam_radius">
 <a class="viewcode-back" href="../../generated/luv_finder.utils.html#luv_finder.utils.primary_beam_radius">[docs]</a>
-<span class="k">def</span><span class="w"> </span><span class="nf">primary_beam_radius</span><span class="p">(</span><span class="n">level</span><span class="p">,</span> <span class="n">freq_hz</span><span class="p">,</span> <span class="n">dish_diameter</span><span class="p">,</span> <span class="n">fwhm_factor</span><span class="o">=</span><span class="n">FWHM_FACTOR</span><span class="p">):</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">primary_beam_radius</span><span class="p">(</span><span class="n">level</span><span class="p">,</span> <span class="n">freq_hz</span><span class="p">,</span> <span class="n">dish_diameter</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">"""Offset in arcsec at which the main lobe falls to ``level`` (``0 &lt; level &lt;= 1``)."""</span>
     <span class="k">if</span> <span class="ow">not</span> <span class="mi">0</span> <span class="o">&lt;</span> <span class="n">level</span> <span class="o">&lt;=</span> <span class="mi">1</span><span class="p">:</span>
         <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">"level must be in (0, 1], got </span><span class="si">{</span><span class="n">level</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
     <span class="n">x</span> <span class="o">=</span> <span class="mf">0.0</span> <span class="k">if</span> <span class="n">level</span> <span class="o">==</span> <span class="mi">1</span> <span class="k">else</span> <span class="n">brentq</span><span class="p">(</span><span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="n">_airy</span><span class="p">(</span><span class="n">x</span><span class="p">)</span> <span class="o">-</span> <span class="n">level</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="n">_X_NULL</span><span class="p">)</span>
-    <span class="k">return</span> <span class="n">x</span> <span class="o">/</span> <span class="p">(</span><span class="mi">2</span> <span class="o">*</span> <span class="n">X_HALF</span><span class="p">)</span> <span class="o">*</span> <span class="n">primary_beam_fwhm</span><span class="p">(</span><span class="n">freq_hz</span><span class="p">,</span> <span class="n">dish_diameter</span><span class="p">,</span> <span class="n">fwhm_factor</span><span class="p">)</span></div>
-
-
-
-<div class="viewcode-block" id="getstatwtweights">
-<a class="viewcode-back" href="../../generated/luv_finder.utils.html#luv_finder.utils.getstatwtweights">[docs]</a>
-<span class="k">def</span><span class="w"> </span><span class="nf">getstatwtweights</span><span class="p">(</span><span class="n">vis</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">seed</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">"""Reset WEIGHT in-place from the scan-jackknifed real-part scatter.</span>
-
-<span class="sd">    ``simobserve`` leaves ``WEIGHT = 1`` and writes no ``WEIGHT_SPECTRUM``, so</span>
-<span class="sd">    this sets one weight per row from the injected noise level. Real data carry</span>
-<span class="sd">    per-channel weights; mocks built this way do not.</span>
-<span class="sd">    """</span>
-    <span class="kn">from</span><span class="w"> </span><span class="nn">.data</span><span class="w"> </span><span class="kn">import</span> <span class="n">pair_weight</span><span class="p">,</span> <span class="n">target_selection</span>
-
-    <span class="n">rng</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">default_rng</span><span class="p">(</span><span class="n">seed</span><span class="p">)</span>
-    <span class="n">fields</span><span class="p">,</span> <span class="n">spws</span> <span class="o">=</span> <span class="n">target_selection</span><span class="p">(</span><span class="n">vis</span><span class="p">)</span>
-    <span class="k">for</span> <span class="n">field</span> <span class="ow">in</span> <span class="n">fields</span><span class="p">:</span>
-        <span class="k">for</span> <span class="n">spw</span> <span class="ow">in</span> <span class="n">spws</span><span class="p">:</span>
-            <span class="n">ms</span> <span class="o">=</span> <span class="n">tools</span><span class="p">()</span><span class="o">.</span><span class="n">ms</span><span class="p">()</span>
-            <span class="n">ms</span><span class="o">.</span><span class="n">open</span><span class="p">(</span><span class="n">vis</span><span class="p">,</span> <span class="n">nomodify</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
-            <span class="n">ms</span><span class="o">.</span><span class="n">selectinit</span><span class="p">(</span><span class="n">reset</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
-            <span class="n">ms</span><span class="o">.</span><span class="n">selectinit</span><span class="p">(</span><span class="n">datadescid</span><span class="o">=</span><span class="nb">int</span><span class="p">(</span><span class="n">spw</span><span class="p">))</span>
-            <span class="n">ms</span><span class="o">.</span><span class="n">select</span><span class="p">({</span><span class="s2">"field_id"</span><span class="p">:</span> <span class="nb">int</span><span class="p">(</span><span class="n">field</span><span class="p">)})</span>
-            <span class="n">rec</span> <span class="o">=</span> <span class="n">ms</span><span class="o">.</span><span class="n">getdata</span><span class="p">([</span><span class="s2">"data"</span><span class="p">,</span> <span class="s2">"weight"</span><span class="p">,</span> <span class="s2">"time"</span><span class="p">])</span>
-            <span class="n">uvwght</span> <span class="o">=</span> <span class="n">pair_weight</span><span class="p">(</span><span class="n">rec</span><span class="p">[</span><span class="s2">"weight"</span><span class="p">][</span><span class="mi">0</span><span class="p">],</span> <span class="n">rec</span><span class="p">[</span><span class="s2">"weight"</span><span class="p">][</span><span class="mi">1</span><span class="p">])</span>
-
-            <span class="n">uvreal</span> <span class="o">=</span> <span class="p">(</span><span class="n">rec</span><span class="p">[</span><span class="s2">"data"</span><span class="p">][</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">real</span> <span class="o">+</span> <span class="n">rec</span><span class="p">[</span><span class="s2">"data"</span><span class="p">][</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">real</span><span class="p">)</span> <span class="o">/</span> <span class="mf">2.0</span>
-            <span class="n">uvtime</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">ones_like</span><span class="p">(</span><span class="n">uvreal</span><span class="p">)</span> <span class="o">*</span> <span class="n">rec</span><span class="p">[</span><span class="s2">"time"</span><span class="p">]</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">)</span>
-            <span class="n">scans</span><span class="p">,</span> <span class="n">idx</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">unique</span><span class="p">(</span><span class="n">uvtime</span><span class="p">,</span> <span class="n">return_inverse</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
-            <span class="n">neg</span> <span class="o">=</span> <span class="p">(</span><span class="n">idx</span> <span class="o">%</span> <span class="mi">2</span><span class="p">)</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="nb">bool</span><span class="p">)</span>
-            <span class="n">pos</span> <span class="o">=</span> <span class="o">~</span><span class="n">neg</span>
-            <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">scans</span><span class="p">)</span> <span class="o">%</span> <span class="mi">2</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>
-                <span class="n">pos</span><span class="p">[</span><span class="n">idx</span> <span class="o">==</span> <span class="n">idx</span><span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">False</span>
-            <span class="n">white_noise</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">nanstd</span><span class="p">(</span><span class="mf">0.5</span> <span class="o">*</span> <span class="p">(</span><span class="n">uvreal</span><span class="p">[</span><span class="n">pos</span><span class="p">]</span> <span class="o">-</span> <span class="n">uvreal</span><span class="p">[</span><span class="n">neg</span><span class="p">]))</span>
-            <span class="n">noise</span> <span class="o">=</span> <span class="n">rng</span><span class="o">.</span><span class="n">normal</span><span class="p">(</span><span class="n">white_noise</span><span class="p">,</span> <span class="n">white_noise</span> <span class="o">/</span> <span class="n">np</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">uvwght</span><span class="o">.</span><span class="n">size</span><span class="p">),</span> <span class="n">size</span><span class="o">=</span><span class="n">uvwght</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span>
-            <span class="n">wgts</span> <span class="o">=</span> <span class="mi">1</span> <span class="o">/</span> <span class="n">noise</span><span class="o">**</span><span class="mi">2</span>
-            <span class="n">rec</span><span class="p">[</span><span class="s2">"weight"</span><span class="p">][</span><span class="mi">0</span><span class="p">]</span> <span class="o">=</span> <span class="n">wgts</span> <span class="o">/</span> <span class="mi">4</span>
-            <span class="n">rec</span><span class="p">[</span><span class="s2">"weight"</span><span class="p">][</span><span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="n">wgts</span> <span class="o">/</span> <span class="mi">4</span>
-            <span class="n">ms</span><span class="o">.</span><span class="n">putdata</span><span class="p">(</span><span class="n">rec</span><span class="p">)</span>
-            <span class="n">ms</span><span class="o">.</span><span class="n">reset</span><span class="p">()</span>
-            <span class="n">ms</span><span class="o">.</span><span class="n">close</span><span class="p">()</span></div>
+    <span class="k">return</span> <span class="n">x</span> <span class="o">/</span> <span class="p">(</span><span class="mi">2</span> <span class="o">*</span> <span class="n">X_HALF</span><span class="p">)</span> <span class="o">*</span> <span class="n">primary_beam_fwhm</span><span class="p">(</span><span class="n">freq_hz</span><span class="p">,</span> <span class="n">dish_diameter</span><span class="p">)</span></div>
 
 </pre></div>
         </article>

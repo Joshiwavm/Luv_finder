@@ -279,8 +279,8 @@ mocks. Native arm64 wheels exist for Python 3.12 on macOS &gt;= 14.</p>
 </dd>
 </dl>
 <p>Reading data and simulating mocks are NumPy (and CASA); the matched filter is JAX, in
-float64. Exporting a measurement set to NPZ with <code class="docutils literal notranslate"><span class="pre">luv-export</span></code> lets everything else run
-without CASA.</p>
+float64. A run exports its measurement set to NPZ once, so every later step runs without
+CASA.</p>
 </section>
 <section id="casa-setup">
 <h2>CASA setup<a class="headerlink" href="#casa-setup" title="Link to this heading">¶</a></h2>

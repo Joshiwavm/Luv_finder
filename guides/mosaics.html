@@ -267,11 +267,12 @@
 <section id="data-layout">
 <h2>Data layout<a class="headerlink" href="#data-layout" title="Link to this heading">¶</a></h2>
 <p><a class="reference internal" href="../generated/luv_finder.data.html#luv_finder.data.DataHandler" title="luv_finder.data.DataHandler"><code class="xref py py-class docutils literal notranslate"><span class="pre">DataHandler</span></code></a> holds one <a class="reference internal" href="../generated/luv_finder.data.html#luv_finder.data.Chunk" title="luv_finder.data.Chunk"><code class="xref py py-class docutils literal notranslate"><span class="pre">Chunk</span></code></a> per
-(field, spectral window): the weighted visibilities <code class="docutils literal notranslate"><span class="pre">X</span> <span class="pre">=</span> <span class="pre">w</span> <span class="pre">*</span> <span class="pre">V</span></code> and their flags as
-<code class="docutils literal notranslate"><span class="pre">(n_chan,</span> <span class="pre">n_row)</span></code> arrays, and <code class="docutils literal notranslate"><span class="pre">u</span></code>, <code class="docutils literal notranslate"><span class="pre">v</span></code>, time and weight once per row and frequency
-once per channel. The weight is the measurement set’s <code class="docutils literal notranslate"><span class="pre">WEIGHT</span></code> column (Stokes I of the
-parallel hands); flags zero it per channel. Autocorrelations and flagged rows are dropped
-on reading.</p>
+(field, spectral window): the weighted visibilities <code class="docutils literal notranslate"><span class="pre">X</span> <span class="pre">=</span> <span class="pre">w</span> <span class="pre">*</span> <span class="pre">V</span></code> and the weight of every
+visibility <code class="docutils literal notranslate"><span class="pre">w</span></code> (0 where flagged) as <code class="docutils literal notranslate"><span class="pre">(n_chan,</span> <span class="pre">n_row)</span></code> arrays, <code class="docutils literal notranslate"><span class="pre">u</span></code>, <code class="docutils literal notranslate"><span class="pre">v</span></code>, time,
+baseline and scan per row and frequency per channel. The weights are Stokes I of
+<code class="docutils literal notranslate"><span class="pre">WEIGHT_SPECTRUM</span></code> (or <code class="docutils literal notranslate"><span class="pre">WEIGHT</span></code>), corrected on reading per scan and channel by the
+noise measured from pairs of each baseline’s integrations. Autocorrelations and flagged
+rows are dropped.</p>
 <p>Positions (<code class="docutils literal notranslate"><span class="pre">dra</span></code>, <code class="docutils literal notranslate"><span class="pre">ddec</span></code>) are arcsec east and north of one reference direction per
 dataset, the phase centre of its first target field. Every chunk knows its own field’s
 phase centre in that frame, so a grid point is the same sky position in every pointing,
@@ -288,28 +289,27 @@ pointings:</p>
 <span class="n">result</span> <span class="o">=</span> <span class="n">search_pointings</span><span class="p">(</span><span class="s2">"mosaic.npz"</span><span class="p">,</span> <span class="p">{</span><span class="s2">"width"</span><span class="p">:</span> <span class="p">[</span><span class="mf">200.0</span><span class="p">,</span> <span class="mf">300.0</span><span class="p">]},</span> <span class="n">jackknife</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
 </pre></div>
 </div>
-<p>Each pointing covers the region where its primary beam is at least <code class="docutils literal notranslate"><span class="pre">pb_limit</span></code> (0.2 by
-default). A dataset with a single field is primary-beam corrected too, so everything
+<p>Each pointing covers the region where its primary beam is at least <code class="docutils literal notranslate"><span class="pre">pb_limit</span></code>
+(<code class="docutils literal notranslate"><span class="pre">utils.PB_LIMIT</span></code>, 0.2). A dataset with a single field is primary-beam corrected too, so everything
 downstream sees PB-corrected results. The steps are available separately as
 <a class="reference internal" href="../generated/luv_finder.matchedfilter.html#luv_finder.matchedfilter.build_grid" title="luv_finder.matchedfilter.build_grid"><code class="xref py py-func docutils literal notranslate"><span class="pre">build_grid()</span></code></a>,
 <a class="reference internal" href="../generated/luv_finder.matchedfilter.html#luv_finder.matchedfilter.MatchedFilter.run" title="luv_finder.matchedfilter.MatchedFilter.run"><code class="xref py py-meth docutils literal notranslate"><span class="pre">MatchedFilter.run</span></code></a>,
 <a class="reference internal" href="../generated/luv_finder.matchedfilter.html#luv_finder.matchedfilter.pb_corrected" title="luv_finder.matchedfilter.pb_corrected"><code class="xref py py-func docutils literal notranslate"><span class="pre">pb_corrected()</span></code></a> and
 <a class="reference internal" href="../generated/luv_finder.matchedfilter.html#luv_finder.matchedfilter.combine_pointings" title="luv_finder.matchedfilter.combine_pointings"><code class="xref py py-func docutils literal notranslate"><span class="pre">combine_pointings()</span></code></a>.</p>
 <p>From the command line:</p>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>luv-export<span class="w"> </span>--ms<span class="w"> </span>mosaic.ms<span class="w"> </span>--out<span class="w"> </span>mosaic.npz
-luv-find<span class="w"> </span>--ms<span class="w"> </span>mosaic.npz<span class="w"> </span>--grid<span class="w"> </span>grid.yaml<span class="w"> </span>--jackknife<span class="w"> </span>--out<span class="w"> </span>mosaic_response.npz
-luv-find<span class="w"> </span>--ms<span class="w"> </span>mosaic.npz<span class="w"> </span>--field<span class="w"> </span><span class="m">1</span><span class="w"> </span>--grid<span class="w"> </span>grid.yaml<span class="w"> </span>--out<span class="w"> </span>field1.npz
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>luv-find<span class="w"> </span>--ms<span class="w"> </span>mosaic.ms<span class="w"> </span>--grid<span class="w"> </span>grid.yaml<span class="w"> </span>--jackknife<span class="w"> </span>--out<span class="w"> </span>mosaic_response.npz
+luv-find<span class="w"> </span>--ms<span class="w"> </span>mosaic.ms<span class="w"> </span>--field<span class="w"> </span><span class="m">1</span><span class="w"> </span>--grid<span class="w"> </span>grid.yaml<span class="w"> </span>--out<span class="w"> </span>field1.npz
 </pre></div>
 </div>
-<p>Without <code class="docutils literal notranslate"><span class="pre">--field</span></code> a dataset with several fields goes through <code class="docutils literal notranslate"><span class="pre">search_pointings</span></code>, and
-the best grid point of the combined, PB-corrected result is reported. With <code class="docutils literal notranslate"><span class="pre">--field</span></code>,
-or for a single field, one pointing is searched as it is; it is PB-corrected only when a
-<code class="docutils literal notranslate"><span class="pre">--catalogue</span></code> is written.</p>
+<p><code class="docutils literal notranslate"><span class="pre">luv-find</span></code> goes through <code class="docutils literal notranslate"><span class="pre">search_pointings</span></code>: every field, or the one <code class="docutils literal notranslate"><span class="pre">--field</span></code>
+names, PB-corrected and combined, and reports the best grid point. A run does the same
+for its catalogue.</p>
 </section>
 <section id="the-primary-beam">
 <h2>The primary beam<a class="headerlink" href="#the-primary-beam" title="Link to this heading">¶</a></h2>
 <p><a class="reference internal" href="../generated/luv_finder.utils.html#luv_finder.utils.primary_beam" title="luv_finder.utils.primary_beam"><code class="xref py py-func docutils literal notranslate"><span class="pre">luv_finder.utils.primary_beam()</span></code></a> is an Airy pattern scaled to the FWHM the ALMA
-Technical Handbook gives for the real antennas, 1.13 lambda/D. Dividing by it leaves a
+Technical Handbook gives for the real antennas, 1.13 lambda/D, its series near the
+pointing centre so the fit’s derivatives hold there. Dividing by it leaves a
 pointing’s S/N unchanged; the combination weights every pointing by PB^2/sigma^2, so
 overlaps gain S/N, and a pointing contributes nothing where its PB is below
 <code class="docutils literal notranslate"><span class="pre">pb_limit</span></code>.</p>

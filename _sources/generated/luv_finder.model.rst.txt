@@ -8,14 +8,17 @@
 
    .. autosummary::
    
+      LINE_FLUX
       CONTINUUM_ORDER
    
    .. rubric:: Functions
 
    .. autosummary::
    
+      continuum_basis
       covariance
       envelope
+      line_profile
       rotated
    
    .. rubric:: Classes
@@ -23,5 +26,4 @@
    .. autosummary::
    
       Gaussian
-      Model
    

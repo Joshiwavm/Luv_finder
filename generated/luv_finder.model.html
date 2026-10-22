@@ -264,15 +264,15 @@
         <article role="main" id="furo-main-content">
           <section id="module-luv_finder.model">
 <span id="luv-finder-model"></span><h1>luv_finder.model<a class="headerlink" href="#module-luv_finder.model" title="Link to this heading">¶</a></h1>
-<p>Parametric UV-domain source models.</p>
-<p>Parameter naming convention: every component attribute is exposed as
-<code class="docutils literal notranslate"><span class="pre">src_{component_index:02d}_{attribute}</span></code> (e.g. <code class="docutils literal notranslate"><span class="pre">src_00_nu_center</span></code>). The
-matched filter parses this key to route values back onto the component.</p>
+<p>The source model, a Gaussian line from a Gaussian source evaluated in the UV plane, and its shared formulas.</p>
 <p class="rubric">Module Attributes</p>
 <div class="table-wrapper autosummary longtable docutils container">
 <table class="autosummary longtable docutils align-default">
 <tbody>
-<tr class="row-odd"><td><p><a class="reference internal" href="#luv_finder.model.CONTINUUM_ORDER" title="luv_finder.model.CONTINUUM_ORDER"><code class="xref py py-obj docutils literal notranslate"><span class="pre">CONTINUUM_ORDER</span></code></a></p></td>
+<tr class="row-odd"><td><p><a class="reference internal" href="#luv_finder.model.LINE_FLUX" title="luv_finder.model.LINE_FLUX"><code class="xref py py-obj docutils literal notranslate"><span class="pre">LINE_FLUX</span></code></a></p></td>
+<td><p>Line flux per peak flux density and FWHM of a Gaussian line, <code class="docutils literal notranslate"><span class="pre">sqrt(2</span> <span class="pre">pi)</span> <span class="pre">/</span> <span class="pre">2.355</span></code>.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#luv_finder.model.CONTINUUM_ORDER" title="luv_finder.model.CONTINUUM_ORDER"><code class="xref py py-obj docutils literal notranslate"><span class="pre">CONTINUUM_ORDER</span></code></a></p></td>
 <td><p>Degree of the continuum polynomial fitted with each line, in the search and the fit.</p></td>
 </tr>
 </tbody>
@@ -282,11 +282,17 @@ matched filter parses this key to route values back onto the component.</p>
 <div class="table-wrapper autosummary longtable docutils container">
 <table class="autosummary longtable docutils align-default">
 <tbody>
-<tr class="row-odd"><td><p><a class="reference internal" href="#luv_finder.model.covariance" title="luv_finder.model.covariance"><code class="xref py py-obj docutils literal notranslate"><span class="pre">covariance</span></code></a>(bmaj, bmin, pa[, xp])</p></td>
-<td><p>Sky covariance <code class="docutils literal notranslate"><span class="pre">(s_ee,</span> <span class="pre">s_nn,</span> <span class="pre">s_en)</span></code> of a Gaussian of axes (sigma) <code class="docutils literal notranslate"><span class="pre">bmaj</span></code>, <code class="docutils literal notranslate"><span class="pre">bmin</span></code> at <code class="docutils literal notranslate"><span class="pre">pa</span></code> deg E of N.</p></td>
+<tr class="row-odd"><td><p><a class="reference internal" href="#luv_finder.model.continuum_basis" title="luv_finder.model.continuum_basis"><code class="xref py py-obj docutils literal notranslate"><span class="pre">continuum_basis</span></code></a>(n_chan, terms[, xp])</p></td>
+<td><p>The continuum's <code class="docutils literal notranslate"><span class="pre">terms</span></code> polynomials, powers of the channel index mapped to [-1, 1]: <code class="docutils literal notranslate"><span class="pre">(n_chan,</span> <span class="pre">terms)</span></code>.</p></td>
 </tr>
-<tr class="row-even"><td><p><a class="reference internal" href="#luv_finder.model.envelope" title="luv_finder.model.envelope"><code class="xref py py-obj docutils literal notranslate"><span class="pre">envelope</span></code></a>(uw, vw, cov[, xp])</p></td>
+<tr class="row-even"><td><p><a class="reference internal" href="#luv_finder.model.covariance" title="luv_finder.model.covariance"><code class="xref py py-obj docutils literal notranslate"><span class="pre">covariance</span></code></a>(bmaj, bmin, pa[, xp])</p></td>
+<td><p>Sky covariance <code class="docutils literal notranslate"><span class="pre">(s_ee,</span> <span class="pre">s_nn,</span> <span class="pre">s_en)</span></code> of a Gaussian of FWHM <code class="docutils literal notranslate"><span class="pre">bmaj</span></code>, <code class="docutils literal notranslate"><span class="pre">bmin</span></code> at <code class="docutils literal notranslate"><span class="pre">pa</span></code> deg E of N.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#luv_finder.model.envelope" title="luv_finder.model.envelope"><code class="xref py py-obj docutils literal notranslate"><span class="pre">envelope</span></code></a>(uw, vw, cov[, xp])</p></td>
 <td><p>Visibility amplitude at (uw, vw) wavelengths of a unit-flux Gaussian of sky covariance <code class="docutils literal notranslate"><span class="pre">cov</span></code> (rad^2).</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#luv_finder.model.line_profile" title="luv_finder.model.line_profile"><code class="xref py py-obj docutils literal notranslate"><span class="pre">line_profile</span></code></a>(freq, centre, width[, xp])</p></td>
+<td><p>Unit-peak Gaussian line at <code class="docutils literal notranslate"><span class="pre">freq</span></code> (Hz), centred on <code class="docutils literal notranslate"><span class="pre">centre</span></code> (Hz), of FWHM <code class="docutils literal notranslate"><span class="pre">width</span></code> (km/s).</p></td>
 </tr>
 <tr class="row-odd"><td><p><a class="reference internal" href="#luv_finder.model.rotated" title="luv_finder.model.rotated"><code class="xref py py-obj docutils literal notranslate"><span class="pre">rotated</span></code></a>(major, minor, pa[, xp])</p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">(s_ee,</span> <span class="pre">s_nn,</span> <span class="pre">s_en)</span></code> of variances <code class="docutils literal notranslate"><span class="pre">major</span></code> along <code class="docutils literal notranslate"><span class="pre">pa</span></code> deg east of north and <code class="docutils literal notranslate"><span class="pre">minor</span></code> across it.</p></td>
@@ -301,9 +307,6 @@ matched filter parses this key to route values back onto the component.</p>
 <tr class="row-odd"><td><p><a class="reference internal" href="#luv_finder.model.Gaussian" title="luv_finder.model.Gaussian"><code class="xref py py-obj docutils literal notranslate"><span class="pre">Gaussian</span></code></a>([dra, ddec, total_flux, bmin, ...])</p></td>
 <td><p>2D spatial x 1D spectral Gaussian evaluated directly in the UV plane.</p></td>
 </tr>
-<tr class="row-even"><td><p><a class="reference internal" href="#luv_finder.model.Model" title="luv_finder.model.Model"><code class="xref py py-obj docutils literal notranslate"><span class="pre">Model</span></code></a>()</p></td>
-<td><p>Container of source components with a flat, prefixed parameter list.</p></td>
-</tr>
 </tbody>
 </table>
 </div>
@@ -317,6 +320,8 @@ matched filter parses this key to route values back onto the component.</p>
 <dt class="sig sig-object py" id="luv_finder.model.Gaussian">
 <span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">luv_finder.model.</span></span><span class="sig-name descname"><span class="pre">Gaussian</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">dra</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">ddec</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">total_flux</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">bmin</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">bmaj</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">pa</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">nu_center</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">width</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">100.0</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/luv_finder/model.html#Gaussian"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#luv_finder.model.Gaussian" title="Link to this definition">¶</a></dt>
 <dd><p>2D spatial x 1D spectral Gaussian evaluated directly in the UV plane.</p>
+<p>Position (arcsec), FWHM axes <code class="docutils literal notranslate"><span class="pre">bmaj</span></code>, <code class="docutils literal notranslate"><span class="pre">bmin</span></code> (arcsec) at <code class="docutils literal notranslate"><span class="pre">pa</span></code> (deg E of N), line flux <code class="docutils literal notranslate"><span class="pre">total_flux</span></code>
+(Jy km/s) at <code class="docutils literal notranslate"><span class="pre">nu_center</span></code> (Hz) of FWHM <code class="docutils literal notranslate"><span class="pre">width</span></code> (km/s).</p>
 <dl class="py method">
 <dt class="sig sig-object py" id="luv_finder.model.Gaussian.envelope">
 <span class="sig-name descname"><span class="pre">envelope</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">chunk</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="(in NumPy v2.5)"><span class="pre">ndarray</span></a></span></span><a class="reference internal" href="../_modules/luv_finder/model.html#Gaussian.envelope"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#luv_finder.model.Gaussian.envelope" title="Link to this definition">¶</a></dt>
@@ -329,54 +334,36 @@ matched filter parses this key to route values back onto the component.</p>
 <dd><p>Line profile in Jy at <code class="docutils literal notranslate"><span class="pre">freq</span></code> (Hz).</p>
 </dd></dl>
 
-<dl class="py property">
-<dt class="sig sig-object py" id="luv_finder.model.Gaussian.width">
-<span class="property"><span class="k"><span class="pre">property</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">width</span></span><a class="headerlink" href="#luv_finder.model.Gaussian.width" title="Link to this definition">¶</a></dt>
-<dd><p>Spectral sigma in Hz.</p>
 </dd></dl>
 
+<dl class="py data">
+<dt class="sig sig-object py" id="luv_finder.model.LINE_FLUX">
+<span class="sig-prename descclassname"><span class="pre">luv_finder.model.</span></span><span class="sig-name descname"><span class="pre">LINE_FLUX</span></span><span class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">np.float64(1.0643856792488324)</span></span><a class="headerlink" href="#luv_finder.model.LINE_FLUX" title="Link to this definition">¶</a></dt>
+<dd><p>Line flux per peak flux density and FWHM of a Gaussian line, <code class="docutils literal notranslate"><span class="pre">sqrt(2</span> <span class="pre">pi)</span> <span class="pre">/</span> <span class="pre">2.355</span></code>.</p>
 </dd></dl>
 
-<dl class="py class">
-<dt class="sig sig-object py" id="luv_finder.model.Model">
-<span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-prename descclassname"><span class="pre">luv_finder.model.</span></span><span class="sig-name descname"><span class="pre">Model</span></span><a class="reference internal" href="../_modules/luv_finder/model.html#Model"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#luv_finder.model.Model" title="Link to this definition">¶</a></dt>
-<dd><p>Container of source components with a flat, prefixed parameter list.</p>
-<dl class="py class">
-<dt class="sig sig-object py" id="luv_finder.model.Model.Gaussian">
-<span class="property"><span class="k"><span class="pre">class</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">Gaussian</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">dra</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">ddec</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">total_flux</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">bmin</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">bmaj</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">pa</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">nu_center</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">width</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">100.0</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#luv_finder.model.Model.Gaussian" title="Link to this definition">¶</a></dt>
-<dd><p>2D spatial x 1D spectral Gaussian evaluated directly in the UV plane.</p>
-<dl class="py method">
-<dt class="sig sig-object py" id="luv_finder.model.Model.Gaussian.envelope">
-<span class="sig-name descname"><span class="pre">envelope</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">chunk</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="(in NumPy v2.5)"><span class="pre">ndarray</span></a></span></span><a class="headerlink" href="#luv_finder.model.Model.Gaussian.envelope" title="Link to this definition">¶</a></dt>
-<dd><p>Spatial envelope A(u, v): the source’s visibility amplitude, 1 at zero spacing, (n_chan, n_row).</p>
-</dd></dl>
-
-<dl class="py method">
-<dt class="sig sig-object py" id="luv_finder.model.Model.Gaussian.spectrum">
-<span class="sig-name descname"><span class="pre">spectrum</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">freq</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="(in NumPy v2.5)"><span class="pre">ndarray</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="(in NumPy v2.5)"><span class="pre">ndarray</span></a></span></span><a class="headerlink" href="#luv_finder.model.Model.Gaussian.spectrum" title="Link to this definition">¶</a></dt>
-<dd><p>Line profile in Jy at <code class="docutils literal notranslate"><span class="pre">freq</span></code> (Hz).</p>
-</dd></dl>
-
-<dl class="py property">
-<dt class="sig sig-object py" id="luv_finder.model.Model.Gaussian.width">
-<span class="property"><span class="k"><span class="pre">property</span></span><span class="w"> </span></span><span class="sig-name descname"><span class="pre">width</span></span><a class="headerlink" href="#luv_finder.model.Model.Gaussian.width" title="Link to this definition">¶</a></dt>
-<dd><p>Spectral sigma in Hz.</p>
-</dd></dl>
-
-</dd></dl>
-
+<dl class="py function">
+<dt class="sig sig-object py" id="luv_finder.model.continuum_basis">
+<span class="sig-prename descclassname"><span class="pre">luv_finder.model.</span></span><span class="sig-name descname"><span class="pre">continuum_basis</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">n_chan</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="(in Python v3.15)"><span class="pre">int</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">terms</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="(in Python v3.15)"><span class="pre">int</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">xp</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">&lt;module</span> <span class="pre">'numpy'</span> <span class="pre">from</span> <span class="pre">'/opt/hostedtoolcache/Python/3.12.15/x64/lib/python3.12/site-packages/numpy/__init__.py'&gt;</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/luv_finder/model.html#continuum_basis"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#luv_finder.model.continuum_basis" title="Link to this definition">¶</a></dt>
+<dd><p>The continuum’s <code class="docutils literal notranslate"><span class="pre">terms</span></code> polynomials, powers of the channel index mapped to [-1, 1]: <code class="docutils literal notranslate"><span class="pre">(n_chan,</span> <span class="pre">terms)</span></code>.</p>
 </dd></dl>
 
 <dl class="py function">
 <dt class="sig sig-object py" id="luv_finder.model.covariance">
 <span class="sig-prename descclassname"><span class="pre">luv_finder.model.</span></span><span class="sig-name descname"><span class="pre">covariance</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">bmaj</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">bmin</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">pa</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">xp</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">&lt;module</span> <span class="pre">'numpy'</span> <span class="pre">from</span> <span class="pre">'/opt/hostedtoolcache/Python/3.12.15/x64/lib/python3.12/site-packages/numpy/__init__.py'&gt;</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/luv_finder/model.html#covariance"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#luv_finder.model.covariance" title="Link to this definition">¶</a></dt>
-<dd><p>Sky covariance <code class="docutils literal notranslate"><span class="pre">(s_ee,</span> <span class="pre">s_nn,</span> <span class="pre">s_en)</span></code> of a Gaussian of axes (sigma) <code class="docutils literal notranslate"><span class="pre">bmaj</span></code>, <code class="docutils literal notranslate"><span class="pre">bmin</span></code> at <code class="docutils literal notranslate"><span class="pre">pa</span></code> deg E of N.</p>
+<dd><p>Sky covariance <code class="docutils literal notranslate"><span class="pre">(s_ee,</span> <span class="pre">s_nn,</span> <span class="pre">s_en)</span></code> of a Gaussian of FWHM <code class="docutils literal notranslate"><span class="pre">bmaj</span></code>, <code class="docutils literal notranslate"><span class="pre">bmin</span></code> at <code class="docutils literal notranslate"><span class="pre">pa</span></code> deg E of N.</p>
 </dd></dl>
 
 <dl class="py function">
 <dt class="sig sig-object py" id="luv_finder.model.envelope">
 <span class="sig-prename descclassname"><span class="pre">luv_finder.model.</span></span><span class="sig-name descname"><span class="pre">envelope</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">uw</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">vw</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">cov</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">xp</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">&lt;module</span> <span class="pre">'numpy'</span> <span class="pre">from</span> <span class="pre">'/opt/hostedtoolcache/Python/3.12.15/x64/lib/python3.12/site-packages/numpy/__init__.py'&gt;</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/luv_finder/model.html#envelope"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#luv_finder.model.envelope" title="Link to this definition">¶</a></dt>
 <dd><p>Visibility amplitude at (uw, vw) wavelengths of a unit-flux Gaussian of sky covariance <code class="docutils literal notranslate"><span class="pre">cov</span></code> (rad^2).</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="luv_finder.model.line_profile">
+<span class="sig-prename descclassname"><span class="pre">luv_finder.model.</span></span><span class="sig-name descname"><span class="pre">line_profile</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">freq</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">centre</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">width</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">xp</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">&lt;module</span> <span class="pre">'numpy'</span> <span class="pre">from</span> <span class="pre">'/opt/hostedtoolcache/Python/3.12.15/x64/lib/python3.12/site-packages/numpy/__init__.py'&gt;</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/luv_finder/model.html#line_profile"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#luv_finder.model.line_profile" title="Link to this definition">¶</a></dt>
+<dd><p>Unit-peak Gaussian line at <code class="docutils literal notranslate"><span class="pre">freq</span></code> (Hz), centred on <code class="docutils literal notranslate"><span class="pre">centre</span></code> (Hz), of FWHM <code class="docutils literal notranslate"><span class="pre">width</span></code> (km/s).</p>
 </dd></dl>
 
 <dl class="py function">
@@ -447,20 +434,13 @@ matched filter parses this key to route values back onto the component.</p>
 <li><a class="reference internal" href="#luv_finder.model.Gaussian"><code class="docutils literal notranslate"><span class="pre">Gaussian</span></code></a><ul>
 <li><a class="reference internal" href="#luv_finder.model.Gaussian.envelope"><code class="docutils literal notranslate"><span class="pre">Gaussian.envelope()</span></code></a></li>
 <li><a class="reference internal" href="#luv_finder.model.Gaussian.spectrum"><code class="docutils literal notranslate"><span class="pre">Gaussian.spectrum()</span></code></a></li>
-<li><a class="reference internal" href="#luv_finder.model.Gaussian.width"><code class="docutils literal notranslate"><span class="pre">Gaussian.width</span></code></a></li>
 </ul>
 </li>
-<li><a class="reference internal" href="#luv_finder.model.Model"><code class="docutils literal notranslate"><span class="pre">Model</span></code></a><ul>
-<li><a class="reference internal" href="#luv_finder.model.Model.Gaussian"><code class="docutils literal notranslate"><span class="pre">Model.Gaussian</span></code></a><ul>
-<li><a class="reference internal" href="#luv_finder.model.Model.Gaussian.envelope"><code class="docutils literal notranslate"><span class="pre">Model.Gaussian.envelope()</span></code></a></li>
-<li><a class="reference internal" href="#luv_finder.model.Model.Gaussian.spectrum"><code class="docutils literal notranslate"><span class="pre">Model.Gaussian.spectrum()</span></code></a></li>
-<li><a class="reference internal" href="#luv_finder.model.Model.Gaussian.width"><code class="docutils literal notranslate"><span class="pre">Model.Gaussian.width</span></code></a></li>
-</ul>
-</li>
-</ul>
-</li>
+<li><a class="reference internal" href="#luv_finder.model.LINE_FLUX"><code class="docutils literal notranslate"><span class="pre">LINE_FLUX</span></code></a></li>
+<li><a class="reference internal" href="#luv_finder.model.continuum_basis"><code class="docutils literal notranslate"><span class="pre">continuum_basis()</span></code></a></li>
 <li><a class="reference internal" href="#luv_finder.model.covariance"><code class="docutils literal notranslate"><span class="pre">covariance()</span></code></a></li>
 <li><a class="reference internal" href="#luv_finder.model.envelope"><code class="docutils literal notranslate"><span class="pre">envelope()</span></code></a></li>
+<li><a class="reference internal" href="#luv_finder.model.line_profile"><code class="docutils literal notranslate"><span class="pre">line_profile()</span></code></a></li>
 <li><a class="reference internal" href="#luv_finder.model.rotated"><code class="docutils literal notranslate"><span class="pre">rotated()</span></code></a></li>
 </ul>
 </li>

@@ -8,6 +8,7 @@
 
    .. autosummary::
    
+      PB_LIMIT
       BLOCK_BYTES
       FWHM_FACTOR
       X_HALF
@@ -16,8 +17,8 @@
 
    .. autosummary::
    
-      getstatwtweights
       primary_beam
+      primary_beam_at
       primary_beam_fwhm
       primary_beam_radius
    

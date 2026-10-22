@@ -266,8 +266,8 @@
 <h1>Configuration<a class="headerlink" href="#configuration" title="Link to this heading">¶</a></h1>
 <section id="search-grids">
 <h2>Search grids<a class="headerlink" href="#search-grids" title="Link to this heading">¶</a></h2>
-<p><code class="docutils literal notranslate"><span class="pre">luv-find</span> <span class="pre">--grid</span> <span class="pre">grid.yaml</span></code> (or the <code class="docutils literal notranslate"><span class="pre">cfg</span></code> of <a class="reference internal" href="../generated/luv_finder.matchedfilter.html#luv_finder.matchedfilter.build_grid" title="luv_finder.matchedfilter.build_grid"><code class="xref py py-func docutils literal notranslate"><span class="pre">build_grid()</span></code></a>)
-sets the search axes. A value is a scalar (fixed), a list, or <code class="docutils literal notranslate"><span class="pre">{start,</span> <span class="pre">stop,</span> <span class="pre">step}</span></code>;
+<p>A grid YAML (<code class="docutils literal notranslate"><span class="pre">luv-find</span> <span class="pre">--grid</span></code>, a run’s <code class="docutils literal notranslate"><span class="pre">grid</span></code>, or the <code class="docutils literal notranslate"><span class="pre">cfg</span></code> of
+<a class="reference internal" href="../generated/luv_finder.matchedfilter.html#luv_finder.matchedfilter.build_grid" title="luv_finder.matchedfilter.build_grid"><code class="xref py py-func docutils literal notranslate"><span class="pre">build_grid()</span></code></a>) sets the search axes. A value is a scalar (fixed), a list, or <code class="docutils literal notranslate"><span class="pre">{start,</span> <span class="pre">stop,</span> <span class="pre">step}</span></code>;
 the grid is the product of all axes, so the cost is too. Omitted keys follow from the
 data:</p>
 <dl class="simple">
@@ -276,14 +276,16 @@ resolution out to where the primary beam falls to <code class="docutils literal 
 </dd>
 <dt><code class="docutils literal notranslate"><span class="pre">pb_limit</span></code></dt><dd><p>primary-beam level that bounds a pointing’s search (default 0.2).</p>
 </dd>
-<dt><code class="docutils literal notranslate"><span class="pre">bmaj</span></code>, <code class="docutils literal notranslate"><span class="pre">bmin</span></code>, <code class="docutils literal notranslate"><span class="pre">pa</span></code></dt><dd><p>the trial source’s axes (Gaussian sigma, arcsec) and position angle (degrees east of
-north); default a tenth of the resolution, effectively a point source.</p>
+<dt><code class="docutils literal notranslate"><span class="pre">bmaj</span></code>, <code class="docutils literal notranslate"><span class="pre">bmin</span></code>, <code class="docutils literal notranslate"><span class="pre">pa</span></code></dt><dd><p>the trial source’s axes (FWHM, arcsec) and position angle (degrees east of north);
+default 0.2355 of the resolution (a sigma of a tenth), effectively a point source.</p>
 </dd>
 <dt><code class="docutils literal notranslate"><span class="pre">width</span></code></dt><dd><p>line FWHM in km/s; default 100, 200, 300 and 400.</p>
 </dd>
 </dl>
-<p>The line centre is not an axis: every template is centred on every channel.
-<code class="docutils literal notranslate"><span class="pre">total_flux</span></code> is rejected, because it cancels in the normalisation.</p>
+<p>The line centre is not an axis: every template is centred on every channel. Any other
+key raises an error; <code class="docutils literal notranslate"><span class="pre">total_flux</span></code> in particular cancels in the normalisation.
+<a class="reference internal" href="../generated/luv_finder.matchedfilter.html#luv_finder.matchedfilter.MatchedFilter" title="luv_finder.matchedfilter.MatchedFilter"><code class="xref py py-class docutils literal notranslate"><span class="pre">MatchedFilter</span></code></a> takes the grid as a dict of the same
+keys, a value or a list each; a key left out takes its value from <code class="docutils literal notranslate"><span class="pre">GRID_DEFAULTS</span></code>.</p>
 <div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="c1"># configs/grids/default.yaml (comments trimmed): a blind search</span>
 <span class="nt">pb_limit</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.2</span>
 <span class="nt">width</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">100</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">200</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">300</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">400</span><span class="p p-Indicator">]</span><span class="w"> </span><span class="c1"># km/s</span>
@@ -294,11 +296,12 @@ north); default a tenth of the resolution, effectively a point source.</p>
 <h2>Filter options<a class="headerlink" href="#filter-options" title="Link to this heading">¶</a></h2>
 <dl class="simple">
 <dt><code class="docutils literal notranslate"><span class="pre">continuum_order</span></code> (<code class="docutils literal notranslate"><span class="pre">luv-find</span> <span class="pre">--continuum-order</span></code>)</dt><dd><p>degree of the polynomial continuum fitted with each line template per window and
-position (default 2; <code class="docutils literal notranslate"><span class="pre">none</span></code> turns it off). A line loses the part of its S/N the
-polynomial can mimic, a few per cent.</p>
+position (default 1; <code class="docutils literal notranslate"><span class="pre">none</span></code> turns it off). A line loses the part of its S/N the
+polynomial can mimic, a few per cent. Lines at S/N &gt;= 5 are left out of the continuum
+of the others at their position.</p>
 </dd>
-<dt><code class="docutils literal notranslate"><span class="pre">channel_correlation</span></code></dt><dd><p><code class="docutils literal notranslate"><span class="pre">&quot;measure&quot;</span></code> (default) measures it on the jackknife per spectral window; <code class="docutils literal notranslate"><span class="pre">None</span></code>
-assumes independent channels; or pass <code class="docutils literal notranslate"><span class="pre">{spw:</span> <span class="pre">rho}</span></code>.</p>
+<dt><code class="docutils literal notranslate"><span class="pre">channel_noise</span></code></dt><dd><p><code class="docutils literal notranslate"><span class="pre">&quot;measure&quot;</span></code> (default) measures the channel correlation on the jackknife per spectral
+window; <code class="docutils literal notranslate"><span class="pre">None</span></code> assumes independent channels; or pass <code class="docutils literal notranslate"><span class="pre">{spw:</span> <span class="pre">ChannelNoise}</span></code>.</p>
 </dd>
 <dt><code class="docutils literal notranslate"><span class="pre">cores</span></code> (<code class="docutils literal notranslate"><span class="pre">luv-find</span> <span class="pre">--cores</span></code>)</dt><dd><p>the search pins itself to a quarter of the cores, at most all but two, because the
 machines are shared (Linux only).</p>
@@ -314,11 +317,15 @@ data. Antenna configurations are not vendored: <code class="docutils literal not
 such as <code class="docutils literal notranslate"><span class="pre">alma.cycle13.3.cfg</span></code>. The presets and their pairing are listed in
 <a class="reference external" href="https://github.com/Joshiwavm/Luv_finder/blob/main/configs/README.md">configs/README.md</a>.</p>
 </section>
-<section id="parameter-naming">
-<h2>Parameter naming<a class="headerlink" href="#parameter-naming" title="Link to this heading">¶</a></h2>
-<p>Every component attribute is exposed as <code class="docutils literal notranslate"><span class="pre">src_{index:02d}_{name}</span></code> (<code class="docutils literal notranslate"><span class="pre">src_00_dra</span></code>,
-<code class="docutils literal notranslate"><span class="pre">src_00_width</span></code>, …), and grid dictionaries on a component are prefixed the same way
-when it is added to a <a class="reference internal" href="../generated/luv_finder.model.html#luv_finder.model.Model" title="luv_finder.model.Model"><code class="xref py py-class docutils literal notranslate"><span class="pre">Model</span></code></a>.</p>
+<section id="runs">
+<h2>Runs<a class="headerlink" href="#runs" title="Link to this heading">¶</a></h2>
+<p>A run YAML (<a class="reference internal" href="../quickstart.html"><span class="doc">Quickstart</span></a>) holds <code class="docutils literal notranslate"><span class="pre">data</span></code> and <code class="docutils literal notranslate"><span class="pre">output</span></code> and optionally <code class="docutils literal notranslate"><span class="pre">grid</span></code>,
+<code class="docutils literal notranslate"><span class="pre">pb_limit</span></code>, <code class="docutils literal notranslate"><span class="pre">max_channels</span></code>, <code class="docutils literal notranslate"><span class="pre">filter</span></code>, <code class="docutils literal notranslate"><span class="pre">reliability</span></code>, <code class="docutils literal notranslate"><span class="pre">near_miss</span></code> and <code class="docutils literal notranslate"><span class="pre">cores</span></code>.
+The search is planned in units: windows that overlap or whose gap is narrower than the
+widest template are one unit, so a line across a window edge is searched and fitted
+whole. <code class="docutils literal notranslate"><span class="pre">max_channels</span></code> cuts a long unit into chunks of whole blocks (windows overlapping
+by more than a channel) that load their neighbours and catalogue only the groups peaking
+in their own part, so the chunks give the unchopped catalogue.</p>
 </section>
 </section>
 
@@ -381,7 +388,7 @@ when it is added to a <a class="reference internal" href="../generated/luv_finde
 <li><a class="reference internal" href="#search-grids">Search grids</a></li>
 <li><a class="reference internal" href="#filter-options">Filter options</a></li>
 <li><a class="reference internal" href="#mock-presets">Mock presets</a></li>
-<li><a class="reference internal" href="#parameter-naming">Parameter naming</a></li>
+<li><a class="reference internal" href="#runs">Runs</a></li>
 </ul>
 </li>
 </ul>

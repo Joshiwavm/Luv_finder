@@ -264,20 +264,23 @@
         <article role="main" id="furo-main-content">
           <section id="module-luv_finder.utils">
 <span id="luv-finder-utils"></span><h1>luv_finder.utils<a class="headerlink" href="#module-luv_finder.utils" title="Link to this heading">¶</a></h1>
-<p>Shared constants, the analytic ALMA primary beam and the mock-weight helper.</p>
+<p>Shared constants and the analytic ALMA primary beam.</p>
 <p>The primary beam follows the ALMA Technical Handbook: the measured FWHM of the 12 m and 7 m antennas is
 about 1.13 lambda / D, and CASA models the beam as an Airy pattern scaled so that its FWHM matches.</p>
 <p class="rubric">Module Attributes</p>
 <div class="table-wrapper autosummary longtable docutils container">
 <table class="autosummary longtable docutils align-default">
 <tbody>
-<tr class="row-odd"><td><p><a class="reference internal" href="#luv_finder.utils.BLOCK_BYTES" title="luv_finder.utils.BLOCK_BYTES"><code class="xref py py-obj docutils literal notranslate"><span class="pre">BLOCK_BYTES</span></code></a></p></td>
+<tr class="row-odd"><td><p><a class="reference internal" href="#luv_finder.utils.PB_LIMIT" title="luv_finder.utils.PB_LIMIT"><code class="xref py py-obj docutils literal notranslate"><span class="pre">PB_LIMIT</span></code></a></p></td>
+<td><p>Primary-beam level down to which a pointing is searched, fitted and imaged.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#luv_finder.utils.BLOCK_BYTES" title="luv_finder.utils.BLOCK_BYTES"><code class="xref py py-obj docutils literal notranslate"><span class="pre">BLOCK_BYTES</span></code></a></p></td>
 <td><p>Arrays processed in blocks stay near this size in memory.</p></td>
 </tr>
-<tr class="row-even"><td><p><a class="reference internal" href="#luv_finder.utils.FWHM_FACTOR" title="luv_finder.utils.FWHM_FACTOR"><code class="xref py py-obj docutils literal notranslate"><span class="pre">FWHM_FACTOR</span></code></a></p></td>
+<tr class="row-odd"><td><p><a class="reference internal" href="#luv_finder.utils.FWHM_FACTOR" title="luv_finder.utils.FWHM_FACTOR"><code class="xref py py-obj docutils literal notranslate"><span class="pre">FWHM_FACTOR</span></code></a></p></td>
 <td><p>Measured primary-beam FWHM in units of lambda / D (ALMA Technical Handbook).</p></td>
 </tr>
-<tr class="row-odd"><td><p><a class="reference internal" href="#luv_finder.utils.X_HALF" title="luv_finder.utils.X_HALF"><code class="xref py py-obj docutils literal notranslate"><span class="pre">X_HALF</span></code></a></p></td>
+<tr class="row-even"><td><p><a class="reference internal" href="#luv_finder.utils.X_HALF" title="luv_finder.utils.X_HALF"><code class="xref py py-obj docutils literal notranslate"><span class="pre">X_HALF</span></code></a></p></td>
 <td><p>Argument at which the Airy pattern drops to one half.</p></td>
 </tr>
 </tbody>
@@ -287,16 +290,16 @@ about 1.13 lambda / D, and CASA models the beam as an Airy pattern scaled so tha
 <div class="table-wrapper autosummary longtable docutils container">
 <table class="autosummary longtable docutils align-default">
 <tbody>
-<tr class="row-odd"><td><p><a class="reference internal" href="#luv_finder.utils.getstatwtweights" title="luv_finder.utils.getstatwtweights"><code class="xref py py-obj docutils literal notranslate"><span class="pre">getstatwtweights</span></code></a>(vis[, seed])</p></td>
-<td><p>Reset WEIGHT in-place from the scan-jackknifed real-part scatter.</p></td>
-</tr>
-<tr class="row-even"><td><p><a class="reference internal" href="#luv_finder.utils.primary_beam" title="luv_finder.utils.primary_beam"><code class="xref py py-obj docutils literal notranslate"><span class="pre">primary_beam</span></code></a>(offset_arcsec, freq_hz, ...[, ...])</p></td>
+<tr class="row-odd"><td><p><a class="reference internal" href="#luv_finder.utils.primary_beam" title="luv_finder.utils.primary_beam"><code class="xref py py-obj docutils literal notranslate"><span class="pre">primary_beam</span></code></a>(offset_arcsec, freq_hz, ...[, xp])</p></td>
 <td><p>Primary-beam attenuation in [0, 1] at an angular offset from the pointing centre.</p></td>
 </tr>
-<tr class="row-odd"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">primary_beam_fwhm</span></code>(freq_hz, dish_diameter[, ...])</p></td>
+<tr class="row-even"><td><p><a class="reference internal" href="#luv_finder.utils.primary_beam_at" title="luv_finder.utils.primary_beam_at"><code class="xref py py-obj docutils literal notranslate"><span class="pre">primary_beam_at</span></code></a>(dra, ddec, offset, freq_hz, ...)</p></td>
+<td><p><a class="reference internal" href="#luv_finder.utils.primary_beam" title="luv_finder.utils.primary_beam"><code class="xref py py-func docutils literal notranslate"><span class="pre">primary_beam()</span></code></a> at (<code class="docutils literal notranslate"><span class="pre">dra</span></code>, <code class="docutils literal notranslate"><span class="pre">ddec</span></code>) arcsec of the pointing centred on <code class="docutils literal notranslate"><span class="pre">offset</span></code>.</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">primary_beam_fwhm</span></code>(freq_hz, dish_diameter)</p></td>
 <td><p></p></td>
 </tr>
-<tr class="row-even"><td><p><a class="reference internal" href="#luv_finder.utils.primary_beam_radius" title="luv_finder.utils.primary_beam_radius"><code class="xref py py-obj docutils literal notranslate"><span class="pre">primary_beam_radius</span></code></a>(level, freq_hz, ...[, ...])</p></td>
+<tr class="row-even"><td><p><a class="reference internal" href="#luv_finder.utils.primary_beam_radius" title="luv_finder.utils.primary_beam_radius"><code class="xref py py-obj docutils literal notranslate"><span class="pre">primary_beam_radius</span></code></a>(level, freq_hz, ...)</p></td>
 <td><p>Offset in arcsec at which the main lobe falls to <code class="docutils literal notranslate"><span class="pre">level</span></code> (<code class="docutils literal notranslate"><span class="pre">0</span> <span class="pre">&lt;</span> <span class="pre">level</span> <span class="pre">&lt;=</span> <span class="pre">1</span></code>).</p></td>
 </tr>
 </tbody>
@@ -315,29 +318,32 @@ about 1.13 lambda / D, and CASA models the beam as an Airy pattern scaled so tha
 </dd></dl>
 
 <dl class="py data">
+<dt class="sig sig-object py" id="luv_finder.utils.PB_LIMIT">
+<span class="sig-prename descclassname"><span class="pre">luv_finder.utils.</span></span><span class="sig-name descname"><span class="pre">PB_LIMIT</span></span><span class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">0.2</span></span><a class="headerlink" href="#luv_finder.utils.PB_LIMIT" title="Link to this definition">¶</a></dt>
+<dd><p>Primary-beam level down to which a pointing is searched, fitted and imaged.</p>
+</dd></dl>
+
+<dl class="py data">
 <dt class="sig sig-object py" id="luv_finder.utils.X_HALF">
 <span class="sig-prename descclassname"><span class="pre">luv_finder.utils.</span></span><span class="sig-name descname"><span class="pre">X_HALF</span></span><span class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">1.6163399483104932</span></span><a class="headerlink" href="#luv_finder.utils.X_HALF" title="Link to this definition">¶</a></dt>
 <dd><p>Argument at which the Airy pattern drops to one half.</p>
 </dd></dl>
 
 <dl class="py function">
-<dt class="sig sig-object py" id="luv_finder.utils.getstatwtweights">
-<span class="sig-prename descclassname"><span class="pre">luv_finder.utils.</span></span><span class="sig-name descname"><span class="pre">getstatwtweights</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">vis</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#str" title="(in Python v3.15)"><span class="pre">str</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">seed</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="(in Python v3.15)"><span class="pre">int</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">0</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/builtins/constants.html#None" title="(in Python v3.15)"><span class="pre">None</span></a></span></span><a class="reference internal" href="../_modules/luv_finder/utils.html#getstatwtweights"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#luv_finder.utils.getstatwtweights" title="Link to this definition">¶</a></dt>
-<dd><p>Reset WEIGHT in-place from the scan-jackknifed real-part scatter.</p>
-<p><code class="docutils literal notranslate"><span class="pre">simobserve</span></code> leaves <code class="docutils literal notranslate"><span class="pre">WEIGHT</span> <span class="pre">=</span> <span class="pre">1</span></code> and writes no <code class="docutils literal notranslate"><span class="pre">WEIGHT_SPECTRUM</span></code>, so
-this sets one weight per row from the injected noise level. Real data carry
-per-channel weights; mocks built this way do not.</p>
-</dd></dl>
-
-<dl class="py function">
 <dt class="sig sig-object py" id="luv_finder.utils.primary_beam">
-<span class="sig-prename descclassname"><span class="pre">luv_finder.utils.</span></span><span class="sig-name descname"><span class="pre">primary_beam</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">offset_arcsec</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">freq_hz</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dish_diameter</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">fwhm_factor</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1.13</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">xp</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">&lt;module</span> <span class="pre">'numpy'</span> <span class="pre">from</span> <span class="pre">'/opt/hostedtoolcache/Python/3.12.15/x64/lib/python3.12/site-packages/numpy/__init__.py'&gt;</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/luv_finder/utils.html#primary_beam"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#luv_finder.utils.primary_beam" title="Link to this definition">¶</a></dt>
+<span class="sig-prename descclassname"><span class="pre">luv_finder.utils.</span></span><span class="sig-name descname"><span class="pre">primary_beam</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">offset_arcsec</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">freq_hz</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dish_diameter</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">xp</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">&lt;module</span> <span class="pre">'numpy'</span> <span class="pre">from</span> <span class="pre">'/opt/hostedtoolcache/Python/3.12.15/x64/lib/python3.12/site-packages/numpy/__init__.py'&gt;</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/luv_finder/utils.html#primary_beam"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#luv_finder.utils.primary_beam" title="Link to this definition">¶</a></dt>
 <dd><p>Primary-beam attenuation in [0, 1] at an angular offset from the pointing centre.</p>
 </dd></dl>
 
 <dl class="py function">
+<dt class="sig sig-object py" id="luv_finder.utils.primary_beam_at">
+<span class="sig-prename descclassname"><span class="pre">luv_finder.utils.</span></span><span class="sig-name descname"><span class="pre">primary_beam_at</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">dra</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">ddec</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">offset</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">freq_hz</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dish_diameter</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">xp</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">&lt;module</span> <span class="pre">'numpy'</span> <span class="pre">from</span> <span class="pre">'/opt/hostedtoolcache/Python/3.12.15/x64/lib/python3.12/site-packages/numpy/__init__.py'&gt;</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/luv_finder/utils.html#primary_beam_at"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#luv_finder.utils.primary_beam_at" title="Link to this definition">¶</a></dt>
+<dd><p><a class="reference internal" href="#luv_finder.utils.primary_beam" title="luv_finder.utils.primary_beam"><code class="xref py py-func docutils literal notranslate"><span class="pre">primary_beam()</span></code></a> at (<code class="docutils literal notranslate"><span class="pre">dra</span></code>, <code class="docutils literal notranslate"><span class="pre">ddec</span></code>) arcsec of the pointing centred on <code class="docutils literal notranslate"><span class="pre">offset</span></code>.</p>
+</dd></dl>
+
+<dl class="py function">
 <dt class="sig sig-object py" id="luv_finder.utils.primary_beam_radius">
-<span class="sig-prename descclassname"><span class="pre">luv_finder.utils.</span></span><span class="sig-name descname"><span class="pre">primary_beam_radius</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">level</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">freq_hz</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dish_diameter</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">fwhm_factor</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1.13</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/luv_finder/utils.html#primary_beam_radius"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#luv_finder.utils.primary_beam_radius" title="Link to this definition">¶</a></dt>
+<span class="sig-prename descclassname"><span class="pre">luv_finder.utils.</span></span><span class="sig-name descname"><span class="pre">primary_beam_radius</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">level</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">freq_hz</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dish_diameter</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/luv_finder/utils.html#primary_beam_radius"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#luv_finder.utils.primary_beam_radius" title="Link to this definition">¶</a></dt>
 <dd><p>Offset in arcsec at which the main lobe falls to <code class="docutils literal notranslate"><span class="pre">level</span></code> (<code class="docutils literal notranslate"><span class="pre">0</span> <span class="pre">&lt;</span> <span class="pre">level</span> <span class="pre">&lt;=</span> <span class="pre">1</span></code>).</p>
 </dd></dl>
 
@@ -393,9 +399,10 @@ per-channel weights; mocks built this way do not.</p>
 <li><a class="reference internal" href="#">luv_finder.utils</a><ul>
 <li><a class="reference internal" href="#luv_finder.utils.BLOCK_BYTES"><code class="docutils literal notranslate"><span class="pre">BLOCK_BYTES</span></code></a></li>
 <li><a class="reference internal" href="#luv_finder.utils.FWHM_FACTOR"><code class="docutils literal notranslate"><span class="pre">FWHM_FACTOR</span></code></a></li>
+<li><a class="reference internal" href="#luv_finder.utils.PB_LIMIT"><code class="docutils literal notranslate"><span class="pre">PB_LIMIT</span></code></a></li>
 <li><a class="reference internal" href="#luv_finder.utils.X_HALF"><code class="docutils literal notranslate"><span class="pre">X_HALF</span></code></a></li>
-<li><a class="reference internal" href="#luv_finder.utils.getstatwtweights"><code class="docutils literal notranslate"><span class="pre">getstatwtweights()</span></code></a></li>
 <li><a class="reference internal" href="#luv_finder.utils.primary_beam"><code class="docutils literal notranslate"><span class="pre">primary_beam()</span></code></a></li>
+<li><a class="reference internal" href="#luv_finder.utils.primary_beam_at"><code class="docutils literal notranslate"><span class="pre">primary_beam_at()</span></code></a></li>
 <li><a class="reference internal" href="#luv_finder.utils.primary_beam_radius"><code class="docutils literal notranslate"><span class="pre">primary_beam_radius()</span></code></a></li>
 </ul>
 </li>
