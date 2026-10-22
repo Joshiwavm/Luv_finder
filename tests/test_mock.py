@@ -13,7 +13,7 @@ import yaml
 
 pytest.importorskip("casatasks")
 
-from luv_finder import Gaussian, MatchedFilter, MockObservation, Model  # noqa: E402
+from luv_finder import MatchedFilter, MockObservation  # noqa: E402
 from luv_finder.data import fields_in, load  # noqa: E402
 from luv_finder.matchedfilter import build_grid  # noqa: E402
 
@@ -68,18 +68,15 @@ def test_declared_snr_is_achieved(smoke):
 def test_grid_preset_recovers_the_line(smoke):
     mock, cfg, _ = smoke
     data = load(mock.ms_noisy)
-    comp = Gaussian()
-    comp.grid = build_grid(data, yaml.safe_load(GRID_CFG.read_text()))
-    mod = Model()
-    mod.addcomponent(comp)
-    mf = MatchedFilter(data, mod)
+    grid = build_grid(data, yaml.safe_load(GRID_CFG.read_text()))
+    mf = MatchedFilter(data, grid)
     mf.run()
 
     src = cfg["sources"][0]
     peak_ghz = mf.frequencies()[np.argmax(mf.response[mf.best_index])]
     assert abs(peak_ghz - src["line"]["mean"]) < 0.05
 
-    assert mf.best_params["src_00_dra"] == pytest.approx(src["position"][0])
-    assert mf.best_params["src_00_ddec"] == pytest.approx(src["position"][1])
+    assert mf.best_params["dra"] == pytest.approx(src["position"][0])
+    assert mf.best_params["ddec"] == pytest.approx(src["position"][1])
     # response is in S/N units, so the peak should be near the declared value
     assert mf.response[mf.best_index].max() > 0.6 * src["line"]["snr"]

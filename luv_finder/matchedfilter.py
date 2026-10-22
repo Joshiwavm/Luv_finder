@@ -26,11 +26,13 @@ from tqdm import tqdm
 
 from .data import ChannelNoise, Chunk, DataHandler, fields_in, load, pointing
 from .kernel import _blocks, limit_cores
-from .model import C_KMS, CONTINUUM_ORDER, FWHM_TO_SIGMA, Gaussian, Model, continuum_basis, covariance, line_profile
+from .model import C_KMS, CONTINUUM_ORDER, FWHM_TO_SIGMA, continuum_basis, covariance, line_profile
 from .utils import ARCSEC, PB_LIMIT, primary_beam_at, primary_beam_radius
 
 TEMPLATE_KEYS = ("bmin", "bmaj", "pa", "width")
 GRID_KEYS = ("dra", "ddec", *TEMPLATE_KEYS)
+#: The value of a search axis a grid leaves out: the phase centre, a point source, a 100 km/s line.
+GRID_DEFAULTS = {"dra": 0.0, "ddec": 0.0, "bmin": 0.0, "bmaj": 0.0, "pa": 0.0, "width": 100.0}
 #: A line whose response peaks at ``MASK_SNR`` or more at a position is left out of the continuum fit
 #: there, within ``MASK_FWHM`` template FWHM of its peak, so it does not bend the continuum of the others.
 MASK_SNR, MASK_FWHM = 5.0, 1.0
@@ -248,11 +250,8 @@ class _Grid:
 
     @property
     def grid_params(self) -> list[dict]:
-        """Every grid point as ``{"src_00_<key>": value}``, in the order of the response rows."""
-        return [
-            {f"src_00_{k}": v for k, v in zip(GRID_KEYS, combo, strict=True)}
-            for combo in product(*(self.axes[k] for k in GRID_KEYS))
-        ]
+        """Every grid point as ``{key: value}``, in the order of the response rows."""
+        return [dict(zip(GRID_KEYS, combo, strict=True)) for combo in product(*(self.axes[k] for k in GRID_KEYS))]
 
     @property
     def templates(self) -> np.ndarray:
@@ -422,7 +421,8 @@ def combine_pointings(results: Iterable[SearchResult], span: tuple | None = None
 
 
 class MatchedFilter(_Grid):
-    """S/N of one field over the ``Model.grid`` axes; ``channel_noise``: "measure", None or ``{spw: ChannelNoise}``.
+    """S/N of one field over the ``grid`` axes (:data:`GRID_KEYS`: a value or a list each, else :data:`GRID_DEFAULTS`,
+    e.g. from :func:`build_grid`); ``channel_noise``: "measure", None or ``{spw: ChannelNoise}``.
 
     ``band`` (Hz, low and high) keeps the trial centres there, a chunk of a long spectrum: every window is
     still fitted over all its centres, so its continuum and its masks are those of the whole spectrum.
@@ -431,7 +431,7 @@ class MatchedFilter(_Grid):
     def __init__(
         self,
         data: DataHandler,
-        mod: Model,
+        grid: dict,
         continuum_order: int | None = CONTINUUM_ORDER,
         channel_noise: str | dict | None = "measure",
         band: tuple[float, float] | None = None,
@@ -443,26 +443,14 @@ class MatchedFilter(_Grid):
         self.continuum_order = continuum_order
         self.channel_noise = channel_noise
         self.noise: dict[int, ChannelNoise] = {}
-        self.axes = self._grid_axes(mod)
+        _check_keys(grid, GRID_KEYS)
+        self.axes = {k: np.atleast_1d(grid.get(k, GRID_DEFAULTS[k])).astype(float).tolist() for k in GRID_KEYS}
         self.lattice = _centres(data.chunks, max(self.axes["width"]))
         lo, hi = band or (-np.inf, np.inf)
         self.freqs = self.lattice[(self.lattice >= lo) & (self.lattice <= hi)]
         if not self.freqs.size:
             raise ValueError(f"no trial centre in the band {lo / 1e9:.4f}-{hi / 1e9:.4f} GHz")
         self.result: SearchResult | None = None
-
-    @staticmethod
-    def _grid_axes(mod: Model) -> dict[str, list[float]]:
-        grid = {k.split("_", 2)[-1]: v for k, v in mod.grid.items()}
-        unknown = sorted(set(grid) - set(GRID_KEYS))
-        if unknown:
-            raise ValueError(
-                f"grid keys {unknown} are not searchable. Searchable keys are {list(GRID_KEYS)}. "
-                "total_flux in particular cancels in the kernel normalisation, so varying it "
-                "only duplicates grid points."
-            )
-        own = {k.lstrip("_"): v for k, v in vars(mod.component(0)).items()}
-        return {k: np.atleast_1d(grid.get(k, own[k])).astype(float).tolist() for k in GRID_KEYS}
 
     @property
     def response(self) -> np.ndarray | None:
@@ -524,6 +512,15 @@ class MatchedFilter(_Grid):
             start += n
 
 
+def _check_keys(grid: dict, keys) -> None:
+    unknown = sorted(set(grid) - set(keys))
+    if unknown:
+        raise ValueError(
+            f"grid keys {unknown} are not {list(keys)}; total_flux in particular cancels in the kernel "
+            "normalisation, so every value gives an identical response"
+        )
+
+
 def grid_axis(cfg: dict | None, key: str, default) -> np.ndarray:
     """One search axis of a grid YAML: a value, a list, or ``{start, stop, step}``; ``default`` if absent."""
     v = (cfg or {}).get(key, default)
@@ -541,12 +538,7 @@ def _grid(metadata, offset, low: float, cfg: dict | None) -> dict:
     """:func:`build_grid` of a pointing at ``offset`` whose lowest frequency is ``low`` Hz."""
     res = metadata.minresolution()
     cfg = dict(cfg or {})
-    unknown = sorted(set(cfg) - {*GRID_KEYS, "pb_limit"})
-    if unknown:
-        raise ValueError(
-            f"grid keys {unknown} are not {[*GRID_KEYS, 'pb_limit']}; total_flux in particular cancels in the "
-            "kernel normalisation, so every value gives an identical response"
-        )
+    _check_keys(cfg, (*GRID_KEYS, "pb_limit"))
 
     half = primary_beam_radius(cfg.get("pb_limit", PB_LIMIT), low, metadata.dish_diameter)
     step = res / 2
@@ -563,15 +555,6 @@ def _grid(metadata, offset, low: float, cfg: dict | None) -> dict:
         "pa": grid_axis(cfg, "pa", 0.0),
         "width": grid_axis(cfg, "width", WIDTHS),
     }
-
-
-def grid_model(grid: dict) -> Model:
-    """A model of one Gaussian component whose ``grid`` is the search axes ``grid`` (see :func:`build_grid`)."""
-    comp = Gaussian()
-    comp.grid = grid
-    mod = Model()
-    mod.addcomponent(comp)
-    return mod
 
 
 def search_pointings(
@@ -595,7 +578,7 @@ def search_pointings(
     def pointings():
         for field in fields:
             data = load(path, [field])
-            mf = MatchedFilter(data, grid_model(build_grid(data, cfg)), **filter_kwargs)
+            mf = MatchedFilter(data, build_grid(data, cfg), **filter_kwargs)
             mf.run(jackknife=jackknife, cores=cores)
             result = _correct(mf.result, data, pb_limit)  # in place: the search is ours
             del data, mf  # free this field before loading the next

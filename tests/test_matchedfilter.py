@@ -4,7 +4,7 @@ import os
 import numpy as np
 import pytest
 
-from luv_finder import DataHandler, Gaussian, MatchedFilter, Model
+from luv_finder import DataHandler, Gaussian, MatchedFilter
 from luv_finder.cli.find_lines import main as find_lines
 from luv_finder.data import C, ChannelNoise, Chunk, Metadata, load, reweighted
 from luv_finder.kernel import default_cores
@@ -12,7 +12,6 @@ from luv_finder.matchedfilter import (
     SearchResult,
     build_grid,
     combine_pointings,
-    grid_model,
     pb_corrected,
     search_pointings,
 )
@@ -23,13 +22,10 @@ C_KMS = 299792.458
 
 
 def _finder(data, continuum_order=2, channel_noise=None, band=None, **grid):
-    g = Gaussian()
-    g.grid = {"bmin": 0.0, "bmaj": 0.0, "width": 300.0, **grid}
-    m = Model()
-    m.addcomponent(g)
+    grid = {"bmin": 0.0, "bmaj": 0.0, "width": 300.0, **grid}
     # synthetic rows share one baseline at random uv, so their jackknife keeps the sky: give the
     # channel noise instead of measuring it
-    return MatchedFilter(data, m, continuum_order=continuum_order, channel_noise=channel_noise, band=band)
+    return MatchedFilter(data, grid, continuum_order=continuum_order, channel_noise=channel_noise, band=band)
 
 
 def _chunk(nchan, nvis, seed=0, field=0, spw=0, offset=(0.0, 0.0), freq0=40e9):
@@ -167,13 +163,13 @@ def test_rows_follow_grid_params():
     mf = _finder(data, dra=[-4.0, 0.0, 4.0], ddec=[-2.0, 0.0, 2.0], width=[150.0, 300.0, 600.0])
     mf.run(jackknife=True)
     best = mf.best_params
-    assert (best["src_00_dra"], best["src_00_ddec"], best["src_00_width"]) == (4.0, -2.0, 300.0)
+    assert (best["dra"], best["ddec"], best["width"]) == (4.0, -2.0, 300.0)
     assert len(mf.grid_params) == 27
     assert mf.response.shape == mf.response_jackknife.shape == (27, 50)
 
 
 def test_grid_rejects_total_flux(data):
-    with pytest.raises(ValueError, match="not searchable"):
+    with pytest.raises(ValueError, match="total_flux"):
         _finder(data, total_flux=np.array([1.0, 2.0]))
     for key in ("total_flux", "widths"):
         with pytest.raises(ValueError, match=f"'{key}'"):
@@ -183,7 +179,7 @@ def test_grid_rejects_total_flux(data):
 def test_grid_expansion(data):
     mf = _finder(data, dra=np.array([0.0, 1.0]), ddec=np.array([0.0, 2.0, 4.0]))
     assert len(mf.grid_params) == 6
-    assert all(p["src_00_width"] == 300.0 for p in mf.grid_params)
+    assert all(p["width"] == 300.0 for p in mf.grid_params)
 
 
 def _fixture_search(data, truth, jackknife=False, **options):
@@ -194,7 +190,7 @@ def _fixture_search(data, truth, jackknife=False, **options):
     positions = np.array([s["position"] for s in truth["sources"]])
     mf = _finder(data, dra=positions[:, 0], ddec=positions[:, 1], **options)
     mf.run(jackknife=jackknife)
-    at = [(p["src_00_dra"], p["src_00_ddec"]) for p in mf.grid_params]
+    at = [(p["dra"], p["ddec"]) for p in mf.grid_params]
     return mf, [next(k for k, p in enumerate(at) if np.allclose(pos, p)) for pos in positions]
 
 
@@ -320,7 +316,7 @@ def test_pointings_share_one_sky_grid():
         mf = _finder(data, continuum_order=None, dra=[0.0, 5.0, 10.0], ddec=[-3.0, 0.0])
         mf.run()
         best = mf.best_params
-        assert (best["src_00_dra"], best["src_00_ddec"]) == pos
+        assert (best["dra"], best["ddec"]) == pos
         assert mf.response[mf.best_index].max() == pytest.approx(10.0, abs=1e-3)
 
 
@@ -386,7 +382,7 @@ def test_pb_correction_divides_the_flux_and_masks_the_beam_edge():
         assert np.allclose(error[keep], uncorrected.error[:, :, 0][keep] / pb[keep], rtol=1e-12, atol=0)
         assert np.all(np.isnan(snr[~keep]) & np.isnan(flux[~keep]) & np.isnan(error[~keep]))
         assert np.array_equal(corrected.coverage, np.where(keep, pb, 0.0))
-    assert (out.best_params["src_00_dra"], out.best_params["src_00_ddec"]) == (40.0, 0.0)
+    assert (out.best_params["dra"], out.best_params["ddec"]) == (40.0, 0.0)
     assert out.flux[5, 0, 0, 25] == pytest.approx(src.spectrum(FREQ[25]), rel=1e-6)
 
 
@@ -574,7 +570,7 @@ def test_flux_does_not_depend_on_the_channel_correlation():
 
 def test_unknown_channel_noise_is_rejected(data):
     with pytest.raises(ValueError, match="channel_noise"):
-        MatchedFilter(data, Model(), channel_noise="hanning")
+        MatchedFilter(data, {}, channel_noise="hanning")
 
 
 def test_noisy_channels_are_weighted_down_once_reweighted():
@@ -694,7 +690,7 @@ def test_search_pointings_in_place_equals_pb_corrected_and_combined(tmp_path):
     corrected = []
     for k in (0, 1):
         data = load(npz, [k])
-        mf = MatchedFilter(data, grid_model(build_grid(data, grid)), continuum_order=None, channel_noise=None)
+        mf = MatchedFilter(data, build_grid(data, grid), continuum_order=None, channel_noise=None)
         mf.run(jackknife=True)
         corrected.append(pb_corrected(mf.result, data))
     expected = combine_pointings(corrected)

@@ -24,7 +24,7 @@ import numpy as np
 import pytest
 from scipy.optimize import least_squares
 
-from luv_finder import DataHandler, Gaussian, MatchedFilter, MockObservation, Model
+from luv_finder import DataHandler, MatchedFilter, MockObservation
 from luv_finder.model import FWHM_TO_SIGMA
 from luv_finder.utils import FWHM_FACTOR, primary_beam
 
@@ -61,17 +61,14 @@ def _expected(noisy_path: Path, clean_path: Path) -> DataHandler:
 
 def _fitted_flux(data: DataHandler, source: dict, fwhm: float) -> np.ndarray:
     """Best-fit peak flux density (Jy) per channel of a point source's template at its position."""
-    comp = Gaussian()
-    comp.grid = {
+    grid = {
         "dra": source["position"][0],
         "ddec": source["position"][1],
         "bmin": fwhm,
         "bmaj": fwhm,
         "width": source["line"]["width"],
     }
-    mod = Model()
-    mod.addcomponent(comp)
-    mf = MatchedFilter(data, mod, continuum_order=None)
+    mf = MatchedFilter(data, grid, continuum_order=None)
     mf.run()
     return mf.result.flux[0, 0, 0]
 

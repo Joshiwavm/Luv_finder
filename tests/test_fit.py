@@ -12,7 +12,7 @@ from luv_finder.data import ChannelNoise, Chunk, Metadata, sky_offset
 from luv_finder.fit import COLUMNS, _moments, _system, fit_line, fit_lines
 from luv_finder.imaging import line_maps
 from luv_finder.kernel import on_device
-from luv_finder.matchedfilter import build_grid, grid_model, pb_corrected
+from luv_finder.matchedfilter import build_grid, pb_corrected
 from luv_finder.model import C_KMS, FWHM_TO_SIGMA, LINE_FLUX, covariance
 from luv_finder.plotting import line_maps_check, line_spectra_check
 from luv_finder.utils import C, primary_beam
@@ -157,7 +157,7 @@ def test_fit_lines_survives_a_failed_line():
 def test_fit_lines_of_the_fixture(data, truth, tmp_path):
     """Catalogue the fixture blind, then fit its detected lines: both injected lines come back."""
     lattice = data.metadata.minresolution() / 2 * np.arange(-18, 19)
-    mf = MatchedFilter(data, grid_model(build_grid(data, {"dra": lattice, "ddec": lattice})))
+    mf = MatchedFilter(data, build_grid(data, {"dra": lattice, "ddec": lattice}))
     mf.run(jackknife=True)
     cat = catalogue(pb_corrected(mf.result, data), ref=data.metadata.ref)
     # fit only the detection nearest each injected line: fitting all of them costs ~2 s each

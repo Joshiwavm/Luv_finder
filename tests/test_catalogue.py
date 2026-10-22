@@ -21,7 +21,7 @@ from luv_finder.catalogue import (
     response_correlation,
 )
 from luv_finder.data import sky_offset
-from luv_finder.matchedfilter import SearchResult, build_grid, grid_model, pb_corrected
+from luv_finder.matchedfilter import SearchResult, build_grid, pb_corrected
 from luv_finder.model import C_KMS, FWHM_TO_SIGMA, covariance, envelope
 
 STEP = 0.5  # arcsec
@@ -283,7 +283,7 @@ def test_fidelity_needs_three_noise_groups():
 def test_catalogue_of_the_fixture(data, truth, tmp_path):
     """A blind lattice of +-30 arcsec finds both injected lines, each once, and detects them."""
     lattice = data.metadata.minresolution() / 2 * np.arange(-18, 19)
-    mf = MatchedFilter(data, grid_model(build_grid(data, {"dra": lattice, "ddec": lattice})))
+    mf = MatchedFilter(data, build_grid(data, {"dra": lattice, "ddec": lattice}))
     mf.run(jackknife=True)
     cat = catalogue(pb_corrected(mf.result, data), ref=data.metadata.ref)
     assert cat["id"].tolist() == list(range(1, len(cat) + 1))

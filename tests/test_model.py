@@ -1,19 +1,9 @@
 import numpy as np
 import pytest
 
-from luv_finder import Gaussian, Model
+from luv_finder import Gaussian
 from luv_finder.data import C, Chunk
 from luv_finder.model import C_KMS
-
-
-def test_prefixed_params_and_grid():
-    g = Gaussian(nu_center=40e9)
-    g.grid = {"dra": np.array([0.0, 1.0]), "width": 300.0}
-    m = Model()
-    m.addcomponent(g)
-    assert "src_00_nu_center" in m.params
-    assert set(m.grid) == {"src_00_dra", "src_00_width"}
-    assert m.component(0) is g
 
 
 def test_point_source_is_flat_in_uv(data):

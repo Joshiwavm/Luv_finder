@@ -11,7 +11,7 @@ import numpy as np
 import pytest
 from matplotlib.figure import Figure
 
-from luv_finder import Gaussian, MatchedFilter, Model
+from luv_finder import Gaussian, MatchedFilter
 from luv_finder.data import reweighted
 from luv_finder.plotting import response_check, spectrum_check, weights_check
 from luv_finder.utils import primary_beam_fwhm
@@ -46,17 +46,14 @@ def test_spectrum_per_source(data, truth, plots):
 def test_response_figure(data, truth, plots):
     """Matched-filter S/N spectrum with the jackknife overlaid."""
     positions = np.array([s["position"] for s in truth["sources"]])
-    g = Gaussian()
-    g.grid = {
+    grid = {
         "dra": positions[:, 0],
         "ddec": positions[:, 1],
         "bmin": data.metadata.minresolution() / 10,
         "bmaj": data.metadata.minresolution() / 10,
         "width": 300.0,
     }
-    mod = Model()
-    mod.addcomponent(g)
-    mf = MatchedFilter(data, mod)
+    mf = MatchedFilter(data, grid)
     mf.run(jackknife=True)
     fig = response_check(mf, plots_dir=str(plots), name="filter_response", line_ghz=truth["sources"][0]["line"]["mean"])
     assert isinstance(fig, Figure)
@@ -66,23 +63,17 @@ def test_search_figures(data, truth, plots):
     """S/N map with the injected sources circled, phase centre against the sources, and noise statistics."""
     from luv_finder.plotting import noise_check, responses_check, snr_map
 
-    g = Gaussian()
     axis = np.arange(-30.0, 30.1, 2.0)
-    g.grid = {"dra": axis, "ddec": axis, "bmin": 0.3, "bmaj": 0.3, "width": 300.0}
-    mod = Model()
-    mod.addcomponent(g)
-    mf = MatchedFilter(data, mod)
+    grid = {"dra": axis, "ddec": axis, "bmin": 0.3, "bmaj": 0.3, "width": 300.0}
+    mf = MatchedFilter(data, grid)
     mf.run(jackknife=True)
     marks = {f"line {s['line']['mean']} GHz": s["position"] for s in truth["sources"]}
     assert isinstance(snr_map(mf, plots_dir=str(plots), name="snr_map", marks=marks), Figure)
     assert isinstance(noise_check(mf, plots_dir=str(plots), name="noise"), Figure)
 
     points = {"phase centre": (0.0, 0.0), **{k: tuple(v) for k, v in marks.items()}}
-    single = Gaussian()
-    single.grid = {"dra": [p[0] for p in points.values()], "ddec": [p[1] for p in points.values()], "width": 300.0}
-    mod = Model()
-    mod.addcomponent(single)
-    pick = MatchedFilter(data, mod)
+    grid = {"dra": [p[0] for p in points.values()], "ddec": [p[1] for p in points.values()], "width": 300.0}
+    pick = MatchedFilter(data, grid)
     pick.run()
     rows = {k: pick.response[i * (len(points) + 1)] for i, k in enumerate(points)}  # the (dra_i, ddec_i) diagonal
     fig = responses_check(pick.frequencies(), rows, "Phase centre vs sources", plots_dir=str(plots))

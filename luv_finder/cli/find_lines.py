@@ -29,7 +29,7 @@ def report(result: SearchResult) -> None:
     flux, error = (a.reshape(result.response.shape)[row, chan] for a in (result.flux, result.error))
     print("best grid point:")
     for k, v in result.best_params.items():
-        print(f"  {k.split('_', 2)[-1]:>11s} = {v:.4g}")
+        print(f"  {k:>11s} = {v:.4g}")
     print(f"peak response at {result.frequencies()[chan]:.4f} GHz, S/N {best[chan]:.3g}")
     print(f"PB-corrected peak flux density {flux:.3g} +- {error:.3g} Jy")
     if result.response_jackknife is not None:

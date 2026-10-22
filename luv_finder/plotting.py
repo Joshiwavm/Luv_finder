@@ -105,7 +105,7 @@ def response_check(mf, plots_dir=None, name="filter_response", line_ghz=None):
     ax.set_ylabel("Matched-filter S/N")
     ax.set_title(f"Peak S/N {np.nanmax(best):.1f} at {freqs[np.nanargmax(best)]:.3f} GHz")
     ax.legend(fontsize=8)
-    text = "\n".join(f"{k.split('_', 2)[-1]}={v:.3g}" for k, v in mf.best_params.items())
+    text = "\n".join(f"{k}={v:.3g}" for k, v in mf.best_params.items())
     ax.text(
         1.02,
         0.5,

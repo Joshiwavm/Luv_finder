@@ -17,7 +17,7 @@ import numpy as np
 import pytest
 import yaml
 
-from luv_finder import DataHandler, Gaussian, MatchedFilter, Model
+from luv_finder import DataHandler, MatchedFilter
 from luv_finder.matchedfilter import build_grid
 from luv_finder.plotting import responses_check
 
@@ -48,11 +48,8 @@ def _mock_npz(name: str) -> tuple[Path, Path]:
 
 
 def _response(data, grid_cfg, noise):
-    comp = Gaussian()
-    comp.grid = build_grid(data, grid_cfg)
-    mod = Model()
-    mod.addcomponent(comp)
-    mf = MatchedFilter(data, mod, continuum_order=None, channel_noise=noise)
+    grid = build_grid(data, grid_cfg)
+    mf = MatchedFilter(data, grid, continuum_order=None, channel_noise=noise)
     mf.run()
     return mf
 

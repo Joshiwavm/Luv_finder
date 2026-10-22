@@ -64,13 +64,10 @@ def _line(channel, snr):
 
 
 def _snr_at(spectra, channel, order):
-    from luv_finder import Gaussian, MatchedFilter, Model
+    from luv_finder import MatchedFilter
 
-    g = Gaussian()
-    g.grid = {"dra": 0.0, "ddec": 0.0, "bmin": 0.0, "bmaj": 0.0, "width": 300.0}
-    m = Model()
-    m.addcomponent(g)
-    mf = MatchedFilter(_window(spectra), m, continuum_order=order, channel_noise=None)
+    grid = {"dra": 0.0, "ddec": 0.0, "bmin": 0.0, "bmaj": 0.0, "width": 300.0}
+    mf = MatchedFilter(_window(spectra), grid, continuum_order=order, channel_noise=None)
     mf.run()
     return float(mf.response[0, channel])
 
@@ -148,10 +145,9 @@ def test_a_fit_leaves_out_the_other_lines_but_keeps_its_own_channels():
 
 def _search(spectra, dra, ddec):
     from luv_finder import MatchedFilter
-    from luv_finder.matchedfilter import grid_model
 
     grid = {"dra": dra, "ddec": ddec, "bmin": 0.0, "bmaj": 0.0, "pa": 0.0, "width": [100.0, 300.0]}
-    mf = MatchedFilter(_window(spectra), grid_model(grid), continuum_order=1, channel_noise=None)
+    mf = MatchedFilter(_window(spectra), grid, continuum_order=1, channel_noise=None)
     mf.run()
     return mf.result
 

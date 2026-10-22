@@ -1,9 +1,4 @@
-"""Parametric UV-domain source models.
-
-Parameter naming convention: every component attribute is exposed as
-``src_{component_index:02d}_{attribute}`` (e.g. ``src_00_nu_center``). The
-matched filter parses this key to route values back onto the component.
-"""
+"""The source model, a Gaussian line from a Gaussian source evaluated in the UV plane, and its shared formulas."""
 
 from __future__ import annotations
 
@@ -68,7 +63,6 @@ class Gaussian:
         self.nu_center = nu_center
         self.width = width
         self.profile = self._uvgauss_1D2D
-        self.grid: dict | None = None
 
     def envelope(self, chunk) -> np.ndarray:
         """Spatial envelope A(u, v): the source's visibility amplitude, 1 at zero spacing, (n_chan, n_row)."""
@@ -82,33 +76,3 @@ class Gaussian:
     def _uvgauss_1D2D(self, chunk) -> np.ndarray:
         """Model visibilities on the uv coverage of ``chunk``, (n_chan, n_row) complex."""
         return self.spectrum(chunk.freq)[:, None] * self.envelope(chunk) * np.conj(chunk.phase(self.dra, self.ddec))
-
-
-class Model:
-    """Container of source components with a flat, prefixed parameter list."""
-
-    Gaussian = Gaussian
-
-    def __init__(self):
-        self.ncomp = 0
-        self.params: list[str] = []
-        self.profile: list = []
-        self.type: list[str] = []
-        self.grid: dict = {}
-
-    def addcomponent(self, comp) -> None:
-        prefix = f"src_{self.ncomp:02d}_"
-        for key in comp.__dict__:
-            if key in ("profile", "grid"):
-                continue
-            self.params.append(prefix + key.lstrip("_"))
-        if comp.grid:
-            for key, rng in comp.grid.items():
-                self.grid[prefix + key] = rng
-        self.profile.append(comp.profile)
-        self.type.append(comp.__class__.__name__)
-        setattr(self, self.type[-1].lower(), comp)
-        self.ncomp += 1
-
-    def component(self, idx: int = 0):
-        return getattr(self, self.type[idx].lower())
