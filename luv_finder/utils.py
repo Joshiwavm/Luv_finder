@@ -18,6 +18,8 @@ from ._casa import tools
 
 C = const.c.value
 ARCSEC = np.deg2rad(1 / 3600)
+#: Primary-beam level down to which a pointing is searched, fitted and imaged.
+PB_LIMIT = 0.2
 
 #: Arrays processed in blocks stay near this size in memory.
 BLOCK_BYTES = 2**31

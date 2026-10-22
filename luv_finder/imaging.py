@@ -16,7 +16,7 @@ from .fit import _window_chunks, home_window
 from .kernel import limit_cores
 from .matchedfilter import _beam, _check_freqs, _one_field, _union_lattice, build_grid
 from .model import C_KMS
-from .utils import ARCSEC, C
+from .utils import ARCSEC, PB_LIMIT, C
 
 
 @dataclass(frozen=True, eq=False)
@@ -118,7 +118,7 @@ def oversample(axis, factor: int = 2) -> np.ndarray:
 
 
 def pointing_cubes(
-    path: str, grid_cfg: dict | None = None, pb_limit: float = 0.2, factor: int = 2, cores: int | None = None
+    path: str, grid_cfg: dict | None = None, pb_limit: float = PB_LIMIT, factor: int = 2, cores: int | None = None
 ):
     """The dirty cube of every field of a measurement set or NPZ, on its search grid oversampled ``factor`` times."""
     cubes = []
@@ -146,7 +146,7 @@ def _linear_mosaic(cubes: Sequence[DirtyCube], pb_limit: float):
     return dra, ddec, np.divide(num, ivar, out=np.zeros_like(num), where=ivar > 0), ivar
 
 
-def mosaic_dirty_maps(cubes: Sequence[DirtyCube], pb_limit: float = 0.2):
+def mosaic_dirty_maps(cubes: Sequence[DirtyCube], pb_limit: float = PB_LIMIT):
     """Linear mosaic of the pointings' cubes (PB >= ``pb_limit``): ``(dra, ddec, moment8, continuum, sigma)``."""
     if any(c.window_sizes != cubes[0].window_sizes for c in cubes):
         raise ValueError("the pointings' spectral windows differ; only one spectral setup can be combined")
@@ -154,7 +154,7 @@ def mosaic_dirty_maps(cubes: Sequence[DirtyCube], pb_limit: float = 0.2):
     return (dra, ddec, *_moments(cube, ivar, cubes[0].window_sizes))
 
 
-def line_maps(data: DataHandler, cat, size: float = 8.0, pb_limit: float = 0.2) -> list[tuple]:
+def line_maps(data: DataHandler, cat, size: float = 8.0, pb_limit: float = PB_LIMIT) -> list[tuple]:
     """``(dra, ddec, moment0)`` within ``size`` arcsec of each fitted line, Jy/beam km/s over +-1 FWHM, no continuum.
 
     Positions no pointing covers (primary beam below ``pb_limit``) are NaN, the whole map when a fit ran

@@ -23,7 +23,7 @@ from .data import Chunk, DataHandler, load, sky_direction
 from .kernel import DATA_POWERS, WEIGHT_POWERS, limit_cores, on_device, point_moments
 from .matchedfilter import MASK_FWHM, MASK_SNR
 from .model import C_KMS, CONTINUUM_ORDER, FWHM_TO_SIGMA, LINE_FLUX, continuum_basis, covariance, line_profile, rotated
-from .utils import primary_beam_at
+from .utils import PB_LIMIT, primary_beam_at
 
 #: Quantities reported per line, each with an ``_error``, and their units.
 REPORTED = {
@@ -219,7 +219,7 @@ def fit_line(
     bmin: float = 0.0,
     pa: float = 0.0,
     continuum_order: int | None = CONTINUUM_ORDER,
-    pb_limit: float = 0.2,
+    pb_limit: float = PB_LIMIT,
     channel_noise: str | dict | None = "measure",
     others=(),
 ) -> dict:

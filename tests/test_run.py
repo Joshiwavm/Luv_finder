@@ -2,8 +2,9 @@ import numpy as np
 import pytest
 from astropy.table import Table
 
+from luv_finder.catalogue import duplicates
 from luv_finder.matchedfilter import window_groups
-from luv_finder.run import RUN_FILE, Run, duplicates, unit_name
+from luv_finder.run import RUN_FILE, Run, unit_name
 
 
 @pytest.fixture(scope="module")
@@ -51,7 +52,7 @@ def test_run_detects_the_injected_lines(run, truth, data):
 def test_run_maps_hold_the_filter_response_of_every_group(run):
     (unit,) = run.units
     m, cat = run.maps(unit), Table.read(run.path(unit, ".ecsv"))
-    assert m["peak"].shape == (m["dra"].size, m["ddec"].size) == m["jk_peak"].shape
+    assert m["peak"].shape == (m["dra"].size, m["ddec"].size) == m["coverage"].shape
     assert m["group_snr"].shape == (len(cat), m["widths"].size, m["freqs"].size) == m["group_jk"].shape
     np.testing.assert_array_equal(m["group_id"], cat["unit_id"])
     np.testing.assert_allclose(np.nanmax(m["group_snr"], axis=(1, 2)), cat["snr"], rtol=1e-6)
@@ -126,7 +127,6 @@ def test_duplicates_catch_the_two_halves_of_a_line_split_by_a_window_edge():
         "ddec": [0.0, 0.2, 0.0, 0.0],
         "freq_ghz": [93.610, 93.516, 93.500, 93.600],
         "width": [300.0, 500.0, 100.0, 100.0],
-        "fit_width": [243.0, 476.0, 172.0, np.nan],
     })  # fmt: skip
     beam = {"spw00": 0.7, "spw01": 0.7, "spw02": 0.7}
     assert duplicates(cat, beam).tolist() == [0, 1, 0, 1]

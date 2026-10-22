@@ -27,7 +27,7 @@ from tqdm import tqdm
 from .data import ChannelNoise, Chunk, DataHandler, fields_in, load, pointing
 from .kernel import _blocks, limit_cores
 from .model import C_KMS, CONTINUUM_ORDER, FWHM_TO_SIGMA, Gaussian, Model, continuum_basis, covariance, line_profile
-from .utils import ARCSEC, primary_beam_at, primary_beam_radius
+from .utils import ARCSEC, PB_LIMIT, primary_beam_at, primary_beam_radius
 
 TEMPLATE_KEYS = ("bmin", "bmaj", "pa", "width")
 GRID_KEYS = ("dra", "ddec", *TEMPLATE_KEYS)
@@ -327,7 +327,7 @@ def _correct(result: SearchResult, data: DataHandler, pb_limit: float) -> Search
     return result
 
 
-def pb_corrected(result: SearchResult, data: DataHandler, pb_limit: float = 0.2) -> SearchResult:
+def pb_corrected(result: SearchResult, data: DataHandler, pb_limit: float = PB_LIMIT) -> SearchResult:
     """The search of one pointing corrected for its primary beam (a copy; ``result`` is left as it is)."""
 
     def copy(r):
@@ -548,7 +548,7 @@ def _grid(metadata, offset, low: float, cfg: dict | None) -> dict:
             "kernel normalisation, so every value gives an identical response"
         )
 
-    half = primary_beam_radius(cfg.get("pb_limit", 0.2), low, metadata.dish_diameter)
+    half = primary_beam_radius(cfg.get("pb_limit", PB_LIMIT), low, metadata.dish_diameter)
     step = res / 2
 
     def lattice(centre):
@@ -579,7 +579,7 @@ def search_pointings(
     grid_cfg: dict | None = None,
     jackknife: bool = True,
     cores: int | None = None,
-    pb_limit: float = 0.2,
+    pb_limit: float = PB_LIMIT,
     fields: list[int] | None = None,
     **filter_kwargs,
 ) -> SearchResult:
