@@ -14,7 +14,6 @@ has unit variance under the null.
 from __future__ import annotations
 
 import dataclasses
-import os
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from functools import partial
@@ -524,13 +523,6 @@ class MatchedFilter(_Grid):
             yield slice(start, start + n), np.asarray(snr)[:, :, :n], np.asarray(error)[:, :, :n]
             start += n
 
-    def plot_response(self, filename: str | None = None, vline: float | None = None):
-        """The best grid point's S/N spectrum, saved to ``filename`` if given (:mod:`luv_finder.plotting`)."""
-        from .plotting import response_check
-
-        plots_dir, name = os.path.split(filename) if filename else (None, "filter_response")
-        return response_check(self, plots_dir=(plots_dir or ".") if filename else None, name=name, line_ghz=vline)
-
 
 def grid_axis(cfg: dict | None, key: str, default) -> np.ndarray:
     """One search axis of a grid YAML: a value, a list, or ``{start, stop, step}``; ``default`` if absent."""
@@ -588,17 +580,20 @@ def search_pointings(
     jackknife: bool = True,
     cores: int | None = None,
     pb_limit: float = 0.2,
+    fields: list[int] | None = None,
     **filter_kwargs,
 ) -> SearchResult:
-    """Search every field of a measurement set or NPZ and combine the pointings on one sky grid as they come."""
+    """Search every field (or ``fields``) of a measurement set or NPZ, PB-corrected, and combine them on one
+    sky grid as they come."""
 
     cfg = {**(grid_cfg or {}), "pb_limit": pb_limit}
-    grids = [_grid(*pointing(path, field), cfg) for field in fields_in(path)]
+    fields = fields_in(path) if fields is None else fields
+    grids = [_grid(*pointing(path, field), cfg) for field in fields]
     # the union of the pointings' lattices, allocated once (one pointing keeps its own axes)
     span = tuple(_union_lattice([g[k] for g in grids], k)[0] for k in ("dra", "ddec")) if len(grids) > 1 else None
 
     def pointings():
-        for field in fields_in(path):
+        for field in fields:
             data = load(path, [field])
             mf = MatchedFilter(data, grid_model(build_grid(data, cfg)), **filter_kwargs)
             mf.run(jackknife=jackknife, cores=cores)

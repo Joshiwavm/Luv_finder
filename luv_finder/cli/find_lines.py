@@ -1,4 +1,4 @@
-"""luv-find: grid-search matched filter for spectral lines in a measurement set or NPZ."""
+"""luv-find: a quick look, the matched filter's S/N of a measurement set or NPZ (catalogues: luv-run)."""
 
 from __future__ import annotations
 
@@ -10,18 +10,9 @@ matplotlib.use("Agg")  # the CLI only writes figures
 import numpy as np  # noqa: E402
 import yaml  # noqa: E402
 
-from ..catalogue import catalogue  # noqa: E402
-from ..data import fields_in, load
-from ..fit import fit_lines
-from ..matchedfilter import MatchedFilter, SearchResult, build_grid, grid_model, pb_corrected, search_pointings
-from ..model import CONTINUUM_ORDER
-from ..plotting import reliability_check, response_check
-
-#: Catalogue columns printed for the detected lines.
-SHOWN = ("id", "dra", "ddec", "freq_ghz", "width", "snr", "line_flux", "likelihood", "fidelity")
-
-#: Fitted columns printed with ``--fit``.
-FITTED = ("id", "fit_dra", "fit_ddec", "fit_freq_ghz", "fit_width", "fit_bmaj", "fit_line_flux", "fit_line_flux_error")
+from ..matchedfilter import SearchResult, search_pointings  # noqa: E402
+from ..model import CONTINUUM_ORDER  # noqa: E402
+from ..plotting import response_check  # noqa: E402
 
 
 def continuum_order(text: str) -> int | None:
@@ -30,7 +21,7 @@ def continuum_order(text: str) -> int | None:
     return None if order is None or order < 0 else order
 
 
-def report(result: SearchResult, corrected: bool) -> None:
+def report(result: SearchResult) -> None:
     """Print the grid point of the highest S/N, its peak channel and the peak flux density there."""
     row = result.best_index
     best = result.response[row]
@@ -40,21 +31,16 @@ def report(result: SearchResult, corrected: bool) -> None:
     for k, v in result.best_params.items():
         print(f"  {k.split('_', 2)[-1]:>11s} = {v:.4g}")
     print(f"peak response at {result.frequencies()[chan]:.4f} GHz, S/N {best[chan]:.3g}")
-    print(f"{'PB-corrected ' * corrected}peak flux density {flux:.3g} +- {error:.3g} Jy")
+    print(f"PB-corrected peak flux density {flux:.3g} +- {error:.3g} Jy")
     if result.response_jackknife is not None:
         print(f"jackknife max |response| {np.nanmax(np.abs(result.response_jackknife)):.3g}")
 
 
 def main(argv: list[str] | None = None) -> None:
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("--ms", required=True, help=".ms directory or .npz from luv-export")
+    p.add_argument("--ms", required=True, help=".ms directory or .npz written by a run")
     p.add_argument("--grid", default=None, help="YAML grid ranges (see configs/grids/default.yaml)")
-    p.add_argument(
-        "--field",
-        type=int,
-        default=None,
-        help="search only this field, PB-corrected only for --catalogue (default: all, combined if several)",
-    )
+    p.add_argument("--field", type=int, default=None, help="search only this field (default: all, combined)")
     p.add_argument("--jackknife", action="store_true", help="also run on a jackknifed noise realisation")
     p.add_argument("--cores", type=int, default=None, help="cores to use (default: a quarter, at most all but two)")
     p.add_argument(
@@ -64,51 +50,17 @@ def main(argv: list[str] | None = None) -> None:
         help="degree of the continuum polynomial fitted with the line per window and position; "
         f"-1 or none disables (default {CONTINUUM_ORDER})",
     )
-    p.add_argument(
-        "--catalogue",
-        default=None,
-        help="write the line candidates, with likelihood ratio and fidelity, to this ECSV (needs --jackknife)",
-    )
-    p.add_argument(
-        "--fit",
-        action="store_true",
-        help="fit the detected lines in the visibilities (Gaussian source, joint continuum) and add the fitted "
-        "columns to the --catalogue ECSV",
-    )
     p.add_argument("--plots-dir", default="plots")
     p.add_argument("--out", default=None, help="save responses + grid to this .npz")
     args = p.parse_args(argv)
-    if args.catalogue and not args.jackknife:
-        p.error("--catalogue needs --jackknife: the jackknife is the noise reference")
-    if args.fit and not args.catalogue:
-        p.error("--fit needs --catalogue: it fits the catalogued lines")
 
     grid_cfg = yaml.safe_load(open(args.grid)) if args.grid else None
-    fields = fields_in(args.ms) if args.field is None else [args.field]
-    mosaic = len(fields) > 1
-    if mosaic:
-        result = search_pointings(
-            args.ms, grid_cfg, args.jackknife, cores=args.cores, continuum_order=args.continuum_order
-        )
-    else:
-        data = load(args.ms, fields)
-        mf = MatchedFilter(data, grid_model(build_grid(data, grid_cfg)), continuum_order=args.continuum_order)
-        mf.run(jackknife=args.jackknife, cores=args.cores)
-        result = pb_corrected(mf.result, data) if args.catalogue else mf.result
-
+    fields = None if args.field is None else [args.field]
+    result = search_pointings(
+        args.ms, grid_cfg, args.jackknife, cores=args.cores, fields=fields, continuum_order=args.continuum_order
+    )
     response_check(result, args.plots_dir, "filter_response.png")
-    report(result, corrected=mosaic or bool(args.catalogue))
-
-    if args.catalogue:
-        cat = catalogue(result, ref=load(args.ms, []).metadata.ref)
-        if args.fit:
-            cat = fit_lines(args.ms if mosaic else data, cat, cores=args.cores, continuum_order=args.continuum_order)
-        cat.write(args.catalogue, format="ascii.ecsv", overwrite=True)
-        reliability_check(cat, args.plots_dir, "reliability")
-        print(f"{cat['detected'].sum()} of {len(cat)} candidates detected; catalogue saved to {args.catalogue}")
-        cat[cat["detected"]][SHOWN].pprint(max_lines=-1, max_width=-1)
-        if args.fit:
-            cat[cat["detected"]][FITTED].pprint(max_lines=-1, max_width=-1)
+    report(result)
 
     if args.out:
         np.savez_compressed(

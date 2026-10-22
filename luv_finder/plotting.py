@@ -119,25 +119,6 @@ def response_check(mf, plots_dir=None, name="filter_response", line_ghz=None):
 
 
 @_styled
-def source_size_check(freqs, expected, noisy, declared, title, plots_dir=None, name="source_size"):
-    """Response at the true source position: noiseless expectation and one noisy draw.
-
-    ``declared`` is the S/N the mock was calibrated to; a filter matched to the
-    source reaches it with the expectation curve.
-    """
-    fig, ax = _subplots(figsize=(8, 4))
-    ax.axhline(0, ls="--", c="gray", lw=0.8)
-    ax.axhline(declared, ls=":", c="C3", lw=1, label="declared S/N")
-    ax.plot(freqs, expected, lw=1.8, label="expected")
-    ax.plot(freqs, noisy, lw=1, alpha=0.8, label="noisy draw")
-    ax.set_xlabel("Frequency [GHz]")
-    ax.set_ylabel("Matched-filter S/N")
-    ax.set_title(f"{title}: declared {declared:g}, expected {np.max(expected):.2f}, drawn {np.max(noisy):.2f}")
-    ax.legend(fontsize=8)
-    return _save(fig, plots_dir, name)
-
-
-@_styled
 def responses_check(freqs, curves, title, plots_dir=None, name="responses", line_ghz=None):
     """Several S/N spectra on one axis, e.g. the phase centre against the source positions.
 
@@ -688,25 +669,6 @@ def weights_check(chunks, labels, plots_dir=None, name="weights", n_points=200_0
     axes[-1].set(xlabel="channel frequency [GHz]", ylabel="measured / predicted σ")
     axes[-1].legend(fontsize=8)
     return _save(fig, plots_dir, name)
-
-
-def contact_sheet(plots_dir: str, title: str = "Luv_finder diagnostics") -> str:
-    """Write an index.html showing every PNG in ``plots_dir``."""
-    pngs = sorted(f for f in os.listdir(plots_dir) if f.endswith(".png"))
-    cards = "\n".join(f'<figure><img src="{f}" loading="lazy"><figcaption>{f[:-4]}</figcaption></figure>' for f in pngs)
-    html = f"""<!doctype html><meta charset="utf-8"><title>{title}</title>
-<style>
- body{{font:14px/1.5 system-ui,sans-serif;margin:2rem;background:#fafafa;color:#222}}
- h1{{font-size:1.2rem}} .grid{{display:grid;gap:1.5rem;grid-template-columns:repeat(auto-fit,minmax(420px,1fr))}}
- figure{{margin:0;background:#fff;border:1px solid #ddd;border-radius:6px;padding:.75rem}}
- img{{width:100%;height:auto}}
- figcaption{{margin-top:.5rem;font-family:ui-monospace,monospace;font-size:12px;color:#555}}
-</style>
-<h1>{title}</h1><p>{len(pngs)} figures</p><div class="grid">{cards}</div>"""
-    path = os.path.join(plots_dir, "index.html")
-    with open(path, "w") as fh:
-        fh.write(html)
-    return path
 
 
 #: Gallery frame of a line that passes only the likelihood ratio, or only the fidelity; both: the plain frame.

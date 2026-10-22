@@ -3,12 +3,10 @@ import os
 
 import numpy as np
 import pytest
-from astropy.table import Table
 
 from luv_finder import DataHandler, Gaussian, MatchedFilter, Model
 from luv_finder.cli.find_lines import main as find_lines
 from luv_finder.data import C, ChannelNoise, Chunk, Metadata, load, reweighted
-from luv_finder.fit import COLUMNS as FIT_COLUMNS
 from luv_finder.kernel import default_cores
 from luv_finder.matchedfilter import (
     SearchResult,
@@ -506,7 +504,6 @@ def test_search_pointings_without_jackknife_has_none(fixture_npz):
 
 
 #: A blind lattice around both sources, as the catalogue needs (its noise correlation is measured on a lattice).
-LATTICE = {"dra": {"start": 0.0, "stop": 16.0, "step": 0.5}, "ddec": {"start": -8.0, "stop": 28.0, "step": 0.5}}
 
 
 def _find_lines(tmp_path, npz, *options, grid_cfg=SOURCES_GRID):
@@ -529,37 +526,9 @@ def test_find_lines_combines_a_mosaic_without_field(tmp_path, capsys, two_field_
         assert saved["response"].shape[0] == len(saved["grid_params"])
 
 
-@pytest.mark.parametrize("npz", ["fixture_npz", "two_field_npz"])
-def test_find_lines_writes_a_catalogue(tmp_path, capsys, request, npz):
-    out = tmp_path / "lines.ecsv"
-    _find_lines(tmp_path, request.getfixturevalue(npz), "--jackknife", "--catalogue", str(out), grid_cfg=LATTICE)
-    cat = Table.read(out, format="ascii.ecsv")
-    assert len(cat) and {"ra", "dec", "likelihood", "fidelity", "detected"} <= set(cat.colnames)
-    assert "candidates detected" in capsys.readouterr().out
-    assert (tmp_path / "reliability.png").exists()
-
-
-def test_find_lines_catalogue_needs_the_jackknife(tmp_path, fixture_npz):
-    with pytest.raises(SystemExit):
-        _find_lines(tmp_path, fixture_npz, "--catalogue", str(tmp_path / "lines.ecsv"))
-
-
-def test_find_lines_fits_the_detected_lines(tmp_path, capsys, fixture_npz):
-    out = tmp_path / "lines.ecsv"
-    _find_lines(tmp_path, fixture_npz, "--jackknife", "--catalogue", str(out), "--fit", grid_cfg=LATTICE)
-    cat = Table.read(out, format="ascii.ecsv")
-    assert set(FIT_COLUMNS) <= set(cat.colnames)
-    assert np.all(np.isfinite(cat["fit_line_flux"][cat["detected"]]))
-    assert np.all(np.isnan(cat["fit_line_flux"][~cat["detected"]]))
-    assert "fit_line_flux" in capsys.readouterr().out
-    with pytest.raises(SystemExit):
-        _find_lines(tmp_path, fixture_npz, "--jackknife", "--fit")
-
-
-def test_find_lines_searches_one_field_without_pb_correction(tmp_path, capsys, two_field_npz):
+def test_find_lines_searches_one_field(tmp_path, capsys, two_field_npz):
     _find_lines(tmp_path, two_field_npz, "--field", "1")
-    text = capsys.readouterr().out
-    assert "peak flux density" in text and "PB-corrected" not in text
+    assert "PB-corrected peak flux density" in capsys.readouterr().out
 
 
 @pytest.mark.parametrize(("total", "used"), [(48, 12), (8, 2), (4, 1), (2, 1), (1, 1)])

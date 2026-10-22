@@ -19,7 +19,7 @@ import yaml
 
 from luv_finder import DataHandler, Gaussian, MatchedFilter, Model
 from luv_finder.matchedfilter import build_grid
-from luv_finder.plotting import source_size_check
+from luv_finder.plotting import responses_check
 
 REPO = Path(__file__).parents[1]
 NPZ_DIR = REPO / "output" / "npz"
@@ -80,12 +80,10 @@ def test_recovers_declared_snr(name, request):
     peak = expected.response[0].max()
 
     if request.config.getoption("--plots"):
-        source_size_check(
+        responses_check(
             expected.frequencies(),
-            expected.response[0],
-            drawn.response[0],
-            declared,
-            f"size_{name}",
+            {"expected": expected.response[0], "noisy draw": drawn.response[0]},
+            f"size_{name}: declared S/N {declared:g}, expected {peak:.2f}",
             plots_dir=str(REPO / "plots" / "source_size"),
             name=f"size_{name}",
         )

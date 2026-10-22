@@ -46,12 +46,29 @@ def plots(request) -> Path:
     return PLOTS_DIR
 
 
+def contact_sheet(plots_dir: str, title: str = "Luv_finder diagnostics") -> str:
+    """Write an index.html showing every PNG in ``plots_dir``."""
+    pngs = sorted(f for f in os.listdir(plots_dir) if f.endswith(".png"))
+    cards = "\n".join(f'<figure><img src="{f}" loading="lazy"><figcaption>{f[:-4]}</figcaption></figure>' for f in pngs)
+    html = f"""<!doctype html><meta charset="utf-8"><title>{title}</title>
+<style>
+ body{{font:14px/1.5 system-ui,sans-serif;margin:2rem;background:#fafafa;color:#222}}
+ h1{{font-size:1.2rem}} .grid{{display:grid;gap:1.5rem;grid-template-columns:repeat(auto-fit,minmax(420px,1fr))}}
+ figure{{margin:0;background:#fff;border:1px solid #ddd;border-radius:6px;padding:.75rem}}
+ img{{width:100%;height:auto}}
+ figcaption{{margin-top:.5rem;font-family:ui-monospace,monospace;font-size:12px;color:#555}}
+</style>
+<h1>{title}</h1><p>{len(pngs)} figures</p><div class="grid">{cards}</div>"""
+    path = os.path.join(plots_dir, "index.html")
+    with open(path, "w") as fh:
+        fh.write(html)
+    return path
+
+
 def pytest_sessionfinish(session, exitstatus):
     """Build the contact sheet once every figure has been written."""
     if not session.config.getoption("--plots") or not PLOTS_DIR.exists():
         return
-    from luv_finder.plotting import contact_sheet
-
     path = contact_sheet(str(PLOTS_DIR))
     n = len(list(PLOTS_DIR.glob("*.png")))
     session.config.pluginmanager.get_plugin("terminalreporter").write_line(

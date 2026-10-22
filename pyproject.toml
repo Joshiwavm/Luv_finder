@@ -49,7 +49,6 @@ dev = [
 [project.scripts]
 luv-mock = "luv_finder.cli.make_mock:main"
 luv-find = "luv_finder.cli.find_lines:main"
-luv-export = "luv_finder.cli.export_uv:main"
 luv-run = "luv_finder.cli.run:main"
 
 [project.urls]
