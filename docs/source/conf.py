@@ -22,7 +22,6 @@ extensions = [
 templates_path = ["_templates"]
 exclude_patterns = ["build", "**.ipynb_checkpoints"]
 html_theme = "furo"
-html_static_path = ["_static"]
 pygments_style = "sphinx"
 pygments_dark_style = "monokai"
 
