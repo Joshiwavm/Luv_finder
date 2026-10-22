@@ -11,9 +11,10 @@ import numpy as np
 import pytest
 from matplotlib.figure import Figure
 
-from luv_finder import Gaussian, MatchedFilter, Model
+from luv_finder import Gaussian, MatchedFilter
 from luv_finder.data import reweighted
 from luv_finder.plotting import response_check, spectrum_check, weights_check
+from luv_finder.utils import primary_beam_fwhm
 
 
 def test_spectrum_per_source(data, truth, plots):
@@ -45,17 +46,14 @@ def test_spectrum_per_source(data, truth, plots):
 def test_response_figure(data, truth, plots):
     """Matched-filter S/N spectrum with the jackknife overlaid."""
     positions = np.array([s["position"] for s in truth["sources"]])
-    g = Gaussian()
-    g.grid = {
+    grid = {
         "dra": positions[:, 0],
         "ddec": positions[:, 1],
         "bmin": data.metadata.minresolution() / 10,
         "bmaj": data.metadata.minresolution() / 10,
         "width": 300.0,
     }
-    mod = Model()
-    mod.addcomponent(g)
-    mf = MatchedFilter(data, mod)
+    mf = MatchedFilter(data, grid)
     mf.run(jackknife=True)
     fig = response_check(mf, plots_dir=str(plots), name="filter_response", line_ghz=truth["sources"][0]["line"]["mean"])
     assert isinstance(fig, Figure)
@@ -65,42 +63,29 @@ def test_search_figures(data, truth, plots):
     """S/N map with the injected sources circled, phase centre against the sources, and noise statistics."""
     from luv_finder.plotting import noise_check, responses_check, snr_map
 
-    g = Gaussian()
     axis = np.arange(-30.0, 30.1, 2.0)
-    g.grid = {"dra": axis, "ddec": axis, "bmin": 0.3, "bmaj": 0.3, "width": 300.0}
-    mod = Model()
-    mod.addcomponent(g)
-    mf = MatchedFilter(data, mod)
+    grid = {"dra": axis, "ddec": axis, "bmin": 0.3, "bmaj": 0.3, "width": 300.0}
+    mf = MatchedFilter(data, grid)
     mf.run(jackknife=True)
     marks = {f"line {s['line']['mean']} GHz": s["position"] for s in truth["sources"]}
     assert isinstance(snr_map(mf, plots_dir=str(plots), name="snr_map", marks=marks), Figure)
     assert isinstance(noise_check(mf, plots_dir=str(plots), name="noise"), Figure)
 
     points = {"phase centre": (0.0, 0.0), **{k: tuple(v) for k, v in marks.items()}}
-    single = Gaussian()
-    single.grid = {"dra": [p[0] for p in points.values()], "ddec": [p[1] for p in points.values()], "width": 300.0}
-    mod = Model()
-    mod.addcomponent(single)
-    pick = MatchedFilter(data, mod)
+    grid = {"dra": [p[0] for p in points.values()], "ddec": [p[1] for p in points.values()], "width": 300.0}
+    pick = MatchedFilter(data, grid)
     pick.run()
     rows = {k: pick.response[i * (len(points) + 1)] for i, k in enumerate(points)}  # the (dra_i, ddec_i) diagonal
     fig = responses_check(pick.frequencies(), rows, "Phase centre vs sources", plots_dir=str(plots))
     assert isinstance(fig, Figure)
 
 
-def test_layout_and_scan_figures(data, plots):
-    from luv_finder.plotting import mosaic_layout, scan_check, uv_profile
+def test_layout_figure(data, plots):
+    from luv_finder.plotting import mosaic_layout
 
-    pb = data.metadata.primarybeamsize()
+    pb = primary_beam_fwhm(data.metadata.central_frequency, data.metadata.dish_diameter)
     offsets = {0: (0.0, 0.0), 1: (-17.0, -30.0), 2: (17.0, -30.0)}
     assert isinstance(mosaic_layout(offsets, pb, plots_dir=str(plots), marks={"line": (2.0, 20.5)}), Figure)
-    models = {"point": Gaussian(), "2 arcsec": Gaussian(bmin=2.0, bmaj=2.0)}
-    fig = uv_profile({k: data for k in models}, 4.25, 23.5, models, 39.9, plots_dir=str(plots))
-    assert isinstance(fig, Figure)
-    x = np.linspace(0, 4, 9)
-    assert isinstance(
-        scan_check(x, {"demo": np.exp(-((x - 2) ** 2))}, "size", "scan", truth=2.0, plots_dir=str(plots)), Figure
-    )
 
 
 def test_amp_phase_and_dirty_map_figures(data, truth, plots):
@@ -216,7 +201,7 @@ def test_response_shape_figure(plots):
 
     def search(snr, jackknife=None):
         error = np.full(snr.shape, 1e-3)
-        return SearchResult(axes, freqs, snr, snr * error, error, np.ones(shape), jackknife)
+        return SearchResult(axes, freqs, snr, error, np.ones(shape), jackknife)
 
     noisy, jackknife = (n / n.std(axis=(0, 1, 3), keepdims=True) for n in map(noise, (1, 2)))
     data = noisy + np.stack([blob(s) for s in sigmas], 2)
@@ -275,13 +260,12 @@ def test_weights_figure(data, plots):
 
 def test_figures_are_saved_only_when_asked(tmp_path):
     """A figure is returned either way; ``<plots_dir>/<name>.png`` is written only with a ``plots_dir``."""
-    from luv_finder.plotting import scan_check
+    from luv_finder.plotting import mosaic_layout
 
-    x = np.arange(5.0)
-    assert isinstance(scan_check(x, {"a": x}, "x", "title"), Figure)
+    assert isinstance(mosaic_layout({0: (0.0, 0.0)}, 60.0), Figure)
     assert not list(tmp_path.iterdir())
-    scan_check(x, {"a": x}, "x", "title", plots_dir=str(tmp_path), name="scan")
-    assert (tmp_path / "scan.png").is_file()
+    mosaic_layout({0: (0.0, 0.0)}, 60.0, plots_dir=str(tmp_path), name="layout")
+    assert (tmp_path / "layout.png").is_file()
 
 
 def test_style_is_scoped():
@@ -289,12 +273,12 @@ def test_style_is_scoped():
     import matplotlib.pyplot as plt
     from matplotlib.markers import TICKUP
 
-    from luv_finder.plotting import scan_check, style
+    from luv_finder.plotting import mosaic_layout, style
 
     before = plt.rcParams["xtick.direction"]
     with style():
         assert plt.rcParams["xtick.direction"] == "in"
-    fig = scan_check(np.arange(3.0), {"a": np.arange(3.0)}, "x", "t")
+    fig = mosaic_layout({0: (0.0, 0.0)}, 60.0)
     assert plt.rcParams["xtick.direction"] == before
     assert fig.axes[0].xaxis.get_major_ticks()[0].tick1line.get_marker() == TICKUP  # bottom ticks point in
 

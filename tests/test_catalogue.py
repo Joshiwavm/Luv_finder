@@ -6,7 +6,6 @@ import pytest
 from astropy.table import Table
 from scipy import special, stats
 
-from luv_finder import MatchedFilter
 from luv_finder.catalogue import (
     BRIGHT_SNR,
     ResponseCorrelation,
@@ -21,8 +20,8 @@ from luv_finder.catalogue import (
     response_correlation,
 )
 from luv_finder.data import sky_offset
-from luv_finder.matchedfilter import SearchResult, build_grid, grid_model, pb_corrected
-from luv_finder.model import C_KMS, covariance, envelope
+from luv_finder.matchedfilter import SearchResult
+from luv_finder.model import C_KMS, FWHM_TO_SIGMA, covariance, envelope
 
 STEP = 0.5  # arcsec
 NU, DV = 40e9, 50.0  # Hz, km/s per channel
@@ -42,7 +41,9 @@ def _smooth(noise, major, minor, pa, chan, steps=(STEP, STEP)):
     q_ra, q_dec, q_chan = np.meshgrid(
         np.fft.fftfreq(SHAPE[0], steps[0]), np.fft.fftfreq(SHAPE[1], steps[1]), np.fft.fftfreq(SHAPE[2]), indexing="ij"
     )
-    transfer = envelope(q_ra, q_dec, covariance(major, minor, pa)) * np.exp(-2 * np.pi**2 * (chan * q_chan) ** 2)
+    transfer = envelope(q_ra, q_dec, covariance(major / FWHM_TO_SIGMA, minor / FWHM_TO_SIGMA, pa)) * np.exp(
+        -2 * np.pi**2 * (chan * q_chan) ** 2
+    )
     x = np.fft.ifftn(np.fft.fftn(noise) * transfer).real
     return x / x.std()
 
@@ -67,7 +68,7 @@ def _result(jackknife, step_ra=STEP, channels=None):
 
     def search(snr):
         error = np.full(snr.shape, 1e-3)
-        return SearchResult(axes, freqs, snr, snr * error, error, np.ones((n_dra, n_ddec, n_chan)))
+        return SearchResult(axes, freqs, snr, error, np.ones((n_dra, n_ddec, n_chan)))
 
     data = SPREAD * np.random.default_rng(1).standard_normal(jackknife.shape)
     return dataclasses.replace(search(data), jackknife=search(jackknife))
@@ -278,12 +279,9 @@ def test_fidelity_needs_three_noise_groups():
     assert bins["n_data"].tolist() == [2, 1] and bins["n_noise"].tolist() == [1, 0]
 
 
-def test_catalogue_of_the_fixture(data, truth, tmp_path):
+def test_catalogue_of_the_fixture(data, truth, blind_catalogue, tmp_path):
     """A blind lattice of +-30 arcsec finds both injected lines, each once, and detects them."""
-    lattice = data.metadata.minresolution() / 2 * np.arange(-18, 19)
-    mf = MatchedFilter(data, grid_model(build_grid(data, {"dra": lattice, "ddec": lattice})))
-    mf.run(jackknife=True)
-    cat = catalogue(pb_corrected(mf.result, data), ref=data.metadata.ref)
+    cat = blind_catalogue.copy()
     assert cat["id"].tolist() == list(range(1, len(cat) + 1))
     assert np.all(np.diff(cat["snr"]) <= 0) and cat["snr"].tolist() == cat.meta["snr_data"]
     channel = np.median(np.diff(data.freqs)) / 1e9
@@ -331,3 +329,14 @@ def test_bright_lines_flags_only_groups_at_bright_snr():
     cat = Table({"id": [1, 2], "snr": [BRIGHT_SNR + 20, BRIGHT_SNR - 1], "freq_ghz": [85.0, 86.0]})
     assert "#1 (S/N 120, 85.000 GHz)" in bright_lines(cat) and "#2" not in bright_lines(cat)
     assert bright_lines(cat[1:]) == ""
+
+
+def test_chunks_of_a_spectrum_share_its_groups_out():
+    """Catalogues of two bands, split at any frequency, hold the groups of the whole one, each once."""
+    result = _result(_field(2.0, 1.0, 90.0, 2.0))
+    whole = catalogue(result)
+    mid = result.freqs[result.freqs.size // 2 + 1]
+    parts = [catalogue(result, band=band) for band in ((-np.inf, mid), (mid, np.inf))]
+    for name in ("data", "jackknife", "negative"):
+        pooled = sorted(v for p in parts for v in p.meta[f"snr_{name}"])
+        assert pooled == sorted(whole.meta[f"snr_{name}"]), name

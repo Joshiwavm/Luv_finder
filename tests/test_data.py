@@ -81,8 +81,8 @@ def test_load_reads_all_or_the_selected_fields_of_an_npz(two_field_npz):
 
 
 def test_metadata_scales(data):
-    assert 10 < data.metadata.primarybeamsize() < 300  # arcsec, band 1-ish at 40 GHz
-    assert data.metadata.minresolution() < data.metadata.primarybeamsize()
+    pb = primary_beam_fwhm(data.metadata.central_frequency, data.metadata.dish_diameter)
+    assert 10 < pb < 300 and data.metadata.minresolution() < pb  # arcsec, band 1-ish at 40 GHz
 
 
 def test_primary_beam_is_unity_on_axis_and_half_at_half_the_fwhm():
@@ -116,13 +116,6 @@ def test_primary_beam_radius_inverts_the_beam():
     assert primary_beam_radius(0.5, 92e9, 12.0) == pytest.approx(fwhm / 2)
     assert primary_beam(primary_beam_radius(0.2, 92e9, 12.0), 92e9, 12.0) == pytest.approx(0.2)
     assert primary_beam_radius(1.0, 92e9, 12.0) == 0.0
-
-
-def test_metadata_primarybeamsize_is_the_fwhm():
-    meta = Metadata(12.0, (0.0, 0.0), 92e9, 1e4)
-    assert meta.primarybeamsize() == pytest.approx(63.3, abs=0.1)
-    assert meta.primarybeamsize() == pytest.approx(primary_beam_fwhm(92e9, 12.0))
-    assert meta.primarybeamsize(7.0) == pytest.approx(63.3 * 12 / 7, abs=0.2)
 
 
 def test_phase_shift_recentres_model(data):
@@ -226,7 +219,7 @@ def _noise_chunk(n_chan=32, n_row=20000, smooth=True, spw=0, seed=0):
 
 def test_channel_noise_of_hanning_noise():
     """Hanning-smoothed unit noise has 3/8 of the power its weights say, correlated 2/3 and 1/6 at lags 1 and 2."""
-    noise = channel_noise([_noise_chunk()])
+    noise = channel_noise([_noise_chunk().jackknife()])
     assert noise.scale == pytest.approx(np.full(32, 0.375), rel=0.05)
     assert noise.rho.size == 3 and noise.rho == pytest.approx(HANNING, abs=0.01)
 
@@ -236,7 +229,7 @@ def test_channel_noise_finds_the_noisy_channels():
     chunk = _noise_chunk(smooth=False)
     X = chunk.X.copy()
     X[5:8] *= 2
-    noise = channel_noise([dataclasses.replace(chunk, X=X)])
+    noise = channel_noise([dataclasses.replace(chunk, X=X).jackknife()])
     expected = np.ones(32)
     expected[5:8] = 4.0
     assert noise.scale == pytest.approx(expected, rel=0.05) and noise.rho.tolist() == [1.0]
@@ -244,7 +237,7 @@ def test_channel_noise_finds_the_noisy_channels():
 
 def test_channel_noise_needs_noise():
     with pytest.raises(ValueError, match="no noise"):
-        channel_noise([_chunk(np.arange(100), np.zeros(100, dtype=int), values=np.ones(100))])
+        channel_noise([_chunk(np.arange(100), np.zeros(100, dtype=int), values=np.ones(100)).jackknife()])
 
 
 def test_channel_noise_per_spectral_window():
@@ -280,18 +273,33 @@ def test_reweighted_weights_match_the_noise():
     chunk = reweighted([_two_scans()])[0]
     assert chunk.w.dtype == np.float32
     assert np.allclose(chunk.vis, _two_scans().X, rtol=1e-6)
-    assert channel_noise([chunk]).scale == pytest.approx(np.ones(4), rel=0.05)
+    assert channel_noise([chunk.jackknife()]).scale == pytest.approx(np.ones(4), rel=0.05)
+
+
+def _alternating(chunk, sky=(0.0, 0.0)):
+    """``chunk``'s integrations dealt to two fields in turn, each field's visibilities plus its own ``sky``."""
+    rows = {k: getattr(chunk, k) for k in ("u", "v", "time", "baseline", "scan")}
+    return [
+        dataclasses.replace(
+            chunk, field=f, X=chunk.X[:, f::2] + sky[f], w=chunk.w[:, f::2], **{k: v[f::2] for k, v in rows.items()}
+        )
+        for f in (0, 1)
+    ]
 
 
 def test_weight_scale_pairs_integrations_close_in_time_across_fields():
-    """A mosaic field seen once per visit pairs with the next field's integration of the same baseline."""
+    """A mosaic field seen once per visit (its next visit after MAX_GAP) pairs with the next field's integration."""
     a = dataclasses.replace(_two_scans(), field=0, scan=np.zeros(40000, dtype=int))
-    rows = {k: getattr(a, k) for k in ("u", "v", "time", "baseline", "scan")}
-    fields = [
-        dataclasses.replace(a, field=f, X=a.X[:, f::2], w=a.w[:, f::2], **{k: v[f::2] for k, v in rows.items()})
-        for f in (0, 1)
-    ]
-    assert weight_scale(fields).scale == pytest.approx(weight_scale([a]).scale, rel=1e-12)
+    a = dataclasses.replace(a, time=a.time * 10)  # 300 s apart: a field's own visits are 600 s apart
+    assert weight_scale(_alternating(a)).scale == pytest.approx(weight_scale([a]).scale, rel=1e-12)
+
+
+def test_weight_scale_pairs_within_a_field_first():
+    """Fields seen in turn every 30 s, each with its own sky: the pairs stay in their field, so no sky is noise."""
+    a = dataclasses.replace(_two_scans(), field=0, scan=np.zeros(40000, dtype=int))
+    fields = _alternating(a, sky=(3.0, -3.0))
+    assert weight_scale(fields).scale == pytest.approx(weight_scale(_alternating(a)).scale, rel=1e-12)
+    assert weight_scale(fields).scale[0, 2:] == pytest.approx(np.ones(2), rel=0.05)  # channels 0-1 are noisier
 
 
 def test_weight_scale_measures_a_scan_of_one_integration():

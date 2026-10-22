@@ -3,7 +3,6 @@ from __future__ import annotations
 import warnings
 from collections.abc import Sequence
 from dataclasses import dataclass
-from itertools import product
 
 import numpy as np
 from astropy.table import Table, vstack
@@ -11,7 +10,7 @@ from scipy import fft, ndimage, optimize, special, stats
 
 from .data import sky_direction
 from .matchedfilter import TEMPLATE_KEYS, SearchResult
-from .model import C_KMS
+from .model import C_KMS, LINE_FLUX
 from .utils import BLOCK_BYTES
 
 
@@ -270,6 +269,8 @@ def fidelity(snr_data, snr_noise, floor: float, step: float = 0.25) -> tuple[np.
 
 #: How the likelihood ratio and the fidelity combine into ``detected``: "and" (both) or "or" (either).
 DETECTION_RULE = "and"
+#: Default reliability tests: the S/N floor of the groups, the likelihood ratio ``k``, the fidelity and the rule.
+RELIABILITY = {"floor": 4.0, "k": 3.0, "fidelity_min": 0.6, "rule": DETECTION_RULE}
 
 #: S/N from which a line's sidelobes (``sidelobe`` of a few per cent) reach a few sigma elsewhere in the search:
 #: flagged by :func:`bright_lines`, not subtracted.
@@ -300,10 +301,11 @@ SEARCH_META = ("jackknife_spread", "hwhm_major", "hwhm_minor", "pa", "spectral_h
 def catalogue(
     result: SearchResult,
     ref=None,
-    floor: float = 4.0,
-    k: float = 3.0,
-    fidelity_min: float = 0.6,
-    rule: str = DETECTION_RULE,
+    floor: float = RELIABILITY["floor"],
+    k: float = RELIABILITY["k"],
+    fidelity_min: float = RELIABILITY["fidelity_min"],
+    rule: str = RELIABILITY["rule"],
+    band: tuple[float, float] | None = None,
 ) -> Table:
     """Catalogue the line candidates of a search: one row per group of the data, by S/N descending.
 
@@ -331,6 +333,9 @@ def catalogue(
         Fidelity threshold.
     rule : {"or", "and"}
         How the two tests combine into ``detected``.
+    band : (low, high) Hz, optional
+        Keep only the groups (of the data, the jackknife and the negated data) that peak in
+        ``low <= nu < high``: the chunk's own part of a spectrum searched in overlapping chunks.
 
     Returns
     -------
@@ -357,17 +362,21 @@ def catalogue(
         name: groups(values, result, nc, floor)
         for name, values in (("data", result.snr), ("jackknife", result.jackknife.snr), ("negative", -result.snr))
     }
+    if band is not None:
+        found = {name: [g for g in gs if band[0] <= result.freqs[g.k] < band[1]] for name, gs in found.items()}
     snr = {name: np.array([g.snr for g in gs]) for name, gs in found.items()}
     i, j, t, c = (np.array([getattr(g, a) for g in found["data"]], dtype=int) for a in "ijtk")
-    templates = np.array(list(product(*(result.axes[a] for a in TEMPLATE_KEYS))))[t]
-    line_flux, line_flux_error = (a[i, j, t, c] for a in result.integrated_flux())
+    templates = result.templates[t]
     columns = {"id": np.arange(1, i.size + 1), "dra": np.asarray(result.axes["dra"])[i]}
     columns["ddec"] = np.asarray(result.axes["ddec"])[j]
     if ref is not None:
         columns["ra"], columns["dec"] = np.degrees(sky_direction((columns["dra"], columns["ddec"]), ref))
     columns |= {"freq_ghz": result.freqs[c] / 1e9, **dict(zip(TEMPLATE_KEYS, templates.T, strict=True))}
-    columns |= {key: getattr(result, key)[i, j, t, c] for key in ("snr", "flux", "error")}
-    columns |= {"line_flux": line_flux, "line_flux_error": line_flux_error, "coverage": result.coverage[i, j, c]}
+    peak, error = result.snr[i, j, t, c], result.error[i, j, t, c]
+    per_width = templates[:, TEMPLATE_KEYS.index("width")] * LINE_FLUX  # line flux per peak flux density
+    columns |= {"snr": peak, "flux": peak * error, "error": error}
+    columns |= {"line_flux": peak * error * per_width, "line_flux_error": error * per_width}
+    columns["coverage"] = result.coverage[i, j, c]
     columns["n_peaks"] = np.array([g.n_peaks for g in found["data"]], dtype=int)
     reliable, meta = _reliability(snr, floor, k, fidelity_min, rule)
     search = {"jackknife_spread": jackknife_spread(result)} | {key: getattr(nc, key) for key in SEARCH_META[1:]}
@@ -392,44 +401,81 @@ def bright_lines(cat: Table) -> str:
     )
 
 
+def passes(ratio, lower, fid, k: float, fidelity_min: float) -> tuple[np.ndarray, np.ndarray]:
+    """Which groups pass the likelihood ratio (``>= k`` or a lower limit) and which the fidelity (NaN: neither)."""
+    return (np.asarray(ratio) >= k) | np.asarray(lower, dtype=bool), np.asarray(fid) >= fidelity_min
+
+
 def _reliability(
     snr: dict, floor: float, k: float, fidelity_min: float, rule: str = DETECTION_RULE
 ) -> tuple[dict, dict]:
     """Likelihood ratio, fidelity and detection of the data groups against the jackknife's, as columns and meta."""
     ratio, lower = likelihood(snr["data"], snr["jackknife"])
     fid, (amplitude, sigma), bins = fidelity(snr["data"], snr["jackknife"], floor)
-    passes = (ratio >= k) | lower
+    lr, fid_ok = passes(ratio, lower, fid, k, fidelity_min)
     if rule == "or":
-        detected = passes | (fid >= fidelity_min)
+        detected = lr | fid_ok
     elif rule == "and":
-        detected = passes & ((fid >= fidelity_min) | np.isnan(fid))
+        detected = lr & (fid_ok | np.isnan(fid))
     else:
         raise ValueError(f'rule is "or" or "and", not {rule!r}')
     columns = {"likelihood": ratio, "likelihood_lower_limit": lower, "fidelity": fid, "detected": detected}
     meta = {"floor": float(floor), "k": float(k), "fidelity_min": float(fidelity_min), "rule": rule}
     meta |= {"noise_amplitude": float(amplitude), "noise_sigma": float(sigma)}
-    for key, passed in (("snr_likelihood", ratio >= k), ("snr_fidelity", fid >= fidelity_min)):
+    for key, passed in (("snr_likelihood", ratio >= k), ("snr_fidelity", fid_ok)):
         meta[key] = float(snr["data"][passed].min()) if passed.any() else np.nan
     meta |= {f"snr_{name}": values.tolist() for name, values in snr.items()}
     meta["fidelity_bins"] = {key: values.tolist() for key, values in bins.items()}
     return columns, meta
 
 
-def merge_catalogues(cats: Sequence[Table], reliability: dict | None = None) -> Table:
+def merge_catalogues(cats: Sequence[Table], reliability: dict | None = None, beam: dict | None = None) -> Table:
     """One catalogue of several searches (e.g. one per spectral window), its reliability over their whole volume.
 
     ``reliability`` (``floor``, ``k``, ``fidelity_min``, ``rule``) overrides the searches' own, so the
-    tests can change without a new search.
+    tests can change without a new search. With ``beam`` (arcsec per ``unit``), a line found by two
+    searches (:func:`duplicates`) counts once: the fainter group gets ``duplicate_of`` and is not detected.
     """
-    given = {key: cats[0].meta[key] for key in ("floor", "k", "fidelity_min", "rule")} | (reliability or {})
-    floor, k, fidelity_min, rule = (given[key] for key in ("floor", "k", "fidelity_min", "rule"))
+    given = {key: cats[0].meta[key] for key in RELIABILITY} | (reliability or {})
     cat = vstack(list(cats), metadata_conflicts="silent").copy()  # vstack of one table returns it
-    snr = {"data": np.asarray(cat["snr"])}
+    order = np.argsort(-np.asarray(cat["snr"]), kind="stable")
+    snr = {"data": np.asarray(cat["snr"])[order]}
     snr |= {name: np.concatenate([c.meta[f"snr_{name}"] for c in cats]) for name in ("jackknife", "negative")}
-    reliable, meta = _reliability(snr, floor, k, fidelity_min, rule)
-    for name, values in reliable.items():
-        cat[name] = values
-    cat.meta = meta | {"parts": [{key: c.meta[key] for key in SEARCH_META} for c in cats]}
-    cat.sort("snr", reverse=True)
+    cat = cat[order]
     cat["id"] = np.arange(1, len(cat) + 1)
+    one = np.ones(len(cat), dtype=bool)
+    if beam is not None:
+        cat["duplicate_of"] = duplicates(cat, beam)
+        one = np.asarray(cat["duplicate_of"] == 0)
+    reliable, meta = _reliability({**snr, "data": snr["data"][one]}, *(given[key] for key in RELIABILITY))
+    for name, values in reliable.items():
+        cat[name] = np.full(len(cat), False if values.dtype == bool else np.nan, dtype=values.dtype)
+        cat[name][one] = values
+    cat.meta = meta | {"parts": [{key: c.meta[key] for key in SEARCH_META} for c in cats]}
     return cat
+
+
+def duplicates(cat: Table, beam: dict) -> np.ndarray:
+    """Id of a brighter group of the same line in another unit, else 0, for every row of ``cat``.
+
+    Two groups are one line when they are within ``beam[unit]`` (arcsec) of each other and their
+    templates overlap, ``|dv| <= (FWHM_a + FWHM_b) / 2``: a line wider than the gap it straddles between
+    two windows is found once in each, its halves far apart in frequency. ``cat`` is sorted by S/N.
+    """
+    from scipy.spatial import cKDTree
+
+    dra, ddec, nu, width = (np.asarray(cat[k], dtype=float) for k in ("dra", "ddec", "freq_ghz", "width"))
+    unit = np.asarray(cat["unit"])
+    pairs = cKDTree(np.c_[dra, ddec]).query_pairs(max(beam.values()), output_type="ndarray")
+    pairs.sort(axis=1)  # a brighter than b
+    a, b = pairs.T if pairs.size else (np.zeros(0, int), np.zeros(0, int))
+    same = (
+        (unit[a] != unit[b])
+        & (np.hypot(dra[a] - dra[b], ddec[a] - ddec[b]) <= np.array([beam[u] for u in unit[a]]))
+        & (np.abs(nu[b] / nu[a] - 1) * C_KMS <= (width[a] + width[b]) / 2)
+    )
+    of = np.zeros(len(cat), dtype=int)
+    for i, j in sorted(zip(a[same].tolist(), b[same].tolist(), strict=True)):
+        if not of[i] and not of[j]:
+            of[j] = cat["id"][i]
+    return of

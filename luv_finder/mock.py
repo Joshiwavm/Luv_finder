@@ -2,20 +2,22 @@
 
 from __future__ import annotations
 
+import copy
 import glob
 import os
 import shutil
 
 import astropy.units as u
-import matplotlib.pyplot as plt
 import numpy as np
 import yaml
 from astropy.constants import c
+from astropy.coordinates import SkyCoord
 from astropy.io import fits
 from astropy.modeling import models
+from matplotlib.figure import Figure
 
-from . import utils
 from ._casa import tasks, tools
+from .model import FWHM_TO_SIGMA
 
 _REF_RMS_JY = 0.05e-3
 _REF_MIN = 27.0
@@ -71,7 +73,7 @@ class MockObservation:
     integration_time : str with units, e.g. "8min"
     sources : list of dict
         ``position`` (dra, ddec) arcsec east and north; optional ``axis_maj``/``axis_min``, the Gaussian
-        sigma in arcsec (the model's ``bmaj``/``bmin``, default one cell), and ``pa``, the
+        FWHM in arcsec (the model's ``bmaj``/``bmin``, default a sigma of one cell), and ``pa``, the
         major axis' position angle in degrees east of north (default 0);
         ``line`` {width km/s, mean GHz, snr}; ``continuum`` {snr, index}, flux density
         ``propto (nu / freq_center)^index`` (default 0, flat), ``snr`` at ``freq_center``.
@@ -81,6 +83,15 @@ class MockObservation:
     calibrate_snr : bool
         Re-simulate once with the flux rescaled so that each line's declared
         ``snr`` is its achieved matched-filter S/N. Doubles the runtime.
+    pointings : list of (dra, ddec), optional
+        Pointing centres in arcsec east and north of ``direction``, observed in turn (a mosaic);
+        default one pointing at ``direction``.
+    windows : list of dict, optional
+        Spectral windows ``{freq_center, nchan}``, each observed by its own ``simobserve`` of the
+        same sky (its own noise, seed ``seed + k``) and concatenated into one MS; default the cube's
+        own. The channel width in Hz (``dv`` at ``freq_center``) and the flux scale are shared.
+    image : bool
+        ``tclean`` the MSs and plot the maps (one window only).
     """
 
     def __init__(
@@ -100,6 +111,9 @@ class MockObservation:
         support_folder="support",
         seed=242,
         calibrate_snr=True,
+        pointings=None,
+        windows=None,
+        image=True,
     ):
         if not sources:
             raise ValueError("at least one source is required")
@@ -107,8 +121,11 @@ class MockObservation:
         self.dv = dv
         self.freq_center = freq_center
         self.cell = cell
-        self.fits_filename = fits_filename
         self.sources = sources
+        default = "_".join(
+            f"{k}{s[key]['snr']}" for s in sources for k, key in (("line", "line"), ("cont", "continuum")) if key in s
+        )
+        self.fits_filename = fits_filename or os.path.join(support_folder, default + "_input.fits")
         self.direction = direction
         self.ptg_file = ptg_file or os.path.join(support_folder, "ptgfile.txt")
         self.calibrate_snr = calibrate_snr
@@ -116,6 +133,11 @@ class MockObservation:
         self.output_folder = output_folder
         self.support_folder = support_folder
         self.seed = seed
+        self.pointings = [tuple(p) for p in pointings] if pointings else [(0.0, 0.0)]
+        self.windows = windows
+        self.image = image
+        if windows and (calibrate_snr or image):
+            raise ValueError("calibrate_snr and image need one spectral window")
         self.cube = None
         self.ms_noiseless = None
         self.ms_noisy = None
@@ -161,15 +183,12 @@ class MockObservation:
 
     @property
     def project_name(self) -> str:
-        if self.fits_filename is None:
-            parts = []
-            for src in self.sources:
-                if "line" in src:
-                    parts.append(f"line{src['line']['snr']}")
-                if "continuum" in src:
-                    parts.append(f"cont{src['continuum']['snr']}")
-            self.fits_filename = os.path.join(self.support_folder, "_".join(parts) + "_input.fits")
         return os.path.basename(self.fits_filename).split("_input")[0]
+
+    def _name_ms(self) -> None:
+        """The noiseless and noisy MS that ``simobserve`` (or ``concat``) writes under the project."""
+        stem = f"{self.project_name}/{self.project_name}." + os.path.basename(self.alma_config)
+        self.ms_noiseless, self.ms_noisy = stem.replace("cfg", "ms"), stem.replace("cfg", "noisy.ms")
 
     # ------------------------------------------------------------------ cube
     def _source_pixels(self, source):
@@ -178,8 +197,8 @@ class MockObservation:
         dra, ddec = source.get("position", (0.0, 0.0))
         pos_y = ny / 2 + ddec / cell
         pos_x = nx / 2 - dra / cell
-        sig_min = source.get("axis_min", cell) / cell
-        sig_maj = source.get("axis_maj", cell) / cell
+        sig_min = source.get("axis_min", cell / FWHM_TO_SIGMA) * FWHM_TO_SIGMA / cell
+        sig_maj = source.get("axis_maj", cell / FWHM_TO_SIGMA) * FWHM_TO_SIGMA / cell
         return pos_y, pos_x, sig_maj, sig_min
 
     def create_cube(self) -> np.ndarray:
@@ -203,9 +222,9 @@ class MockObservation:
             if "line" in src:
                 width_chan = src["line"]["width"] / dv
                 mean_chan = (src["line"]["mean"] - f_start) / df
-                flux_line = src["line"]["snr"] * self.sensitivity * np.sqrt(width_chan / 2.355 * 4)
-                amp = flux_line / (width_chan / 2.355 * np.sqrt(2 * np.pi))
-                spec = models.Gaussian1D(amplitude=amp, mean=mean_chan, stddev=width_chan / 2.355)(chans)
+                flux_line = src["line"]["snr"] * self.sensitivity * np.sqrt(width_chan * FWHM_TO_SIGMA * 4)
+                amp = flux_line / (width_chan * FWHM_TO_SIGMA * np.sqrt(2 * np.pi))
+                spec = models.Gaussian1D(amplitude=amp, mean=mean_chan, stddev=width_chan * FWHM_TO_SIGMA)(chans)
                 self.cube += spec[:, None, None] * spatial[None]
                 print(f"source {src['position']}: line flux {flux_line * dv:.3e} Jy km/s")
             if "continuum" in src:
@@ -219,19 +238,54 @@ class MockObservation:
     def save_cube(self) -> str:
         if self.cube is None:
             raise RuntimeError("call create_cube() first")
-        _ = self.project_name  # resolves fits_filename
         os.makedirs(os.path.dirname(self.fits_filename), exist_ok=True)
         fits.writeto(self.fits_filename, self.cube, overwrite=True)
         return self.fits_filename
 
     # -------------------------------------------------------------- simulate
+    def _pointing_directions(self) -> list[str]:
+        """``J2000 ...`` of every pointing, offset from ``direction`` (one ``ptgfile`` line each)."""
+        frame, ra, dec = self.direction.split()
+        centre = SkyCoord(ra, dec, frame=frame.lower().replace("j2000", "fk5"))
+        out = []
+        for dra, ddec in self.pointings:
+            p = centre.spherical_offsets_by(dra * u.arcsec, ddec * u.arcsec)
+            out.append(f"{frame} {p.ra.to_string(u.hour, sep='hms', precision=4)} "
+                       f"{p.dec.to_string(u.deg, sep='dms', precision=3, alwayssign=True)}")  # fmt: skip
+        return out
+
     def simulate_observation(self) -> None:
+        """``simobserve`` the cube, or every window's cube and ``concat`` them (``windows``)."""
+        if not self.windows:
+            return self._simobserve()
+        concat = tasks().concat
+        parts = []
+        for k, window in enumerate(self.windows):
+            part = copy.copy(self)
+            part.windows, part.seed = None, self.seed + k
+            part.freq_center = window["freq_center"]
+            # the same channel width in Hz in every window, as the correlator gives
+            scale = (u.Quantity(self.freq_center) / u.Quantity(part.freq_center)).decompose().value
+            part.dv = str(u.Quantity(self.dv) * scale)
+            part.cube_shape = (window["nchan"], *self.cube_shape[1:])
+            part.fits_filename = self.fits_filename.replace("_input", f"_w{k}_input")
+            part.create_cube()
+            part.save_cube()
+            part._simobserve()
+            parts.append(part)
+        os.makedirs(self.project_name, exist_ok=True)
+        self._name_ms()
+        for name in ("ms_noiseless", "ms_noisy"):
+            shutil.rmtree(getattr(self, name), ignore_errors=True)
+            concat(vis=[getattr(part, name) for part in parts], concatvis=getattr(self, name))
+        for part in parts:
+            shutil.rmtree(part.project_name)
+
+    def _simobserve(self) -> None:
         simobserve = tasks().simobserve
-        if self.fits_filename is None:
-            raise RuntimeError("call save_cube() first")
         os.makedirs(os.path.dirname(self.ptg_file) or ".", exist_ok=True)
         with open(self.ptg_file, "w") as f:
-            f.write(self.direction)
+            f.write("\n".join(self._pointing_directions()))
 
         simobserve(
             project=self.project_name,
@@ -251,10 +305,7 @@ class MockObservation:
             seed=self.seed,
             graphics="none",
         )
-        cfg = os.path.basename(self.alma_config)
-        self.ms_noiseless = f"{self.project_name}/{self.project_name}." + cfg.replace("cfg", "ms")
-        self.ms_noisy = f"{self.project_name}/{self.project_name}." + cfg.replace("cfg", "noisy.ms")
-        utils.getstatwtweights(self.ms_noisy)
+        self._name_ms()  # weights stay as simobserve writes them: reading corrects them from the data
 
     def run_imaging(self) -> None:
         casatasks = tasks()
@@ -278,7 +329,7 @@ class MockObservation:
             exportfits(imagename=name + ".image", fitsimage=name + ".fits", overwrite=True)
 
     # ------------------------------------------------------------------ plots
-    def plot_results(self, plots_dir: str = "plots", show: bool = False) -> None:
+    def plot_results(self, plots_dir: str = "plots") -> None:
         """Line / continuum maps (noiseless, noisy, SNR) for every source."""
         os.makedirs(plots_dir, exist_ok=True)
         cube_clean = fits.getdata(self.ms_noiseless.replace(".ms", ".im.fits"))[0]
@@ -289,7 +340,8 @@ class MockObservation:
         def triptych(clean, noisy, tag):
             std = np.nanstd(noisy - clean)
             snr = clean / std if std else clean
-            fig, axes = plt.subplots(1, 3, figsize=(12, 4))
+            fig = Figure(figsize=(12, 4))
+            axes = fig.subplots(1, 3)
             for ax, img, title in zip(
                 axes, (clean, noisy, snr), ("noiseless", "noisy", f"SNR (peak {np.nanmax(snr):.1f})"), strict=True
             ):
@@ -298,13 +350,10 @@ class MockObservation:
                 fig.colorbar(im, ax=ax)
             fig.tight_layout()
             fig.savefig(os.path.join(plots_dir, f"{self.project_name}_{tag}.png"))
-            if show:
-                plt.show()
-            plt.close(fig)
 
         for i, src in enumerate(self.sources):
             if "line" in src:
-                sig = src["line"]["width"] / dv / 2.355
+                sig = src["line"]["width"] / dv * FWHM_TO_SIGMA
                 mean = (src["line"]["mean"] - f_start) / df
                 lo, hi = int(max(0, mean - 3 * sig)), int(min(nchan, mean + 3 * sig + 1))
                 triptych(cube_clean[lo:hi].sum(0), cube_noisy[lo:hi].sum(0), f"src{i}_line")
@@ -324,8 +373,9 @@ class MockObservation:
             shutil.rmtree(dest)
         os.makedirs(self.output_folder, exist_ok=True)
         shutil.move(self.project_name, dest)
-        for log in glob.glob("*.log") + glob.glob("*.last"):
-            os.remove(log)
+        for task in ("simobserve", "concat", "tclean", "exportfits"):
+            if os.path.exists(f"{task}.last"):  # CASA's record of the last call, written to the working directory
+                os.remove(f"{task}.last")
         self.ms_noiseless = os.path.join(self.output_folder, self.ms_noiseless)
         self.ms_noisy = os.path.join(self.output_folder, self.ms_noisy)
         return dest
@@ -373,12 +423,14 @@ class MockObservation:
         return self.achieved_snr()
 
     def run_all(self, plots_dir: str = "plots") -> str:
-        self.create_cube()
-        self.save_cube()
+        if not self.windows:
+            self.create_cube()
+            self.save_cube()
         self.simulate_observation()
         if self.calibrate_snr:
             final = self._calibrate()
             print(f"achieved matched-filter S/N: {[round(a, 2) for a in final]}")
-        self.run_imaging()
-        self.plot_results(plots_dir)
+        if self.image:
+            self.run_imaging()
+            self.plot_results(plots_dir)
         return self.move_output()

@@ -17,8 +17,8 @@ Extras
    pytest, ruff, pre-commit, Sphinx.
 
 Reading data and simulating mocks are NumPy (and CASA); the matched filter is JAX, in
-float64. Exporting a measurement set to NPZ with ``luv-export`` lets everything else run
-without CASA.
+float64. A run exports its measurement set to NPZ once, so every later step runs without
+CASA.
 
 CASA setup
 ----------

@@ -46,8 +46,12 @@ def _collapse(u, v, X, w, freq, dfreq, dra, ddec, cov):
     return jax.lax.scan(channel, (pu, pv), (freq, X, w))[1]
 
 
-def _blocks(chunk: Chunk, dra, ddec, cov: tuple):
-    """Run :func:`_collapse` on one window in blocks of ``dra`` rows; yields (rows, (sig, weight))."""
+def _blocks(chunk: Chunk, dra, ddec, cov: tuple, per_row: int = 0):
+    """Run :func:`_collapse` on one window in blocks of ``dra`` rows; yields (rows, (sig, weight)).
+
+    A block holds ``BLOCK_BYTES`` of the collapse's phases, and of ``per_row`` bytes a ``dra`` row of
+    what the caller makes of it.
+    """
     dfreq = np.diff(chunk.freq)
     if dfreq.size and not np.allclose(dfreq, dfreq[0], rtol=1e-9):
         raise ValueError(f"channels of field {chunk.field} spw {chunk.spw} are not uniformly spaced")
@@ -55,7 +59,8 @@ def _blocks(chunk: Chunk, dra, ddec, cov: tuple):
     dra = np.asarray(dra) - chunk.offset[0]
     ddec = jnp.asarray(np.asarray(ddec) - chunk.offset[1])
     cov = tuple(jnp.asarray(c) for c in cov)
-    block = max(1, min(len(dra), BLOCK_BYTES // (16 * (2 + len(cov[0])) * len(chunk.u))))
+    block = max(1, min(len(dra), BLOCK_BYTES // max(16 * (2 + len(cov[0])) * len(chunk.u), per_row)))
+    block = -(-len(dra) // -(-len(dra) // block))  # blocks of equal size: the last pads at most one row per block
     step = dfreq[0] if dfreq.size else 0.0
     for start in range(0, len(dra), block):
         rows = dra[start : start + block]

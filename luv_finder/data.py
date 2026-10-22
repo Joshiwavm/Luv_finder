@@ -21,13 +21,14 @@ import warnings
 import zipfile
 from collections.abc import Iterable, Iterator, Sequence
 from dataclasses import dataclass
+from functools import cache
 from itertools import groupby
 from typing import NamedTuple
 
 import numpy as np
 
 from ._casa import tools
-from .utils import ARCSEC, C, primary_beam_fwhm
+from .utils import ARCSEC, C
 
 #: Arrays stored per chunk in an NPZ, under ``{field}_{spw}_{name}``.
 CHUNK_ARRAYS = ("offset", "freq", "u", "v", "time", "baseline", "scan", "X", "w")
@@ -40,6 +41,9 @@ MAX_GAP = 450.0
 
 #: Channels handled at once when the weights are measured.
 CHANNEL_BLOCK = 16
+
+#: Longest channel lag :func:`channel_noise` measures, and the significance a lag's correlation needs to count.
+MAX_LAG, LAG_SIGNIFICANCE = 8, 5.0
 
 
 def pair_weight(a, b) -> np.ndarray:
@@ -63,6 +67,13 @@ def _vis(X: np.ndarray, w: np.ndarray) -> np.ndarray:
     return np.divide(X, w, out=np.zeros_like(X), where=w > 0)
 
 
+def _difference(X: np.ndarray, w: np.ndarray, a: np.ndarray, b: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """The pairs' half differences ``(V_a - V_b) / 2`` weighted, and their weights :func:`pair_weight`."""
+    wa, wb = w[:, a], w[:, b]
+    weight = pair_weight(wa, wb)
+    return weight * 0.5 * (_vis(X[:, a], wa) - _vis(X[:, b], wb)), weight
+
+
 class WeightScale(NamedTuple):
     """Noise power over the weights per scan and channel, ``scale``, its robust ``check`` and that one's ``error``."""
 
@@ -70,6 +81,10 @@ class WeightScale(NamedTuple):
     scale: np.ndarray
     check: np.ndarray
     error: np.ndarray
+
+    def at(self, scan: np.ndarray) -> np.ndarray:
+        """``scale`` of rows in ``scan``, ``(n_chan, n_row)``."""
+        return self.scale[np.searchsorted(self.scans, scan)].T
 
     def deviation(self) -> np.ndarray:
         """``check / scale - 1`` in units of its counting error: about N(0, 1) for Gaussian noise."""
@@ -79,43 +94,60 @@ class WeightScale(NamedTuple):
 def weight_scale(chunks: Sequence[Chunk]) -> WeightScale:
     """``sum w z^2 / 2 sum w`` per (scan, channel) over a window's integrations of a baseline <= ``MAX_GAP`` apart.
 
-    A pair that spans two scans counts in both, so a scan of one integration is measured too.
+    The integrations pair in their own field, so a pair sees one sky; a (scan, channel) with no such pair (a
+    mosaic field seen once per visit) pairs across fields. A pair that spans two scans counts in both, so a
+    scan of one integration is measured too.
     """
     time, baseline, scan = (np.concatenate([getattr(c, k) for c in chunks]) for k in ("time", "baseline", "scan"))
-    a, b = _pairs(time, baseline, MAX_GAP)
+    field = np.concatenate([np.full(c.time.size, c.field) for c in chunks])
     scans = np.unique(scan)
+    own = _scale_cells(
+        chunks, *_pairs(time, baseline.astype(np.int64) * (field.max() + 1) + field, MAX_GAP), scan, scans
+    )
+    if np.any(own["data"] & (own["den"] == 0)):
+        across = _scale_cells(chunks, *_pairs(time, baseline, MAX_GAP), scan, scans)
+        use = own["den"] > 0
+        own = {k: np.where(use, own[k], across[k]) for k in own}
+    if np.any(own["data"] & (own["den"] == 0)):
+        k = int(np.flatnonzero(np.any(own["data"] & (own["den"] == 0), axis=1))[0])
+        raise ValueError(
+            f"spw {chunks[0].spw}, scan {scans[k] & 0xFFFFFFFF} of execution block {scans[k] >> 32}: no two "
+            f"integrations of a baseline within {MAX_GAP:.0f} s to measure its weights; flag it or raise MAX_GAP"
+        )
+    if np.any((own["den"] > 0) & (own["num"] == 0)):
+        raise ValueError(f"spw {chunks[0].spw} holds no noise to measure; read noiseless data with reweight=False")
+    scale = np.where(own["den"] > 0, own["num"] / np.where(own["den"] > 0, own["den"], 1.0), 1.0)
+    return WeightScale(scans, scale, own["check"], own["error"])
+
+
+def _scale_cells(chunks: Sequence[Chunk], a, b, scan, scans) -> dict:
+    """``num``, ``den`` (of :func:`weight_scale`), the robust ``check``, its ``error`` and whether there are
+    ``data``, per (scan, channel), from the pairs ``a``, ``b``."""
     of_a, of_b, of_row = (np.searchsorted(scans, s) for s in (scan[a], scan[b], scan))
+    pairs = [np.flatnonzero((of_a == k) | (of_b == k)) for k in range(scans.size)]
+    rows = [np.flatnonzero(of_row == k) for k in range(scans.size)]
     n_chan = chunks[0].freq.size
-    scale, check = np.ones((scans.size, n_chan)), np.full((scans.size, n_chan), np.nan)
-    error = np.full((scans.size, n_chan), np.nan)
+    out = {k: np.zeros((scans.size, n_chan)) for k in ("num", "den")}
+    out |= {k: np.full((scans.size, n_chan), np.nan) for k in ("check", "error")}
+    out["data"] = np.zeros((scans.size, n_chan), dtype=bool)
     for lo in range(0, n_chan, CHANNEL_BLOCK):
         sl = slice(lo, lo + CHANNEL_BLOCK)
         X, w = (np.concatenate([getattr(c, k)[sl] for c in chunks], axis=1) for k in ("X", "w"))
-        wa, wb = w[:, a].astype(float), w[:, b].astype(float)
-        both = (wa > 0) & (wb > 0)
-        wp = np.divide(wa * wb, wa + wb, out=np.zeros_like(wa), where=both)
-        z2 = np.abs(_vis(X[:, a], wa) - _vis(X[:, b], wb)) ** 2 * wp
-        for k in range(scans.size):
-            m = (of_a == k) | (of_b == k)
-            num, den = np.sum(wp[:, m] * z2[:, m], axis=1), 2 * np.sum(wp[:, m], axis=1)
-            data = np.sum(w[:, of_row == k], axis=1) > 0
-            if np.any(data & (den == 0)):
-                raise ValueError(
-                    f"spw {chunks[0].spw}, scan {scans[k] & 0xFFFFFFFF} of execution block {scans[k] >> 32}: no two "
-                    f"integrations of a baseline within "
-                    f"{MAX_GAP:.0f} s to measure its weights; flag it or raise MAX_GAP"
-                )
-            if np.any((den > 0) & (num == 0)):
-                raise ValueError(
-                    f"spw {chunks[0].spw} holds no noise to measure; read noiseless data with reweight=False"
-                )
-            scale[k, sl] = np.where(den > 0, num / np.where(den > 0, den, 1.0), 1.0)
-            check[k, sl] = [_robust(z[o]) for z, o in zip(z2[:, m], both[:, m], strict=True)]
-            n, w1, w2 = both[:, m].sum(axis=1), np.sum(wp[:, m], axis=1), np.sum(wp[:, m] ** 2, axis=1)
-            ok = n > 0
+        diff, weight = _difference(X, w, a, b)
+        wp = weight / 4  # the pair's inverse variance of V_a - V_b
+        z2 = np.divide(np.abs(diff) ** 2, weight, out=np.zeros_like(weight), where=weight > 0)
+        for k, (m, r) in enumerate(zip(pairs, rows, strict=True)):
+            wpk, z2k, both = wp[:, m], z2[:, m], weight[:, m] > 0
+            half = np.sum(wpk, axis=1)
+            out["num"][k, sl], out["den"][k, sl] = np.sum(wpk * z2k, axis=1), 2 * half
+            out["data"][k, sl] = np.sum(w[:, r], axis=1) > 0
+            out["check"][k, sl] = [_robust(z[o]) for z, o in zip(z2k, both, strict=True)]
+            n, ok = both.sum(axis=1), half > 0
             # the median's variance 1 / ln(2)^2 / n, the weighted mean's, less twice their covariance 1 / n
-            error[k, sl][ok] = np.sqrt((1 / np.log(2) ** 2 - 2) / n[ok] + w2[ok] / w1[ok] ** 2)
-    return WeightScale(scans, scale, check, error)
+            out["error"][k, sl][ok] = np.sqrt(
+                (1 / np.log(2) ** 2 - 2) / n[ok] + np.sum(wpk**2, axis=1)[ok] / half[ok] ** 2
+            )
+    return out
 
 
 def _robust(z2: np.ndarray) -> float:
@@ -126,23 +158,22 @@ def _robust(z2: np.ndarray) -> float:
 def reweighted(chunks: Sequence[Chunk], ws: WeightScale | None = None) -> list[Chunk]:
     """The chunks of one window, weights divided by ``ws`` (default :func:`weight_scale`) per scan and channel."""
     ws = weight_scale(chunks) if ws is None else ws
+    _report(ws, chunks[0].spw)
+    return [c.scaled(1 / ws.at(c.scan)) for c in chunks]
+
+
+def _report(ws: WeightScale, spw: int) -> None:
+    """Print a window's noise over its weights; warn if the weighted and robust measures disagree."""
     deviation = np.nanmax(np.abs(ws.deviation()))
     print(
-        f"spw {chunks[0].spw}: noise over the weights in {ws.scans.size} scans, median per scan "
+        f"spw {spw}: noise over the weights in {ws.scans.size} scans, median per scan "
         f"{np.median(ws.scale, axis=1).min():.3f}-{np.median(ws.scale, axis=1).max():.3f}, "
         f"range {ws.scale.min():.2f}-{ws.scale.max():.2f}; "
         f"robust check within {deviation:.1f} sigma",
         flush=True,
     )
     if deviation > 5:
-        warnings.warn(
-            f"spw {chunks[0].spw}: the weighted and robust noise differ by {deviation:.1f} sigma", stacklevel=2
-        )
-    out = []
-    for c in chunks:
-        factor = 1 / ws.scale[np.searchsorted(ws.scans, c.scan)].T
-        out.append(dataclasses.replace(c, X=c.X * factor, w=(c.w * factor).astype(np.float32)))
-    return out
+        warnings.warn(f"spw {spw}: the weighted and robust noise differ by {deviation:.1f} sigma", stacklevel=3)
 
 
 class ChannelNoise(NamedTuple):
@@ -152,30 +183,30 @@ class ChannelNoise(NamedTuple):
     rho: np.ndarray
 
 
-def channel_noise(chunks: Iterable[Chunk], max_lag: int = 8, significance: float = 5.0) -> ChannelNoise:
-    """On the jackknife: noise power per channel over the weights, ``sum |X|^2 / 2 sum w``, and ``(1, rho_1, ...)``."""
-    num, norm_a, norm_b, n = (np.zeros(max_lag + 1) for _ in range(4))
+def channel_noise(jackknife: Iterable[Chunk]) -> ChannelNoise:
+    """Of one window's jackknife (:meth:`Chunk.jackknife`): the noise power per channel over the weights,
+    ``sum |X|^2 / 2 sum w``, and the channels' correlation ``(1, rho_1, ...)`` up to the first lag consistent with 0."""
+    num, norm_a, norm_b, n = (np.zeros(MAX_LAG + 1) for _ in range(4))
     power = weight = 0.0
-    for chunk in chunks:
-        jk = chunk.jackknife()
+    for jk in jackknife:
         power = power + np.sum(np.abs(jk.X) ** 2, axis=1)
         weight = weight + 2 * jk.w.sum(axis=1)
-        z = np.divide(jk.X, np.sqrt(jk.w), out=np.zeros_like(jk.X), where=jk.w > 0)
-        for lag in range(1, min(max_lag, z.shape[0] - 1) + 1):
-            a, b = z[:-lag], z[lag:]
-            ok = (jk.w[:-lag] > 0) & (jk.w[lag:] > 0)
-            num[lag] += np.sum((a * b.conj()).real, where=ok)
-            norm_a[lag] += np.sum(np.abs(a) ** 2, where=ok)
-            norm_b[lag] += np.sum(np.abs(b) ** 2, where=ok)
+        z = np.divide(jk.X, np.sqrt(jk.w), out=np.zeros_like(jk.X), where=jk.w > 0)  # 0 where flagged
+        z2, live = np.abs(z) ** 2, jk.w > 0
+        for lag in range(1, min(MAX_LAG, z.shape[0] - 1) + 1):
+            ok = live[:-lag] & live[lag:]
+            num[lag] += np.sum((z[:-lag] * z[lag:].conj()).real)
+            norm_a[lag] += np.sum(z2[:-lag], where=ok)
+            norm_b[lag] += np.sum(z2[lag:], where=ok)
             n[lag] += 2 * ok.sum()
     if not np.any(power):
         raise ValueError("the jackknife holds no noise to measure; pass channel_noise=None or a noisy dataset's")
     rho = [1.0]
-    for lag in range(1, max_lag + 1):
+    for lag in range(1, MAX_LAG + 1):
         if norm_a[lag] * norm_b[lag] == 0:
             break
         r = num[lag] / np.sqrt(norm_a[lag] * norm_b[lag])
-        if abs(r) * np.sqrt(n[lag]) < significance:
+        if abs(r) * np.sqrt(n[lag]) < LAG_SIGNIFICANCE:
             break
         rho.append(float(r))
     return ChannelNoise(np.divide(power, weight, out=np.ones_like(power), where=weight > 0), np.array(rho))
@@ -209,7 +240,7 @@ class Chunk:
     """Visibilities of one (field, spectral window), channel-major.
 
     ``X = w * V`` is zero where ``w`` is (flagged), so a weighted sum over visibilities is a plain
-    sum over ``X``. Every row has some channel with ``w > 0``.
+    sum over ``X``.
 
     Attributes
     ----------
@@ -236,10 +267,6 @@ class Chunk:
     w: np.ndarray
 
     @property
-    def flag(self) -> np.ndarray:
-        return self.w == 0
-
-    @property
     def vis(self) -> np.ndarray:
         """Visibilities in Jy, 0 where flagged."""
         return _vis(self.X, self.w)
@@ -248,9 +275,9 @@ class Chunk:
     def nbytes(self) -> int:
         return sum(getattr(self, k).nbytes for k in CHUNK_ARRAYS)
 
-    def channels(self, sl: slice) -> Chunk:
-        """The channels ``sl`` as a chunk of views, for bounded-memory loops over channel blocks."""
-        return dataclasses.replace(self, freq=self.freq[sl], X=self.X[sl], w=self.w[sl])
+    def scaled(self, factor) -> Chunk:
+        """``X`` and ``w`` times ``factor`` (per visibility, or broadcast): weights rescaled, data as they were."""
+        return dataclasses.replace(self, X=self.X * factor, w=(self.w * factor).astype(np.float32))
 
     def uv_waves(self) -> tuple[np.ndarray, np.ndarray]:
         """``u`` and ``v`` in wavelengths, ``(n_chan, n_row)``."""
@@ -276,10 +303,7 @@ class Chunk:
         white-noise level.
         """
         a, b = _pairs(self.time, self.baseline)
-        wa, wb = self.w[:, a], self.w[:, b]
-        # column indexing returns Fortran-ordered arrays; keep chunks row-major
-        w = np.ascontiguousarray(pair_weight(wa, wb))
-        diff = 0.5 * (_vis(self.X[:, a], wa) - _vis(self.X[:, b], wb))
+        X, w = _difference(self.X, self.w, a, b)
         return dataclasses.replace(
             self,
             u=0.5 * (self.u[a] + self.u[b]),
@@ -287,7 +311,7 @@ class Chunk:
             time=0.5 * (self.time[a] + self.time[b]),
             baseline=self.baseline[a],
             scan=self.scan[a],
-            X=np.ascontiguousarray(w * diff),
+            X=X,
             w=w.astype(np.float32),
         )
 
@@ -310,7 +334,9 @@ class Metadata:
     max_uvwave: float
 
     @classmethod
+    @cache
     def from_ms(cls, msfile: str) -> Metadata:
+        """The measurement set's metadata (read once per process: it scans every row's UVW)."""
         fields, spws = target_selection(msfile)
         msmd = tools().msmetadata()
         msmd.open(msfile)
@@ -330,11 +356,6 @@ class Metadata:
         sel.close()
         tb.close()
         return cls(dish, ref, float(freqs.mean()), float(np.hypot(uvw[0], uvw[1]).max() * freqs.max() / C))
-
-    def primarybeamsize(self, dish_diameter: float | None = None) -> float:
-        """Primary-beam FWHM in arcsec at the central frequency (1.13 lambda / D)."""
-        d = self.dish_diameter if dish_diameter is None else dish_diameter
-        return float(primary_beam_fwhm(self.central_frequency, d))
 
     def minresolution(self) -> float:
         """Angular resolution in arcsec from the longest baseline."""
@@ -378,10 +399,10 @@ def iter_chunks(
     """Read target visibilities one spw at a time over all ``fields``, weights corrected, offsets from ``ref``.
 
     Autocorrelations, flagged rows and rows with no unflagged channel are dropped. Every window's
-    weights are divided by the noise measured in it (:func:`reweighted`), so the peak memory is
-    about twice one window over all its fields; ``reweight=False`` keeps the measurement set's
-    weights, for a noiseless simulation, which has no noise to measure. A ``scales`` dict receives
-    each window's :class:`WeightScale` by spw.
+    weights are divided by the noise measured in it (:func:`weight_scale`), so the peak memory is
+    one window over all its fields; ``reweight=False`` keeps the measurement set's weights, for a
+    noiseless simulation, which has no noise to measure. A ``scales`` dict receives each window's
+    :class:`WeightScale` by spw.
     """
     all_fields, all_spws = target_selection(msfile)
     msmd = tools().msmetadata()
@@ -420,9 +441,10 @@ def iter_chunks(
                 ws = weight_scale(chunks)
                 if scales is not None:
                     scales[chunks[0].spw] = ws
-                yield from reweighted(chunks, ws)
-            elif chunks:
-                yield from chunks
+                _report(ws, chunks[0].spw)
+            while chunks:  # popped as yielded: one window's chunks in memory, not two
+                c = chunks.pop(0)
+                yield c.scaled(1 / ws.at(c.scan)) if reweight else c
     finally:
         tb.close()
 
@@ -481,7 +503,7 @@ class DataHandler:
     Parameters
     ----------
     msfile : str, optional
-        Measurement set to read; ``fields``/``spws`` select a subset of its target data, and
+        Measurement set to read; ``fields`` selects a subset of its target fields, and
         ``reweight=False`` keeps its weights (a noiseless simulation; see :func:`iter_chunks`).
     chunks, metadata : optional
         Ready-made data, e.g. from :meth:`from_npz` or a test.
@@ -493,13 +515,11 @@ class DataHandler:
         chunks: list[Chunk] | None = None,
         metadata: Metadata | None = None,
         fields=None,
-        spws=None,
         reweight: bool = True,
     ):
         if msfile is not None:
             metadata = Metadata.from_ms(msfile)
-            chunks = list(iter_chunks(msfile, metadata.ref, fields, spws, reweight))
-        self.msfile = msfile
+            chunks = list(iter_chunks(msfile, metadata.ref, fields, reweight=reweight))
         self.metadata = metadata
         self.chunks = sorted(chunks, key=lambda c: (c.field, c.freq[0]))
 
@@ -520,10 +540,14 @@ class DataHandler:
         """Signal-free noise realisation of every chunk (see :meth:`Chunk.jackknife`)."""
         return DataHandler(chunks=[c.jackknife() for c in self.chunks], metadata=self.metadata)
 
-    def channel_noise(self, **kwargs) -> dict[int, ChannelNoise]:
-        """:func:`channel_noise` per spectral window, pooled over its fields: ``{spw: ChannelNoise}``."""
-        spws = sorted({c.spw for c in self.chunks})
-        return {s: channel_noise((c for c in self.chunks if c.spw == s), **kwargs) for s in spws}
+    def channel_noise(self, jackknife: DataHandler | None = None) -> dict[int, ChannelNoise]:
+        """:func:`channel_noise` per spectral window, pooled over its fields: ``{spw: ChannelNoise}``; on
+        ``jackknife`` if already made (default: :meth:`jackknife`, a chunk at a time)."""
+        chunks = self.chunks if jackknife is None else jackknife.chunks
+        spws = sorted({c.spw for c in chunks})
+        if jackknife is None:
+            return {s: channel_noise(c.jackknife() for c in chunks if c.spw == s) for s in spws}
+        return {s: channel_noise(c for c in chunks if c.spw == s) for s in spws}
 
     def spectrum(self, dra: float = 0.0, ddec: float = 0.0, model=None) -> np.ndarray:
         """Weighted mean visibility per channel, phase-shifted to (dra, ddec) arcsec.
@@ -567,13 +591,40 @@ def _is_npz(path) -> bool:
 
 
 def fields_in(path) -> list[int]:
-    """Target fields of a measurement set or an NPZ, sorted; an NPZ is not read beyond its index."""
+    """Target fields of a measurement set, an NPZ or a list of NPZs, sorted; an NPZ is not read beyond its index."""
+    if isinstance(path, list | tuple):
+        return sorted(set().union(*(fields_in(p) for p in path)))
     if _is_npz(path):
         with np.load(path) as f:
             return np.unique(f["chunks"][:, 0]).tolist()
     return sorted(int(f) for f in target_selection(path)[0])
 
 
+def pointing(path, field: int) -> tuple[Metadata, np.ndarray, float]:
+    """A field's dataset metadata, phase centre (arcsec, the data's sky frame) and lowest frequency (Hz), from a
+    measurement set, an NPZ or a list of NPZs, without reading its visibilities."""
+    if isinstance(path, list | tuple):
+        parts = [pointing(p, field) for p in path if field in fields_in(p)]
+        return parts[0][0], parts[0][1], min(p[2] for p in parts)
+    if _is_npz(path):
+        with np.load(path) as f:
+            spws = [int(s) for fd, s in f["chunks"] if fd == field]
+            offset, low = f[f"{field}_{spws[0]}_offset"], min(float(f[f"{field}_{s}_freq"].min()) for s in spws)
+        return DataHandler.from_npz(path, []).metadata, offset, low
+    metadata = Metadata.from_ms(path)
+    msmd = tools().msmetadata()
+    msmd.open(str(path))
+    try:
+        offset = sky_offset(_phase_centre(msmd, field), metadata.ref)
+        low = min(float(msmd.chanfreqs(int(s)).min()) for s in target_selection(str(path))[1])
+    finally:
+        msmd.close()
+    return metadata, offset, low
+
+
 def load(path, fields=None) -> DataHandler:
-    """The visibilities of ``fields`` (default: all) from a measurement set or an NPZ."""
+    """The visibilities of ``fields`` (default: all) from a measurement set, an NPZ or a list of one dataset's NPZs."""
+    if isinstance(path, list | tuple):
+        parts = [load(p, fields) for p in path]
+        return DataHandler(chunks=[c for d in parts for c in d.chunks], metadata=parts[0].metadata)
     return DataHandler.from_npz(path, fields) if _is_npz(path) else DataHandler(str(path), fields=fields)

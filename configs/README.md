@@ -16,6 +16,9 @@ adding a grid changes the template and the injected source together.
 | `line13_line9` | 12 m, 43 antennas | ~180 MB |
 | `size_*` | 12 m | one source per grid (currently 0, 1 and 3 beam FWHM), used by `tests/test_source_size.py` |
 | `pb_offsets` | 12 m, 92 GHz | four point sources 0-35" off-centre, measures simobserve's primary beam in `tests/test_primary_beam.py` |
+| `mosaic` | 12 m, 92 GHz | three pointings 31.5" apart: combining pointings |
+| `tunings` | 12 m | two overlapping windows: fitting across tunings |
+| `edge` | 12 m | two windows one channel apart: a line across a window edge |
 | `default` grid | — | blind search, ranges derived from the data |
 
 Antenna configurations are not vendored. `alma_config` names a file that CASA

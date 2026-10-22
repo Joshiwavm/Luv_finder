@@ -24,7 +24,8 @@ import numpy as np
 import pytest
 from scipy.optimize import least_squares
 
-from luv_finder import DataHandler, Gaussian, MatchedFilter, MockObservation, Model
+from luv_finder import DataHandler, MatchedFilter, MockObservation
+from luv_finder.model import FWHM_TO_SIGMA
 from luv_finder.utils import FWHM_FACTOR, primary_beam
 
 REPO = Path(__file__).parents[1]
@@ -58,19 +59,16 @@ def _expected(noisy_path: Path, clean_path: Path) -> DataHandler:
     return DataHandler(chunks=[dataclasses.replace(chunk, X=chunk.w * signal.vis)], metadata=noisy.metadata)
 
 
-def _fitted_flux(data: DataHandler, source: dict, sigma: float) -> np.ndarray:
+def _fitted_flux(data: DataHandler, source: dict, fwhm: float) -> np.ndarray:
     """Best-fit peak flux density (Jy) per channel of a point source's template at its position."""
-    comp = Gaussian()
-    comp.grid = {
+    grid = {
         "dra": source["position"][0],
         "ddec": source["position"][1],
-        "bmin": sigma,
-        "bmaj": sigma,
+        "bmin": fwhm,
+        "bmaj": fwhm,
         "width": source["line"]["width"],
     }
-    mod = Model()
-    mod.addcomponent(comp)
-    mf = MatchedFilter(data, mod, continuum_order=None)
+    mf = MatchedFilter(data, grid, continuum_order=None)
     mf.run()
     return mf.result.flux[0, 0, 0]
 
@@ -80,7 +78,7 @@ def test_simobserve_beam_follows_airy():
     """The fitted-to-injected peak ratio is 1 at the phase centre and follows the default Airy beam outside it."""
     mock = MockObservation.from_yaml(CONFIG)
     data = _expected(*_observe(mock))
-    sigma = u.Quantity(mock.cell).to(u.arcsec).value
+    fwhm = u.Quantity(mock.cell).to(u.arcsec).value / FWHM_TO_SIGMA  # the mock's default size
     injected = mock.cube.sum(axis=(1, 2))
     assert len(data.freqs) == len(injected)
 
@@ -90,12 +88,17 @@ def test_simobserve_beam_follows_airy():
         assert data.freqs[chan] == pytest.approx(source["line"]["mean"] * 1e9, abs=1e3)
         offsets.append(np.hypot(*source["position"]))
         freqs.append(data.freqs[chan])
-        measured.append(_fitted_flux(data, source, sigma)[chan] / injected[chan])
+        measured.append(_fitted_flux(data, source, fwhm)[chan] / injected[chan])
     offsets, freqs, measured = map(np.array, (offsets, freqs, measured))
 
     dish = data.metadata.dish_diameter
     beam = primary_beam(offsets, freqs, dish)
-    best = least_squares(lambda k: primary_beam(offsets, freqs, dish, fwhm_factor=k[0]) - measured, [FWHM_FACTOR]).x[0]
+
+    # a FWHM factor k is the default beam at the offsets scaled by FWHM_FACTOR / k
+    def residual(k):
+        return primary_beam(offsets * FWHM_FACTOR / k[0], freqs, dish) - measured
+
+    best = least_squares(residual, [FWHM_FACTOR]).x[0]
     print(f"\nbest-fit FWHM factor {best:.4f} lambda/D (package default {FWHM_FACTOR})")
     print("offset/arcsec  freq/GHz  measured  PB(default)  diff/%")
     for off, freq, meas, pb in zip(offsets, freqs, measured, beam, strict=True):
@@ -103,3 +106,24 @@ def test_simobserve_beam_follows_airy():
 
     assert measured[0] == pytest.approx(1.0, rel=0.01)
     assert measured == pytest.approx(beam, rel=0.06)
+
+
+def test_primary_beam_and_its_slope_are_exact_near_a_pointing_centre():
+    """JAX's Bessel function is NaN at tiny arguments and its derivative wrong up to a few arcsec; the series is not."""
+    import jax
+    import jax.numpy as jnp
+    from scipy.special import j1, jv
+
+    from luv_finder.utils import X_HALF, primary_beam_fwhm
+
+    offsets = np.array([0.0, 1e-9, 1e-6, 1e-3, 0.1, 1.0, 5.0, 8.9, 9.1, 20.0, 40.0])  # x = 0.5 near 9 arcsec
+    with jax.enable_x64(True):
+        beam = np.asarray(primary_beam(jnp.asarray(offsets), 100e9, 12.0, xp=jnp))
+        slope = np.asarray(jax.vmap(jax.grad(lambda r: primary_beam(r, 100e9, 12.0, xp=jnp)))(jnp.asarray(offsets)))
+    np.testing.assert_allclose(beam, primary_beam(offsets, 100e9, 12.0), rtol=1e-12)
+    # d/dr (2 J1(x) / x)^2 = 2 (2 J1(x) / x) (-2 J2(x) / x) dx/dr
+    dx = 2 * X_HALF / primary_beam_fwhm(100e9, 12.0)
+    x = np.maximum(dx * offsets[1:], 1e-300)
+    exact = 2 * (2 * j1(x) / x) * (-2 * jv(2, x) / x) * dx
+    assert slope[0] == 0.0
+    np.testing.assert_allclose(slope[1:], exact, rtol=1e-9, atol=1e-18)

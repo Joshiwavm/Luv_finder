@@ -2,9 +2,9 @@
 
 from .data import DataHandler
 from .matchedfilter import MatchedFilter
-from .model import Gaussian, Model
+from .model import Gaussian
 
-__all__ = ["DataHandler", "Gaussian", "MatchedFilter", "Model", "MockObservation"]
+__all__ = ["DataHandler", "Gaussian", "MatchedFilter", "MockObservation"]
 
 
 def __getattr__(name):

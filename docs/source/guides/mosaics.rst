@@ -5,11 +5,12 @@ Data layout
 -----------
 
 :class:`~luv_finder.data.DataHandler` holds one :class:`~luv_finder.data.Chunk` per
-(field, spectral window): the weighted visibilities ``X = w * V`` and their flags as
-``(n_chan, n_row)`` arrays, and ``u``, ``v``, time and weight once per row and frequency
-once per channel. The weight is the measurement set's ``WEIGHT`` column (Stokes I of the
-parallel hands); flags zero it per channel. Autocorrelations and flagged rows are dropped
-on reading.
+(field, spectral window): the weighted visibilities ``X = w * V`` and the weight of every
+visibility ``w`` (0 where flagged) as ``(n_chan, n_row)`` arrays, ``u``, ``v``, time,
+baseline and scan per row and frequency per channel. The weights are Stokes I of
+``WEIGHT_SPECTRUM`` (or ``WEIGHT``), corrected on reading per scan and channel by the
+noise measured from pairs of each baseline's integrations. Autocorrelations and flagged
+rows are dropped.
 
 Positions (``dra``, ``ddec``) are arcsec east and north of one reference direction per
 dataset, the phase centre of its first target field. Every chunk knows its own field's
@@ -30,8 +31,8 @@ pointings:
 
    result = search_pointings("mosaic.npz", {"width": [200.0, 300.0]}, jackknife=True)
 
-Each pointing covers the region where its primary beam is at least ``pb_limit`` (0.2 by
-default). A dataset with a single field is primary-beam corrected too, so everything
+Each pointing covers the region where its primary beam is at least ``pb_limit``
+(``utils.PB_LIMIT``, 0.2). A dataset with a single field is primary-beam corrected too, so everything
 downstream sees PB-corrected results. The steps are available separately as
 :func:`~luv_finder.matchedfilter.build_grid`,
 :meth:`MatchedFilter.run <luv_finder.matchedfilter.MatchedFilter.run>`,
@@ -42,20 +43,19 @@ From the command line:
 
 .. code-block:: bash
 
-   luv-export --ms mosaic.ms --out mosaic.npz
-   luv-find --ms mosaic.npz --grid grid.yaml --jackknife --out mosaic_response.npz
-   luv-find --ms mosaic.npz --field 1 --grid grid.yaml --out field1.npz
+   luv-find --ms mosaic.ms --grid grid.yaml --jackknife --out mosaic_response.npz
+   luv-find --ms mosaic.ms --field 1 --grid grid.yaml --out field1.npz
 
-Without ``--field`` a dataset with several fields goes through ``search_pointings``, and
-the best grid point of the combined, PB-corrected result is reported. With ``--field``,
-or for a single field, one pointing is searched as it is; it is PB-corrected only when a
-``--catalogue`` is written.
+``luv-find`` goes through ``search_pointings``: every field, or the one ``--field``
+names, PB-corrected and combined, and reports the best grid point. A run does the same
+for its catalogue.
 
 The primary beam
 ----------------
 
 :func:`luv_finder.utils.primary_beam` is an Airy pattern scaled to the FWHM the ALMA
-Technical Handbook gives for the real antennas, 1.13 lambda/D. Dividing by it leaves a
+Technical Handbook gives for the real antennas, 1.13 lambda/D, its series near the
+pointing centre so the fit's derivatives hold there. Dividing by it leaves a
 pointing's S/N unchanged; the combination weights every pointing by PB^2/sigma^2, so
 overlaps gain S/N, and a pointing contributes nothing where its PB is below
 ``pb_limit``.

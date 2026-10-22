@@ -1,0 +1,34 @@
+# J0459-like mosaic, small: Band 3, three 12 m pointings 0.5 PB FWHM (31.5") apart, one window of
+# 64 x 100 km/s channels, 4 min per pointing. Point lines seen by one to three pointings at PB 0.2-1,
+# 300 km/s at channel 20 and 1500 km/s at channel 44, on channel centres. Tests combining pointings.
+cube_shape: [64, 256, 256]   # 1" cells: +-128"
+cell: 1arcsec
+dv: 100km/s
+freq_center: 92GHz
+integration_time: 12min
+alma_config: alma.cycle13.1.cfg
+direction: J2000 04h59m42.0 -49d47m00.0
+pointings: [[-31.5, 0.0], [0.0, 0.0], [31.5, 0.0]]
+output_folder: output/ms_files
+support_folder: support
+fits_filename: support/mosaic_input.fits
+calibrate_snr: false
+image: false
+
+sources:
+  - position: [0.0, 0.0]        # three pointings: PB 0.5, 1, 0.5
+    line: {mean: 91.631745, width: 300, snr: 30}
+  - position: [-15.75, 0.0]     # PB 0.84, 0.84, 0.21
+    line: {mean: 91.631745, width: 300, snr: 30}
+  - position: [-31.5, 30.0]     # PB 0.54, 0.27
+    line: {mean: 91.631745, width: 300, snr: 30}
+  - position: [45.0, -25.0]     # PB 0.57 in one pointing
+    line: {mean: 91.631745, width: 300, snr: 30}
+  - position: [0.0, -15.0]
+    line: {mean: 92.368255, width: 1500, snr: 30}
+  - position: [-15.75, 15.0]
+    line: {mean: 92.368255, width: 1500, snr: 30}
+  - position: [-40.0, -15.0]
+    line: {mean: 92.368255, width: 1500, snr: 30}
+  - position: [40.0, 15.0]
+    line: {mean: 92.368255, width: 1500, snr: 30}

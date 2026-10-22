@@ -13,9 +13,10 @@ a likelihood ratio and a fidelity, then fitted in the visibilities.
 
 .. code-block:: bash
 
-   pip install -e ".[casa,dev]"
+   pip install -e ".[casa]"
    luv-mock configs/mocks/smoke.yaml
    luv-find --ms output/ms_files/smoke/smoke.aca.cycle13.noisy.ms --grid configs/grids/smoke.yaml --jackknife
+   luv-run run.yaml search && luv-run run.yaml fit   # a catalogue, see the quickstart
 
 .. toctree::
    :maxdepth: 1

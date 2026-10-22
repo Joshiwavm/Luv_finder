@@ -145,33 +145,22 @@ visibilities, so the Band 1 default grid (21,675 points, 415 k rows in the
 
 ### 2.1 Open
 
-- **Combining pointings: an average of averages.** Each pointing is collapsed to a
-  spectrum and filtered on its own, its flux divided by its PB, and the pointings
-  are then averaged with weights PB^2 / sigma^2. Check that this equals fitting the
-  concatenated visibilities of all pointings at once: a mean of ratios is not in
-  general a ratio of means. For a fixed template the two agree algebraically,
-  `F = sum_p B_p y_p / sum_p B_p^2 W_p` (`y_p`, `W_p` the pointing's filter sums), the
-  sums `fit.py` uses, but they can part where:
-  - the continuum is fitted, and since `claude/continuum-order` masked, per pointing,
-    instead of once as a continuum times each pointing's PB;
-  - the PB is taken at one frequency, while it changes across a wide line or window;
-  - the channel-correlation and mask corrections are per pointing.
-  Test: a mock mosaic with a line seen by several pointings at different PB,
-  combined search against one joint fit of every pointing's visibilities (flux, S/N,
-  centre), with and without continuum.
-- **Completeness.** Inject analytic `Model` lines into the visibilities (ASPECS
+- **Completeness.** Inject analytic `Gaussian` lines into the visibilities (ASPECS
   style) and recover them through the same path, to turn the S/N limit into a
   flux limit per coverage (on a mosaic the S/N cut is uniform, the flux limit is
   not).
-- **Fit across overlapping windows.** Windows that overlap in frequency are combined
-  in the search, but `fit_line` uses one window per pointing, so a line in the
-  ASPECS 3 mm double-tuned range is fitted with one tuning's data.
-- **Lines across a window edge.** A line wider than the gap between two adjacent
-  windows is searched in each window apart: ASPECS 3mm.07 (609 km/s at 93.558 GHz,
-  between spw00 and spw01) is found as its low half in one and its high half in the
-  other. `run.duplicates` flags the fainter half (within a beam, fitted profiles
-  overlapping), but each half carries part of the flux. Search and fit adjacent
-  windows as one spectrum, so the line is found once with all its flux.
+- **Memory per trial centre.** Units are chunked to `max_channels` (`unit_plan`; exact on
+  the `edge` mock, 2026-10-21), but a search holds about 23 position x template x centre
+  arrays of a pointing and 13 of the mosaic box (float64; measured on mocks), 127 MB per
+  centre for ASPECS 3 mm and 169 MB at 1.2 mm. Within 48 GB a chunk holds about one
+  window, so each window is also searched as two chunks' neighbour (x2.9 the collapses).
+  Without the copies (`pb_corrected` in place, the mosaic's results in its sums) about
+  78 MB at 3 mm; with float32 mosaic sums about 51 MB, chunks of ~4 windows, +50%.
+  J0459 needs no chunks (24-31 MB per centre, one unit per group).
+- **Weights in an alternating mosaic.** `weight_scale` pairs integrations <= 450 s apart
+  in any field. On the `mosaic` mock, whose pointings alternate every 10 s, a pair mixes
+  two skies and with bright continuum the weights are 3.3% low in power. Pair within a
+  field first, across fields only where a scan has no partner (ASPECS 1.2 mm).
 - **Fidelity per template width.** ASPECS computes the fidelity per kernel width:
   narrow templates have more independent trials than broad ones at the same S/N.
   The catalogue pools all templates. Its noise is a Gaussian tail fitted to the
@@ -184,6 +173,16 @@ One pointing per band. A line in each band at the same sky position is a redshif
 confirmation, since the bands sample different transitions of the same ladder.
 Needs co-spatial matching with a tolerance set by the coarser beam, a way to
 combine two independent significances, and a catalogue format that spans bands.
+
+### 2.3 Continuum sources
+The same data hold the continuum: the polynomial the filter already fits at every
+position. A continuum catalogue needs no matched filter along frequency, only the
+spatial collapse summed over channels (or the order-0 term per window), PB-corrected
+and combined like the lines, with the same reliability against the jackknife (likelihood
+ratio and fidelity per S/N bin). Open: the jackknife cancels the continuum as it
+cancels the lines, so it is the null for both; confused or extended sources need the
+non-Gaussian templates of section 3; and the line catalogue could then flag lines on a
+continuum source.
 
 ## 3. Sources that are not Gaussians
 
@@ -219,7 +218,7 @@ blind catalogue (Gonzalez-Lopez et al. 2019). It then compares the SPT-CL J0459 
 mosaic (12 lines) and Band 1 with our published by-eye list. Before submitting:
 
 - the ASPECS comparison: recovered, new and missed lines, and the S/N and flux ratios;
-- completeness and the check of combined pointings (section 2.1);
+- completeness, the unit size and the mosaic weights (section 2.1);
 - the joint Band 1 and Band 3 identification (section 2.2).
 
 JOSS gates, all needed at submission:

@@ -17,15 +17,8 @@ from pathlib import Path
 _configured = False
 
 
-def log_dir() -> Path:
-    """Directory CASA logs are written to (created on demand)."""
-    d = Path(os.environ.get("LUV_CASA_LOG_DIR", "logs"))
-    d.mkdir(parents=True, exist_ok=True)
-    return d
-
-
 def configure_logging() -> None:
-    """Point casaconfig at ``<log_dir>/casa.log``; a no-op after the first call.
+    """Point casaconfig at ``casa.log`` in ``$LUV_CASA_LOG_DIR`` (default ``logs``); a no-op after the first call.
 
     Call this before importing ``casatools``/``casatasks`` by any route other
     than :func:`tools` / :func:`tasks`: casaconfig fixes the log destination at
@@ -39,7 +32,9 @@ def configure_logging() -> None:
         from casaconfig import config
     except ImportError:  # CASA not installed; the NPZ path does not need it
         return
-    config.logfile = str(log_dir() / "casa.log")
+    log_dir = Path(os.environ.get("LUV_CASA_LOG_DIR", "logs"))
+    log_dir.mkdir(parents=True, exist_ok=True)
+    config.logfile = str(log_dir / "casa.log")
 
 
 def tools():

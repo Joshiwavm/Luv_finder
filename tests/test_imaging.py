@@ -32,7 +32,7 @@ def test_dirty_cube_is_the_exact_dft():
     chunks = []
     for spw, nchan in ((0, 30), (1, 20)):
         chunk = _chunk(nchan, 300, seed=spw, spw=spw, offset=(4.0, -2.0), freq0=40e9 + spw * 2e9)
-        flag = r.random(chunk.flag.shape) < 0.1
+        flag = r.random(chunk.w.shape) < 0.1
         flag[3] = True
         vis = r.normal(size=flag.shape) + 1j * r.normal(size=flag.shape)
         chunks.append(

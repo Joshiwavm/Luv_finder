@@ -2,7 +2,9 @@ import numpy as np
 import pytest
 from astropy.table import Table
 
-from luv_finder.run import RUN_FILE, Run, duplicates, unit_name, window_units
+from luv_finder.catalogue import duplicates
+from luv_finder.matchedfilter import window_groups
+from luv_finder.run import RUN_FILE, Run, unit_name
 
 
 @pytest.fixture(scope="module")
@@ -50,7 +52,7 @@ def test_run_detects_the_injected_lines(run, truth, data):
 def test_run_maps_hold_the_filter_response_of_every_group(run):
     (unit,) = run.units
     m, cat = run.maps(unit), Table.read(run.path(unit, ".ecsv"))
-    assert m["peak"].shape == (m["dra"].size, m["ddec"].size) == m["jk_peak"].shape
+    assert m["peak"].shape == (m["dra"].size, m["ddec"].size) == m["coverage"].shape
     assert m["group_snr"].shape == (len(cat), m["widths"].size, m["freqs"].size) == m["group_jk"].shape
     np.testing.assert_array_equal(m["group_id"], cat["unit_id"])
     np.testing.assert_allclose(np.nanmax(m["group_snr"], axis=(1, 2)), cat["snr"], rtol=1e-6)
@@ -89,16 +91,20 @@ def test_run_needs_data_and_output():
         Run({"data": "x.npz"})
 
 
-def test_window_units_join_windows_that_overlap():
-    """Two tunings over 100-102 GHz join; a window touching another at its edge stays apart."""
+def test_window_groups_join_windows_that_overlap_or_nearly_meet():
+    """Two tunings over 100-102 GHz join, and so does a window at their edge; a gap joins if narrower than
+    the widest template (400 km/s, 141 MHz at 106 GHz)."""
     ch = 0.01e9
     freqs = {
         0: np.arange(100e9, 101e9, ch),
         1: np.arange(100.5e9, 102e9, ch),
         2: np.arange(102e9 - ch / 2, 103e9, ch),
         3: np.arange(105e9, 106e9, ch),
+        4: np.arange(106.1e9, 107e9, ch),  # 110 MHz after window 3's last channel
+        5: np.arange(107.2e9, 108e9, ch),  # 210 MHz after window 4's
     }
-    assert window_units(freqs) == [[0, 1], [2], [3]]
+    assert window_groups(freqs) == [[0, 1, 2], [3, 4], [5]]
+    assert window_groups(freqs, widest=100.0) == [[0, 1, 2], [3], [4], [5]]
     assert unit_name([14, 15, 17]) == "spw14+15+17"
 
 
@@ -121,7 +127,6 @@ def test_duplicates_catch_the_two_halves_of_a_line_split_by_a_window_edge():
         "ddec": [0.0, 0.2, 0.0, 0.0],
         "freq_ghz": [93.610, 93.516, 93.500, 93.600],
         "width": [300.0, 500.0, 100.0, 100.0],
-        "fit_width": [243.0, 476.0, 172.0, np.nan],
     })  # fmt: skip
     beam = {"spw00": 0.7, "spw01": 0.7, "spw02": 0.7}
     assert duplicates(cat, beam).tolist() == [0, 1, 0, 1]
@@ -133,3 +138,24 @@ def test_merge_applies_the_run_files_reliability(run):
     again = Run({**run.config, "reliability": {**run.config["reliability"], "rule": other}})
     assert again.merge().meta["rule"] == other
     assert run.merge().meta["rule"] == run.config["reliability"]["rule"]
+
+
+def test_unit_plan_chunks_blocks_with_their_neighbours():
+    """Five adjacent windows and a second tuning inside the third: five blocks, cut into chunks of at most
+    300 channels, each loading its neighbouring blocks and owning the centres between the gaps to them."""
+    from luv_finder.run import unit_plan
+
+    ch = 0.01e9
+    freqs = {s: np.arange(100e9 + s * 1.01e9, 101e9 + s * 1.01e9, ch) for s in range(5)}
+    freqs[5] = freqs[2][:50] + 0.25e9  # a second tuning inside window 2
+    plan = unit_plan(freqs, widest=400.0, max_channels=300)
+    assert plan["blocks"] == {"spw00": [0], "spw01": [1], "spw02+05": [2, 5], "spw03": [3], "spw04": [4]}
+    units = plan["units"]  # greedily: 100 + 100, then 150 + 100, then 100
+    assert list(units) == ["spw00+01", "spw02+03+05", "spw04"]
+    assert units["spw00+01"].blocks == ["spw00", "spw01", "spw02+05"]
+    assert units["spw02+03+05"].blocks == ["spw01", "spw02+05", "spw03", "spw04"]
+    assert units["spw04"].blocks == ["spw03", "spw04"]
+    gap = [(freqs[1].max() + freqs[2].min()) / 2, (freqs[3].max() + freqs[4].min()) / 2]
+    assert units["spw00+01"].core == (-np.inf, gap[0]) and units["spw02+03+05"].core == tuple(gap)
+    assert units["spw04"].core == (gap[1], np.inf)
+    assert unit_plan(freqs, widest=400.0)["units"] == {"spw00+01+02+03+04+05": ([*plan["blocks"]], None)}

@@ -3,12 +3,10 @@ import os
 
 import numpy as np
 import pytest
-from astropy.table import Table
 
-from luv_finder import DataHandler, Gaussian, MatchedFilter, Model
+from luv_finder import DataHandler, Gaussian, MatchedFilter
 from luv_finder.cli.find_lines import main as find_lines
-from luv_finder.data import C, ChannelNoise, Chunk, Metadata, reweighted
-from luv_finder.fit import COLUMNS as FIT_COLUMNS
+from luv_finder.data import C, ChannelNoise, Chunk, Metadata, load, reweighted
 from luv_finder.kernel import default_cores
 from luv_finder.matchedfilter import (
     SearchResult,
@@ -17,20 +15,15 @@ from luv_finder.matchedfilter import (
     pb_corrected,
     search_pointings,
 )
-from luv_finder.model import CONTINUUM_ORDER, FWHM_TO_SIGMA
+from luv_finder.model import C_KMS, CONTINUUM_ORDER, FWHM_TO_SIGMA, LINE_FLUX
 from luv_finder.utils import primary_beam, primary_beam_radius
 
-C_KMS = 299792.458
 
-
-def _finder(data, continuum_order=2, channel_noise=None, **grid):
-    g = Gaussian()
-    g.grid = {"bmin": 0.0, "bmaj": 0.0, "width": 300.0, **grid}
-    m = Model()
-    m.addcomponent(g)
+def _finder(data, continuum_order=2, channel_noise=None, band=None, **grid):
+    grid = {"bmin": 0.0, "bmaj": 0.0, "width": 300.0, **grid}
     # synthetic rows share one baseline at random uv, so their jackknife keeps the sky: give the
     # channel noise instead of measuring it
-    return MatchedFilter(data, m, continuum_order=continuum_order, channel_noise=channel_noise)
+    return MatchedFilter(data, grid, continuum_order=continuum_order, channel_noise=channel_noise, band=band)
 
 
 def _chunk(nchan, nvis, seed=0, field=0, spw=0, offset=(0.0, 0.0), freq0=40e9):
@@ -110,7 +103,7 @@ def test_matches_the_direct_sum():
     for spw, nchan, shift in ((0, 30, 0), (1, 960, 500)):
         chunk = _chunk(nchan, 200, seed=spw, spw=spw, offset=(4.0, -2.0))
         chunk = dataclasses.replace(chunk, freq=chunk.freq + shift * CHANNEL)
-        flag = r.random(chunk.flag.shape) < 0.1
+        flag = r.random(chunk.w.shape) < 0.1
         flag[:3] = True
         w_row = r.uniform(0.5, 2.0, chunk.u.size)
         vis = r.normal(size=flag.shape) + 1j * r.normal(size=flag.shape)
@@ -146,7 +139,7 @@ def test_noise_has_unit_variance_at_every_channel():
     """White noise with unequal weights and flagged channels gives a unit-variance response, edges included."""
     r = np.random.default_rng(7)
     chunk = _chunk(40, 3000, seed=1)
-    flag = np.zeros(chunk.flag.shape, dtype=bool)
+    flag = np.zeros(chunk.w.shape, dtype=bool)
     flag[[0, 17, 18]] = True
     w_row = r.uniform(0.2, 5.0, chunk.u.size)
     noise = (r.normal(size=flag.shape) + 1j * r.normal(size=flag.shape)) / np.sqrt(w_row)
@@ -168,20 +161,23 @@ def test_rows_follow_grid_params():
     mf = _finder(data, dra=[-4.0, 0.0, 4.0], ddec=[-2.0, 0.0, 2.0], width=[150.0, 300.0, 600.0])
     mf.run(jackknife=True)
     best = mf.best_params
-    assert (best["src_00_dra"], best["src_00_ddec"], best["src_00_width"]) == (4.0, -2.0, 300.0)
+    assert (best["dra"], best["ddec"], best["width"]) == (4.0, -2.0, 300.0)
     assert len(mf.grid_params) == 27
     assert mf.response.shape == mf.response_jackknife.shape == (27, 50)
 
 
 def test_grid_rejects_total_flux(data):
-    with pytest.raises(ValueError, match="not searchable"):
+    with pytest.raises(ValueError, match="total_flux"):
         _finder(data, total_flux=np.array([1.0, 2.0]))
+    for key in ("total_flux", "widths"):
+        with pytest.raises(ValueError, match=f"'{key}'"):
+            build_grid(data, {key: [1.0]})
 
 
 def test_grid_expansion(data):
     mf = _finder(data, dra=np.array([0.0, 1.0]), ddec=np.array([0.0, 2.0, 4.0]))
     assert len(mf.grid_params) == 6
-    assert all(p["src_00_width"] == 300.0 for p in mf.grid_params)
+    assert all(p["width"] == 300.0 for p in mf.grid_params)
 
 
 def _fixture_search(data, truth, jackknife=False, **options):
@@ -192,7 +188,7 @@ def _fixture_search(data, truth, jackknife=False, **options):
     positions = np.array([s["position"] for s in truth["sources"]])
     mf = _finder(data, dra=positions[:, 0], ddec=positions[:, 1], **options)
     mf.run(jackknife=jackknife)
-    at = [(p["src_00_dra"], p["src_00_ddec"]) for p in mf.grid_params]
+    at = [(p["dra"], p["ddec"]) for p in mf.grid_params]
     return mf, [next(k for k, p in enumerate(at) if np.allclose(pos, p)) for pos in positions]
 
 
@@ -231,7 +227,7 @@ def test_continuum_fit_keeps_noise_at_unit_variance_at_every_lag():
     for spw in range(4):
         chunk = _chunk(40, 2000, seed=spw, spw=spw)
         chunk = dataclasses.replace(chunk, freq=chunk.freq + 50 * spw * CHANNEL)
-        flag = np.zeros(chunk.flag.shape, dtype=bool)
+        flag = np.zeros(chunk.w.shape, dtype=bool)
         flag[[0, 17, 18]] = True
         w_row = r.uniform(0.2, 5.0, chunk.u.size)
         noise = (r.normal(size=flag.shape) + 1j * r.normal(size=flag.shape)) / np.sqrt(w_row)
@@ -287,7 +283,7 @@ def test_lags_the_continuum_reproduces_are_uncovered():
 def test_flagged_channel_gives_a_finite_response():
     data = _synthetic(50, snr=10.0)
     (chunk,) = data.chunks
-    flag = chunk.flag.copy()
+    flag = chunk.w == 0
     flag[10] = True  # away from the line, so the peak is unchanged
     data.chunks = [dataclasses.replace(chunk, X=np.where(flag, 0, chunk.X), w=_weights(chunk.w, flag))]
     mf = _finder(data, continuum_order=None, dra=0.0, ddec=0.0)
@@ -318,7 +314,7 @@ def test_pointings_share_one_sky_grid():
         mf = _finder(data, continuum_order=None, dra=[0.0, 5.0, 10.0], ddec=[-3.0, 0.0])
         mf.run()
         best = mf.best_params
-        assert (best["src_00_dra"], best["src_00_ddec"]) == pos
+        assert (best["dra"], best["ddec"]) == pos
         assert mf.response[mf.best_index].max() == pytest.approx(10.0, abs=1e-3)
 
 
@@ -365,9 +361,7 @@ def test_flux_is_the_injected_peak_flux_density():
     assert r.flux[0, 0, 0, 25] == pytest.approx(src.spectrum(FREQ[25]), rel=1e-6)
     profile = np.exp(-0.5 * ((FREQ - FREQ[25]) / (FREQ[25] * 300.0 * FWHM_TO_SIGMA / C_KMS)) ** 2)
     assert r.error[0, 0, 0, 25] == pytest.approx(1 / np.sqrt(400 * np.sum(profile**2)))
-    flux, error = r.integrated_flux()
-    assert flux[0, 0, 0, 25] == pytest.approx(2.0, rel=1e-9)
-    assert error[0, 0, 0, 25] == pytest.approx(r.error[0, 0, 0, 25] * flux[0, 0, 0, 25] / r.flux[0, 0, 0, 25])
+    assert r.flux[0, 0, 0, 25] * 300.0 * LINE_FLUX == pytest.approx(2.0, rel=1e-9)  # the line flux, Jy km/s
 
 
 def test_pb_correction_divides_the_flux_and_masks_the_beam_edge():
@@ -386,7 +380,7 @@ def test_pb_correction_divides_the_flux_and_masks_the_beam_edge():
         assert np.allclose(error[keep], uncorrected.error[:, :, 0][keep] / pb[keep], rtol=1e-12, atol=0)
         assert np.all(np.isnan(snr[~keep]) & np.isnan(flux[~keep]) & np.isnan(error[~keep]))
         assert np.array_equal(corrected.coverage, np.where(keep, pb, 0.0))
-    assert (out.best_params["src_00_dra"], out.best_params["src_00_ddec"]) == (40.0, 0.0)
+    assert (out.best_params["dra"], out.best_params["ddec"]) == (40.0, 0.0)
     assert out.flux[5, 0, 0, 25] == pytest.approx(src.spectrum(FREQ[25]), rel=1e-6)
 
 
@@ -435,7 +429,7 @@ def test_combine_pointings_rejects_other_templates_channels_and_lattices():
         shape = (len(dra), 1, len(width), len(freqs))
         axes = {"dra": list(dra), "ddec": [0.0], "bmin": [0.0], "bmaj": [0.0], "pa": [0.0], "width": list(width)}
         ones = np.ones(shape)
-        return SearchResult(axes, freqs, ones, ones, ones, np.ones((*shape[:2], len(freqs))))
+        return SearchResult(axes, freqs, ones, ones, np.ones((*shape[:2], len(freqs))))
 
     ref = result([0.0, 5.0])
     assert combine_pointings([ref, result([15.0, 20.0])]).axes["dra"] == [0.0, 5.0, 10.0, 15.0, 20.0]
@@ -504,7 +498,6 @@ def test_search_pointings_without_jackknife_has_none(fixture_npz):
 
 
 #: A blind lattice around both sources, as the catalogue needs (its noise correlation is measured on a lattice).
-LATTICE = {"dra": {"start": 0.0, "stop": 16.0, "step": 0.5}, "ddec": {"start": -8.0, "stop": 28.0, "step": 0.5}}
 
 
 def _find_lines(tmp_path, npz, *options, grid_cfg=SOURCES_GRID):
@@ -527,37 +520,9 @@ def test_find_lines_combines_a_mosaic_without_field(tmp_path, capsys, two_field_
         assert saved["response"].shape[0] == len(saved["grid_params"])
 
 
-@pytest.mark.parametrize("npz", ["fixture_npz", "two_field_npz"])
-def test_find_lines_writes_a_catalogue(tmp_path, capsys, request, npz):
-    out = tmp_path / "lines.ecsv"
-    _find_lines(tmp_path, request.getfixturevalue(npz), "--jackknife", "--catalogue", str(out), grid_cfg=LATTICE)
-    cat = Table.read(out, format="ascii.ecsv")
-    assert len(cat) and {"ra", "dec", "likelihood", "fidelity", "detected"} <= set(cat.colnames)
-    assert "candidates detected" in capsys.readouterr().out
-    assert (tmp_path / "reliability.png").exists()
-
-
-def test_find_lines_catalogue_needs_the_jackknife(tmp_path, fixture_npz):
-    with pytest.raises(SystemExit):
-        _find_lines(tmp_path, fixture_npz, "--catalogue", str(tmp_path / "lines.ecsv"))
-
-
-def test_find_lines_fits_the_detected_lines(tmp_path, capsys, fixture_npz):
-    out = tmp_path / "lines.ecsv"
-    _find_lines(tmp_path, fixture_npz, "--jackknife", "--catalogue", str(out), "--fit", grid_cfg=LATTICE)
-    cat = Table.read(out, format="ascii.ecsv")
-    assert set(FIT_COLUMNS) <= set(cat.colnames)
-    assert np.all(np.isfinite(cat["fit_line_flux"][cat["detected"]]))
-    assert np.all(np.isnan(cat["fit_line_flux"][~cat["detected"]]))
-    assert "fit_line_flux" in capsys.readouterr().out
-    with pytest.raises(SystemExit):
-        _find_lines(tmp_path, fixture_npz, "--jackknife", "--fit")
-
-
-def test_find_lines_searches_one_field_without_pb_correction(tmp_path, capsys, two_field_npz):
+def test_find_lines_searches_one_field(tmp_path, capsys, two_field_npz):
     _find_lines(tmp_path, two_field_npz, "--field", "1")
-    text = capsys.readouterr().out
-    assert "peak flux density" in text and "PB-corrected" not in text
+    assert "PB-corrected peak flux density" in capsys.readouterr().out
 
 
 @pytest.mark.parametrize(("total", "used"), [(48, 12), (8, 2), (4, 1), (2, 1), (1, 1)])
@@ -603,7 +568,7 @@ def test_flux_does_not_depend_on_the_channel_correlation():
 
 def test_unknown_channel_noise_is_rejected(data):
     with pytest.raises(ValueError, match="channel_noise"):
-        MatchedFilter(data, Model(), channel_noise="hanning")
+        MatchedFilter(data, {}, channel_noise="hanning")
 
 
 def test_noisy_channels_are_weighted_down_once_reweighted():
@@ -644,3 +609,89 @@ def test_overlapping_windows_add_in_inverse_variance():
     half, k = search(a, window(10.5, 1))
     assert half.freqs.size == 60
     assert half.result.flux[0, 0, 0, k] == pytest.approx(src.spectrum(first.freq[25]), rel=1e-6)
+
+
+@pytest.mark.parametrize("nchan, width, peak", [(40, 300.0, 1.5), (64, 600.0, 1.6)])
+def test_a_line_across_a_window_gap_gets_the_joint_fit(nchan, width, peak):
+    """Two windows one channel apart: a line centred on the missing channel sums both windows' channels,
+    each with its own continuum, as one least-squares fit of the template does. Bright, so its half in
+    each window bends that window's joint continuum into a peak at MASK_SNR at the far edge; masked from
+    the first pass's peaks, that peak is gone and masks nothing."""
+    from luv_finder.model import FWHM_TO_SIGMA
+
+    a = _chunk(nchan, 300)
+    b = dataclasses.replace(_chunk(nchan, 300, seed=1, spw=1), freq=a.freq + (nchan + 1) * CHANNEL)
+    nu = a.freq[-1] + CHANNEL
+    sigma = nu * width * FWHM_TO_SIGMA / C_KMS
+    chunks = [
+        dataclasses.replace(
+            c, X=(c.w * (peak * np.exp(-0.5 * ((c.freq - nu) / sigma) ** 2) + 0.1)[:, None]).astype(complex)
+        )
+        for c in (a, b)
+    ]
+    mf = _finder(DataHandler(chunks=chunks, metadata=_metadata(a)), continuum_order=1, dra=0.0, ddec=0.0, width=width)
+    mf.run()
+    assert np.all(np.diff(mf.frequencies()) > 0) and mf.frequencies().size == 2 * nchan + 1  # the gap is a centre too
+    num = var = 0.0
+    for c in chunks:  # at the phase centre: y = sum_j X, W = sum_j w
+        y, W = c.X.real.sum(axis=1), c.w.sum(axis=1).astype(float)
+        g = np.exp(-0.5 * ((c.freq - nu) / sigma) ** 2)
+        P = np.linspace(-1.0, 1.0, c.freq.size)[:, None] ** np.arange(2)
+        h = g - P @ np.linalg.solve(P.T @ (W[:, None] * P), P.T @ (W * g))
+        num, var = num + h @ y, var + h @ (W * h)
+    i = np.argmin(np.abs(mf.freqs - nu))
+    assert mf.response[0, i] == pytest.approx(num / np.sqrt(var), rel=1e-9)
+
+
+def test_a_chunk_of_neighbouring_windows_is_the_whole_spectrum_in_its_band():
+    """Five windows one channel apart and a bright line on the gap after the second: a chunk that owns the
+    second and third and loads their neighbours, its centres in a band across that gap, gives the whole
+    search's S/N and error there to round-off, without the fifth window."""
+    from luv_finder.model import FWHM_TO_SIGMA
+
+    nchan, width = 40, 600.0
+    base = _chunk(nchan, 300)
+    shifted = [
+        dataclasses.replace(_chunk(nchan, 300, seed=k, spw=k), freq=base.freq + k * (nchan + 1) * CHANNEL)
+        for k in range(5)
+    ]
+    nu = shifted[1].freq[-1] + CHANNEL
+    sigma = nu * width * FWHM_TO_SIGMA / C_KMS
+    windows = [
+        dataclasses.replace(
+            c, X=(c.w * (1.6 * np.exp(-0.5 * ((c.freq - nu) / sigma) ** 2) + 0.1)[:, None]).astype(complex)
+        )
+        for c in shifted
+    ]
+    whole = _finder(DataHandler(chunks=windows, metadata=_metadata(base)), 1, dra=0.0, ddec=0.0, width=width)
+    whole.run()
+    band = (windows[1].freq[10], windows[2].freq[30])
+    chunk = _finder(
+        DataHandler(chunks=windows[:4], metadata=_metadata(base)), 1, band=band, dra=0.0, ddec=0.0, width=width
+    )
+    chunk.run()
+    at = (whole.freqs >= band[0]) & (whole.freqs <= band[1])
+    np.testing.assert_allclose(chunk.freqs, whole.freqs[at])
+    np.testing.assert_allclose(chunk.result.snr, whole.result.snr[..., at], rtol=1e-12, atol=1e-12)
+    np.testing.assert_allclose(chunk.result.error, whole.result.error[..., at], rtol=1e-12)
+
+
+def test_search_pointings_in_place_equals_pb_corrected_and_combined(tmp_path):
+    """The search of an NPZ corrects and combines its pointings in place: the same S/N, flux, error and
+    coverage, to round-off, as correcting each pointing's copy and combining them."""
+    src = _line(12.0, 0.0)
+    fields = [_seen_by(offset, src, field=k) for k, offset in enumerate(((0.0, 0.0), (30.0, 0.0)))]
+    npz = str(tmp_path / "two.npz")
+    DataHandler(chunks=[c for d in fields for c in d.chunks], metadata=fields[0].metadata).to_npz(npz)
+    grid = {"dra": [6.0, 12.0, 18.0], "ddec": [0.0], "bmin": 0.0, "bmaj": 0.0, "width": 300.0}
+    found = search_pointings(npz, grid, continuum_order=None, channel_noise=None)
+    corrected = []
+    for k in (0, 1):
+        data = load(npz, [k])
+        mf = MatchedFilter(data, build_grid(data, grid), continuum_order=None, channel_noise=None)
+        mf.run(jackknife=True)
+        corrected.append(pb_corrected(mf.result, data))
+    expected = combine_pointings(corrected)
+    for got, want in ((found, expected), (found.jackknife, expected.jackknife)):
+        for key in ("snr", "flux", "error", "coverage"):
+            np.testing.assert_allclose(getattr(got, key), getattr(want, key), rtol=1e-12, atol=1e-15, err_msg=key)
