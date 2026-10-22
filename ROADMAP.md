@@ -145,7 +145,7 @@ visibilities, so the Band 1 default grid (21,675 points, 415 k rows in the
 
 ### 2.1 Open
 
-- **Completeness.** Inject analytic `Model` lines into the visibilities (ASPECS
+- **Completeness.** Inject analytic `Gaussian` lines into the visibilities (ASPECS
   style) and recover them through the same path, to turn the S/N limit into a
   flux limit per coverage (on a mosaic the S/N cut is uniform, the flux limit is
   not).

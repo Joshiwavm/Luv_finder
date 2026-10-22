@@ -11,7 +11,7 @@ throughout:
 
 1. the S/N is the filter's, normalised by its exact variance under the correlation
    between channels measured on the jackknife per spectral window
-   (:func:`~luv_finder.data.channel_correlation`), so it has unit variance under the null
+   (:func:`~luv_finder.data.channel_noise`), so it has unit variance under H0
    (:func:`~luv_finder.catalogue.jackknife_spread` checks it);
 2. the correlation function of the jackknife response is measured; it is also the
    expected shape of a matched line's response (Vio & Andreani 2021), so its half-power
@@ -20,7 +20,9 @@ throughout:
    ellipsoid, for the data, the jackknife and (as a diagnostic) the negated data;
 4. every data group gets the likelihood ratio ``N_data(>= S/N) / N_jackknife(>= S/N)``
    (van Marrewijk et al. 2025, required >= 3) and the fidelity ``1 - N_jackknife / N_data``
-   per S/N bin, fitted with an error function (Walter et al. 2016, required >= 0.6).
+   per S/N bin, ``N_jackknife`` from a Gaussian tail fitted to the jackknife groups
+   (González-López et al. 2019, required >= 0.6). ``detected`` needs both (``rule="and"``,
+   the default) or either (``"or"``); the defaults are ``catalogue.RELIABILITY``.
 
 .. code-block:: python
 
@@ -30,7 +32,10 @@ throughout:
    lines = cat[cat["detected"]]
    cat.write("lines.ecsv", format="ascii.ecsv")
 
-or ``luv-find ... --jackknife --catalogue lines.ecsv``.
+A run (:doc:`../quickstart`) does this per unit and merges the units with
+:func:`~luv_finder.catalogue.merge_catalogues`, which recomputes the reliability over
+the whole volume and counts a line found by two units once (``duplicate_of``). The
+template's ``bmaj``, ``bmin`` and ``width`` columns are FWHM.
 
 Fitting the detected lines
 --------------------------
@@ -39,7 +44,8 @@ Detection stays a grid search. :func:`luv_finder.fit.fit_lines` then refines eve
 detected line by least squares in the visibilities: an elliptical Gaussian source
 (position and sky covariance) whose spectrum is a Gaussian line on a polynomial continuum,
 times each pointing's primary beam at the source, jointly in every pointing whose primary
-beam covers the line (PB >= 0.2), in the spectral window holding it.
+beam covers the line (PB >= 0.2) and every spectral window within one FWHM of it, each
+window with its own continuum.
 
 .. code-block:: python
 
@@ -48,7 +54,7 @@ beam covers the line (PB >= 0.2), in the spectral window holding it.
    fitted = fit_lines("mosaic.npz", cat)  # or the search's DataHandler
    fitted.write("lines.ecsv", format="ascii.ecsv", overwrite=True)
 
-or ``luv-find ... --jackknife --catalogue lines.ecsv --fit``. The fitted columns
+``luv-run run.yaml fit`` fits a run's detections and near misses. The fitted columns
 (``fit_dra``, ``fit_ddec``, ``fit_ra``, ``fit_dec``; ``fit_bmaj``, ``fit_bmin`` as FWHM
 and ``fit_pa``; ``fit_freq_ghz``, ``fit_width`` as FWHM in km/s, ``fit_peak``,
 ``fit_line_flux`` and ``fit_continuum`` at the line centre, each with an ``_error``) are
@@ -60,8 +66,8 @@ moment-0 maps.
 Diagnostic figures
 ------------------
 
-:mod:`luv_finder.plotting` holds every figure; each takes a directory and returns the
-path written. :func:`~luv_finder.plotting.reliability_check` shows the counts, the
+:mod:`luv_finder.plotting` holds every figure; each returns its figure and writes it
+to ``plots_dir`` when one is given. :func:`~luv_finder.plotting.reliability_check` shows the counts, the
 likelihood ratio and the fidelity; :func:`~luv_finder.plotting.response_shape_check` the
 response correlation against real lines; :func:`~luv_finder.plotting.line_spectra_check`
 and :func:`~luv_finder.plotting.line_maps_check` the fitted lines. ``pytest --plots``

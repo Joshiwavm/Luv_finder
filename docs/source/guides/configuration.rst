@@ -4,8 +4,8 @@ Configuration
 Search grids
 ------------
 
-``luv-find --grid grid.yaml`` (or the ``cfg`` of :func:`~luv_finder.matchedfilter.build_grid`)
-sets the search axes. A value is a scalar (fixed), a list, or ``{start, stop, step}``;
+A grid YAML (``luv-find --grid``, a run's ``grid``, or the ``cfg`` of
+:func:`~luv_finder.matchedfilter.build_grid`) sets the search axes. A value is a scalar (fixed), a list, or ``{start, stop, step}``;
 the grid is the product of all axes, so the cost is too. Omitted keys follow from the
 data:
 
@@ -20,8 +20,10 @@ data:
 ``width``
    line FWHM in km/s; default 100, 200, 300 and 400.
 
-The line centre is not an axis: every template is centred on every channel.
-``total_flux`` is rejected, because it cancels in the normalisation.
+The line centre is not an axis: every template is centred on every channel. Any other
+key raises an error; ``total_flux`` in particular cancels in the normalisation.
+:class:`~luv_finder.matchedfilter.MatchedFilter` takes the grid as a dict of the same
+keys, a value or a list each; a key left out takes its value from ``GRID_DEFAULTS``.
 
 .. code-block:: yaml
 
@@ -34,11 +36,12 @@ Filter options
 
 ``continuum_order`` (``luv-find --continuum-order``)
    degree of the polynomial continuum fitted with each line template per window and
-   position (default 2; ``none`` turns it off). A line loses the part of its S/N the
-   polynomial can mimic, a few per cent.
-``channel_correlation``
-   ``"measure"`` (default) measures it on the jackknife per spectral window; ``None``
-   assumes independent channels; or pass ``{spw: rho}``.
+   position (default 1; ``none`` turns it off). A line loses the part of its S/N the
+   polynomial can mimic, a few per cent. Lines at S/N >= 5 are left out of the continuum
+   of the others at their position.
+``channel_noise``
+   ``"measure"`` (default) measures the channel correlation on the jackknife per spectral
+   window; ``None`` assumes independent channels; or pass ``{spw: ChannelNoise}``.
 ``cores`` (``luv-find --cores``)
    the search pins itself to a quarter of the cores, at most all but two, because the
    machines are shared (Linux only).
@@ -53,9 +56,13 @@ data. Antenna configurations are not vendored: ``alma_config`` names a file CASA
 such as ``alma.cycle13.3.cfg``. The presets and their pairing are listed in
 `configs/README.md <https://github.com/Joshiwavm/Luv_finder/blob/main/configs/README.md>`_.
 
-Parameter naming
-----------------
+Runs
+----
 
-Every component attribute is exposed as ``src_{index:02d}_{name}`` (``src_00_dra``,
-``src_00_width``, ...), and grid dictionaries on a component are prefixed the same way
-when it is added to a :class:`~luv_finder.model.Model`.
+A run YAML (:doc:`../quickstart`) holds ``data`` and ``output`` and optionally ``grid``,
+``pb_limit``, ``max_channels``, ``filter``, ``reliability``, ``near_miss`` and ``cores``.
+The search is planned in units: windows that overlap or whose gap is narrower than the
+widest template are one unit, so a line across a window edge is searched and fitted
+whole. ``max_channels`` cuts a long unit into chunks of whole blocks (windows overlapping
+by more than a channel) that load their neighbours and catalogue only the groups peaking
+in their own part, so the chunks give the unchopped catalogue.
