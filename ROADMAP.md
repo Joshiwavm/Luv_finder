@@ -174,6 +174,16 @@ confirmation, since the bands sample different transitions of the same ladder.
 Needs co-spatial matching with a tolerance set by the coarser beam, a way to
 combine two independent significances, and a catalogue format that spans bands.
 
+### 2.3 Continuum sources
+The same data hold the continuum: the polynomial the filter already fits at every
+position. A continuum catalogue needs no matched filter along frequency, only the
+spatial collapse summed over channels (or the order-0 term per window), PB-corrected
+and combined like the lines, with the same reliability against the jackknife (likelihood
+ratio and fidelity per S/N bin). Open: the jackknife cancels the continuum as it
+cancels the lines, so it is the null for both; confused or extended sources need the
+non-Gaussian templates of section 3; and the line catalogue could then flag lines on a
+continuum source.
+
 ## 3. Sources that are not Gaussians
 
 The matched filter is only optimal when the template resembles the source, and
