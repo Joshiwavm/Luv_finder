@@ -77,6 +77,18 @@ def pytest_sessionfinish(session, exitstatus):
 
 
 @pytest.fixture(scope="session")
+def blind_catalogue(data):
+    """The fixture catalogued blind on a +-30 arcsec lattice (one search for the tests that need it)."""
+    from luv_finder.catalogue import catalogue
+    from luv_finder.matchedfilter import MatchedFilter, build_grid, pb_corrected
+
+    lattice = data.metadata.minresolution() / 2 * np.arange(-18, 19)
+    mf = MatchedFilter(data, build_grid(data, {"dra": lattice, "ddec": lattice}))
+    mf.run(jackknife=True)
+    return catalogue(pb_corrected(mf.result, data), ref=data.metadata.ref)
+
+
+@pytest.fixture(scope="session")
 def truth() -> dict:
     """Injected sources of the line13_line9 mock."""
     return json.loads((FIXTURES / "line13_line9_truth.json").read_text())

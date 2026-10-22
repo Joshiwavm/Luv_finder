@@ -15,10 +15,8 @@ from luv_finder.matchedfilter import (
     pb_corrected,
     search_pointings,
 )
-from luv_finder.model import CONTINUUM_ORDER, FWHM_TO_SIGMA, LINE_FLUX
+from luv_finder.model import C_KMS, CONTINUUM_ORDER, FWHM_TO_SIGMA, LINE_FLUX
 from luv_finder.utils import primary_beam, primary_beam_radius
-
-C_KMS = 299792.458
 
 
 def _finder(data, continuum_order=2, channel_noise=None, band=None, **grid):

@@ -6,7 +6,6 @@ import pytest
 from astropy.table import Table
 from scipy import special, stats
 
-from luv_finder import MatchedFilter
 from luv_finder.catalogue import (
     BRIGHT_SNR,
     ResponseCorrelation,
@@ -21,7 +20,7 @@ from luv_finder.catalogue import (
     response_correlation,
 )
 from luv_finder.data import sky_offset
-from luv_finder.matchedfilter import SearchResult, build_grid, pb_corrected
+from luv_finder.matchedfilter import SearchResult
 from luv_finder.model import C_KMS, FWHM_TO_SIGMA, covariance, envelope
 
 STEP = 0.5  # arcsec
@@ -280,12 +279,9 @@ def test_fidelity_needs_three_noise_groups():
     assert bins["n_data"].tolist() == [2, 1] and bins["n_noise"].tolist() == [1, 0]
 
 
-def test_catalogue_of_the_fixture(data, truth, tmp_path):
+def test_catalogue_of_the_fixture(data, truth, blind_catalogue, tmp_path):
     """A blind lattice of +-30 arcsec finds both injected lines, each once, and detects them."""
-    lattice = data.metadata.minresolution() / 2 * np.arange(-18, 19)
-    mf = MatchedFilter(data, build_grid(data, {"dra": lattice, "ddec": lattice}))
-    mf.run(jackknife=True)
-    cat = catalogue(pb_corrected(mf.result, data), ref=data.metadata.ref)
+    cat = blind_catalogue.copy()
     assert cat["id"].tolist() == list(range(1, len(cat) + 1))
     assert np.all(np.diff(cat["snr"]) <= 0) and cat["snr"].tolist() == cat.meta["snr_data"]
     channel = np.median(np.diff(data.freqs)) / 1e9
