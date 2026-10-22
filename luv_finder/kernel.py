@@ -59,8 +59,8 @@ def _blocks(chunk: Chunk, dra, ddec, cov: tuple, per_row: int = 0):
     dra = np.asarray(dra) - chunk.offset[0]
     ddec = jnp.asarray(np.asarray(ddec) - chunk.offset[1])
     cov = tuple(jnp.asarray(c) for c in cov)
-    block = BLOCK_BYTES // max(16 * (2 + len(cov[0])) * len(chunk.u), per_row)
-    block = max(1, min(len(dra), block))
+    block = max(1, min(len(dra), BLOCK_BYTES // max(16 * (2 + len(cov[0])) * len(chunk.u), per_row)))
+    block = -(-len(dra) // -(-len(dra) // block))  # blocks of equal size: the last pads at most one row per block
     step = dfreq[0] if dfreq.size else 0.0
     for start in range(0, len(dra), block):
         rows = dra[start : start + block]
