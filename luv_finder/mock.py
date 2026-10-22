@@ -18,6 +18,7 @@ from astropy.modeling import models
 
 from . import utils
 from ._casa import tasks, tools
+from .model import FWHM_TO_SIGMA
 
 _REF_RMS_JY = 0.05e-3
 _REF_MIN = 27.0
@@ -73,7 +74,7 @@ class MockObservation:
     integration_time : str with units, e.g. "8min"
     sources : list of dict
         ``position`` (dra, ddec) arcsec east and north; optional ``axis_maj``/``axis_min``, the Gaussian
-        sigma in arcsec (the model's ``bmaj``/``bmin``, default one cell), and ``pa``, the
+        FWHM in arcsec (the model's ``bmaj``/``bmin``, default a sigma of one cell), and ``pa``, the
         major axis' position angle in degrees east of north (default 0);
         ``line`` {width km/s, mean GHz, snr}; ``continuum`` {snr, index}, flux density
         ``propto (nu / freq_center)^index`` (default 0, flat), ``snr`` at ``freq_center``.
@@ -197,8 +198,8 @@ class MockObservation:
         dra, ddec = source.get("position", (0.0, 0.0))
         pos_y = ny / 2 + ddec / cell
         pos_x = nx / 2 - dra / cell
-        sig_min = source.get("axis_min", cell) / cell
-        sig_maj = source.get("axis_maj", cell) / cell
+        sig_min = source.get("axis_min", cell / FWHM_TO_SIGMA) * FWHM_TO_SIGMA / cell
+        sig_maj = source.get("axis_maj", cell / FWHM_TO_SIGMA) * FWHM_TO_SIGMA / cell
         return pos_y, pos_x, sig_maj, sig_min
 
     def create_cube(self) -> np.ndarray:
@@ -222,9 +223,9 @@ class MockObservation:
             if "line" in src:
                 width_chan = src["line"]["width"] / dv
                 mean_chan = (src["line"]["mean"] - f_start) / df
-                flux_line = src["line"]["snr"] * self.sensitivity * np.sqrt(width_chan / 2.355 * 4)
-                amp = flux_line / (width_chan / 2.355 * np.sqrt(2 * np.pi))
-                spec = models.Gaussian1D(amplitude=amp, mean=mean_chan, stddev=width_chan / 2.355)(chans)
+                flux_line = src["line"]["snr"] * self.sensitivity * np.sqrt(width_chan * FWHM_TO_SIGMA * 4)
+                amp = flux_line / (width_chan * FWHM_TO_SIGMA * np.sqrt(2 * np.pi))
+                spec = models.Gaussian1D(amplitude=amp, mean=mean_chan, stddev=width_chan * FWHM_TO_SIGMA)(chans)
                 self.cube += spec[:, None, None] * spatial[None]
                 print(f"source {src['position']}: line flux {flux_line * dv:.3e} Jy km/s")
             if "continuum" in src:
@@ -363,7 +364,7 @@ class MockObservation:
 
         for i, src in enumerate(self.sources):
             if "line" in src:
-                sig = src["line"]["width"] / dv / 2.355
+                sig = src["line"]["width"] / dv * FWHM_TO_SIGMA
                 mean = (src["line"]["mean"] - f_start) / df
                 lo, hi = int(max(0, mean - 3 * sig)), int(min(nchan, mean + 3 * sig + 1))
                 triptych(cube_clean[lo:hi].sum(0), cube_noisy[lo:hi].sum(0), f"src{i}_line")

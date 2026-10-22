@@ -15,8 +15,8 @@ data:
 ``pb_limit``
    primary-beam level that bounds a pointing's search (default 0.2).
 ``bmaj``, ``bmin``, ``pa``
-   the trial source's axes (Gaussian sigma, arcsec) and position angle (degrees east of
-   north); default a tenth of the resolution, effectively a point source.
+   the trial source's axes (FWHM, arcsec) and position angle (degrees east of north);
+   default 0.2355 of the resolution (a sigma of a tenth), effectively a point source.
 ``width``
    line FWHM in km/s; default 100, 200, 300 and 400.
 

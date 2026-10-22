@@ -22,7 +22,7 @@ from scipy import linalg, optimize
 from .data import Chunk, DataHandler, load, sky_direction
 from .kernel import DATA_POWERS, WEIGHT_POWERS, limit_cores, on_device, point_moments
 from .matchedfilter import MASK_FWHM, MASK_SNR
-from .model import C_KMS, CONTINUUM_ORDER, LINE_FLUX, continuum_basis, covariance, line_profile, rotated
+from .model import C_KMS, CONTINUUM_ORDER, FWHM_TO_SIGMA, LINE_FLUX, continuum_basis, covariance, line_profile, rotated
 from .utils import primary_beam_at
 
 #: Quantities reported per line, each with an ``_error``, and their units.
@@ -130,7 +130,7 @@ def _pointing(theta, freq, basis, offset, dish, data, weight):
 
 
 def _reported(theta, freq, n_continuum, block):
-    """The :data:`REPORTED` quantities; the axes (sigma) from the covariance's eigenvalues, 0 where unresolved.
+    """The :data:`REPORTED` quantities; the axes (FWHM) from the covariance's eigenvalues, 0 where unresolved.
 
     The continuum is the one of the window ``freq`` at the line, its coefficients ``block`` onward.
     """
@@ -142,8 +142,8 @@ def _reported(theta, freq, n_continuum, block):
         [
             theta[0],
             theta[1],
-            jnp.sqrt(jnp.maximum(major, 0.0)),
-            jnp.sqrt(jnp.maximum(minor, 0.0)),
+            jnp.sqrt(jnp.maximum(major, 0.0)) / FWHM_TO_SIGMA,
+            jnp.sqrt(jnp.maximum(minor, 0.0)) / FWHM_TO_SIGMA,
             jnp.degrees(0.5 * jnp.arctan2(2 * s_en, s_nn - s_ee)) % 180,
             theta[5] / 1e9,
             theta[6],
@@ -223,7 +223,7 @@ def fit_line(
     channel_noise: str | dict | None = "measure",
     others=(),
 ) -> dict:
-    """Fit one line, started from the matched filter's position, template shape (sigma, arcsec) and width.
+    """Fit one line, started from the matched filter's position, template shape (FWHM, arcsec) and width.
 
     Every window within one FWHM of the line is fitted (:func:`_window_chunks`): the line is shared, and
     each window has its own continuum. ``others``: (GHz, km/s) of other lines at the position, left out
@@ -322,7 +322,7 @@ def fit_line(
         best = {"theta": theta0, "moments": moments}
 
         # position and shape as dra, ddec, major and minor variance and pa: sizes >= 0 are bounds
-        y0 = np.array([dra, ddec, bmaj**2, bmin**2, pa])
+        y0 = np.array([dra, ddec, (bmaj * FWHM_TO_SIGMA) ** 2, (bmin * FWHM_TO_SIGMA) ** 2, pa])
         y_scale = np.array([*scale[:4], 10.0])
 
         def to_theta(y):

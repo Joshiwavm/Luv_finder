@@ -27,7 +27,7 @@ from tqdm import tqdm
 
 from .data import ChannelNoise, Chunk, DataHandler, fields_in, load, pointing
 from .kernel import _blocks, limit_cores
-from .model import C_KMS, CONTINUUM_ORDER, Gaussian, Model, continuum_basis, covariance, line_profile
+from .model import C_KMS, CONTINUUM_ORDER, FWHM_TO_SIGMA, Gaussian, Model, continuum_basis, covariance, line_profile
 from .utils import ARCSEC, primary_beam_at, primary_beam_radius
 
 TEMPLATE_KEYS = ("bmin", "bmaj", "pa", "width")
@@ -40,6 +40,8 @@ MASK_PEAKS = 4
 #: Arrays of a block's positions x templates x centres that :func:`_spectral` holds at once, at most: it sizes the
 #: position blocks, so a window's spectral fit stays within ``BLOCK_BYTES``.
 SPECTRAL_ARRAYS = 12
+#: FWHM of a grid's default source shape, a point to the filter, in units of the resolution (a sigma of 1/10).
+POINT = 0.1 / FWHM_TO_SIGMA
 #: Template FWHMs (km/s) a grid searches unless it names its own.
 WIDTHS = (100.0, 200.0, 300.0, 400.0)
 
@@ -564,8 +566,8 @@ def _grid(metadata, offset, low: float, cfg: dict | None) -> dict:
     return {
         "dra": grid_axis(cfg, "dra", lattice(dra)),
         "ddec": grid_axis(cfg, "ddec", lattice(ddec)),
-        "bmin": grid_axis(cfg, "bmin", res / 10),
-        "bmaj": grid_axis(cfg, "bmaj", res / 10),
+        "bmin": grid_axis(cfg, "bmin", POINT * res),
+        "bmaj": grid_axis(cfg, "bmaj", POINT * res),
         "pa": grid_axis(cfg, "pa", 0.0),
         "width": grid_axis(cfg, "width", WIDTHS),
     }

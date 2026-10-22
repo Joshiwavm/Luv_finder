@@ -1,5 +1,5 @@
 # Blind search. Omitted keys are derived from the data: dra/ddec span the
-# primary beam down to pb_limit in steps of resolution/2, bmin/bmaj = resolution/10.
+# primary beam down to pb_limit in steps of resolution/2, bmin/bmaj (FWHM) = 0.2355 x resolution, a point.
 # pa is the bmaj axis' position angle in degrees east of north (default 0).
 # Values may be a scalar (fixed), a list, or {start, stop, step}. Cost is their product.
 pb_limit: 0.2

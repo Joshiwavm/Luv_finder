@@ -25,6 +25,7 @@ import pytest
 from scipy.optimize import least_squares
 
 from luv_finder import DataHandler, Gaussian, MatchedFilter, MockObservation, Model
+from luv_finder.model import FWHM_TO_SIGMA
 from luv_finder.utils import FWHM_FACTOR, primary_beam
 
 REPO = Path(__file__).parents[1]
@@ -58,14 +59,14 @@ def _expected(noisy_path: Path, clean_path: Path) -> DataHandler:
     return DataHandler(chunks=[dataclasses.replace(chunk, X=chunk.w * signal.vis)], metadata=noisy.metadata)
 
 
-def _fitted_flux(data: DataHandler, source: dict, sigma: float) -> np.ndarray:
+def _fitted_flux(data: DataHandler, source: dict, fwhm: float) -> np.ndarray:
     """Best-fit peak flux density (Jy) per channel of a point source's template at its position."""
     comp = Gaussian()
     comp.grid = {
         "dra": source["position"][0],
         "ddec": source["position"][1],
-        "bmin": sigma,
-        "bmaj": sigma,
+        "bmin": fwhm,
+        "bmaj": fwhm,
         "width": source["line"]["width"],
     }
     mod = Model()
@@ -80,7 +81,7 @@ def test_simobserve_beam_follows_airy():
     """The fitted-to-injected peak ratio is 1 at the phase centre and follows the default Airy beam outside it."""
     mock = MockObservation.from_yaml(CONFIG)
     data = _expected(*_observe(mock))
-    sigma = u.Quantity(mock.cell).to(u.arcsec).value
+    fwhm = u.Quantity(mock.cell).to(u.arcsec).value / FWHM_TO_SIGMA  # the mock's default size
     injected = mock.cube.sum(axis=(1, 2))
     assert len(data.freqs) == len(injected)
 
@@ -90,7 +91,7 @@ def test_simobserve_beam_follows_airy():
         assert data.freqs[chan] == pytest.approx(source["line"]["mean"] * 1e9, abs=1e3)
         offsets.append(np.hypot(*source["position"]))
         freqs.append(data.freqs[chan])
-        measured.append(_fitted_flux(data, source, sigma)[chan] / injected[chan])
+        measured.append(_fitted_flux(data, source, fwhm)[chan] / injected[chan])
     offsets, freqs, measured = map(np.array, (offsets, freqs, measured))
 
     dish = data.metadata.dish_diameter

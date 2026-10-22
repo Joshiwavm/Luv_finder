@@ -49,7 +49,7 @@ beam covers the line (PB >= 0.2), in the spectral window holding it.
    fitted.write("lines.ecsv", format="ascii.ecsv", overwrite=True)
 
 or ``luv-find ... --jackknife --catalogue lines.ecsv --fit``. The fitted columns
-(``fit_dra``, ``fit_ddec``, ``fit_ra``, ``fit_dec``; ``fit_bmaj``, ``fit_bmin`` as sigma
+(``fit_dra``, ``fit_ddec``, ``fit_ra``, ``fit_dec``; ``fit_bmaj``, ``fit_bmin`` as FWHM
 and ``fit_pa``; ``fit_freq_ghz``, ``fit_width`` as FWHM in km/s, ``fit_peak``,
 ``fit_line_flux`` and ``fit_continuum`` at the line centre, each with an ``_error``) are
 intrinsic, PB-corrected values. An unresolved axis lands on zero size, with a NaN error.

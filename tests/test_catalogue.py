@@ -22,7 +22,7 @@ from luv_finder.catalogue import (
 )
 from luv_finder.data import sky_offset
 from luv_finder.matchedfilter import SearchResult, build_grid, grid_model, pb_corrected
-from luv_finder.model import C_KMS, covariance, envelope
+from luv_finder.model import C_KMS, FWHM_TO_SIGMA, covariance, envelope
 
 STEP = 0.5  # arcsec
 NU, DV = 40e9, 50.0  # Hz, km/s per channel
@@ -42,7 +42,9 @@ def _smooth(noise, major, minor, pa, chan, steps=(STEP, STEP)):
     q_ra, q_dec, q_chan = np.meshgrid(
         np.fft.fftfreq(SHAPE[0], steps[0]), np.fft.fftfreq(SHAPE[1], steps[1]), np.fft.fftfreq(SHAPE[2]), indexing="ij"
     )
-    transfer = envelope(q_ra, q_dec, covariance(major, minor, pa)) * np.exp(-2 * np.pi**2 * (chan * q_chan) ** 2)
+    transfer = envelope(q_ra, q_dec, covariance(major / FWHM_TO_SIGMA, minor / FWHM_TO_SIGMA, pa)) * np.exp(
+        -2 * np.pi**2 * (chan * q_chan) ** 2
+    )
     x = np.fft.ifftn(np.fft.fftn(noise) * transfer).real
     return x / x.std()
 

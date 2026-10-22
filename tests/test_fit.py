@@ -131,7 +131,7 @@ def test_noisy_fit_is_within_its_errors():
 def test_point_source_fits_through_zero_size():
     point = {**SOURCE, "bmaj": 0.0, "bmin": 0.0}
     fit = fit_line(_data(point), *START, continuum_order=ORDER, channel_noise=None)
-    assert fit["fit_converged"] and fit["fit_bmaj"] < 0.05
+    assert fit["fit_converged"] and fit["fit_bmaj"] < 0.12
     truth = {k: v for k, v in _truth(point).items() if k not in ("fit_bmaj", "fit_bmin")}
     for key, pull in _pulls(fit, truth).items():
         assert abs(pull) < 0.01, key

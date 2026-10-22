@@ -11,6 +11,8 @@ import astropy.units as u
 import numpy as np
 from astropy.constants import c
 
+from .utils import ARCSEC
+
 C_KMS = c.to(u.km / u.s).value
 FWHM_TO_SIGMA = 1 / 2.355
 #: Line flux per peak flux density and FWHM of a Gaussian line, ``sqrt(2 pi) / 2.355``.
@@ -30,8 +32,8 @@ def continuum_basis(n_chan: int, terms: int, xp=np):
 
 
 def covariance(bmaj, bmin, pa, xp=np):
-    """Sky covariance ``(s_ee, s_nn, s_en)`` of a Gaussian of axes (sigma) ``bmaj``, ``bmin`` at ``pa`` deg E of N."""
-    return rotated(bmaj**2, bmin**2, pa, xp)
+    """Sky covariance ``(s_ee, s_nn, s_en)`` of a Gaussian of FWHM ``bmaj``, ``bmin`` at ``pa`` deg E of N."""
+    return rotated((bmaj * FWHM_TO_SIGMA) ** 2, (bmin * FWHM_TO_SIGMA) ** 2, pa, xp)
 
 
 def rotated(major, minor, pa, xp=np):
@@ -48,56 +50,34 @@ def envelope(uw, vw, cov, xp=np):
 
 
 class Gaussian:
-    """2D spatial x 1D spectral Gaussian evaluated directly in the UV plane."""
+    """2D spatial x 1D spectral Gaussian evaluated directly in the UV plane.
+
+    Position (arcsec), FWHM axes ``bmaj``, ``bmin`` (arcsec) at ``pa`` (deg E of N), line flux ``total_flux``
+    (Jy km/s) at ``nu_center`` (Hz) of FWHM ``width`` (km/s).
+    """
 
     positive = True
 
     def __init__(self, dra=0.0, ddec=0.0, total_flux=1.0, bmin=0.0, bmaj=0.0, pa=0.0, nu_center=0.0, width=100.0):
         self.dra = dra
         self.ddec = ddec
-        self._bmin = bmin
-        self._bmaj = bmaj
+        self.bmin = bmin
+        self.bmaj = bmaj
         self.pa = pa
         self.total_flux = total_flux
         self.nu_center = nu_center
-        self._width = width
+        self.width = width
         self.profile = self._uvgauss_1D2D
         self.grid: dict | None = None
 
-    # arcsec <-> rad accessors -------------------------------------------------
-    @property
-    def bmin(self):
-        return np.deg2rad(self._bmin / 3600)
-
-    @bmin.setter
-    def bmin(self, v):
-        self._bmin = v
-
-    @property
-    def bmaj(self):
-        return np.deg2rad(self._bmaj / 3600)
-
-    @bmaj.setter
-    def bmaj(self, v):
-        self._bmaj = v
-
-    @property
-    def width(self):
-        """Spectral sigma in Hz."""
-        return self.nu_center * self._width * FWHM_TO_SIGMA / C_KMS
-
-    @width.setter
-    def width(self, v):
-        self._width = v
-
     def envelope(self, chunk) -> np.ndarray:
         """Spatial envelope A(u, v): the source's visibility amplitude, 1 at zero spacing, (n_chan, n_row)."""
-        return envelope(*chunk.uv_waves(), covariance(self.bmaj, self.bmin, self.pa))
+        return envelope(*chunk.uv_waves(), covariance(self.bmaj * ARCSEC, self.bmin * ARCSEC, self.pa))
 
     def spectrum(self, freq: np.ndarray) -> np.ndarray:
         """Line profile in Jy at ``freq`` (Hz)."""
-        flux_hz = self.total_flux * self.nu_center / C_KMS
-        return flux_hz / (self.width * np.sqrt(2 * np.pi)) * line_profile(freq, self.nu_center, self._width)
+        peak = self.total_flux / (self.width * LINE_FLUX)
+        return peak * line_profile(freq, self.nu_center, self.width)
 
     def _uvgauss_1D2D(self, chunk) -> np.ndarray:
         """Model visibilities on the uv coverage of ``chunk``, (n_chan, n_row) complex."""
