@@ -8,15 +8,14 @@ import os
 import shutil
 
 import astropy.units as u
-import matplotlib.pyplot as plt
 import numpy as np
 import yaml
 from astropy.constants import c
 from astropy.coordinates import SkyCoord
 from astropy.io import fits
 from astropy.modeling import models
+from matplotlib.figure import Figure
 
-from . import utils
 from ._casa import tasks, tools
 from .model import FWHM_TO_SIGMA
 
@@ -122,8 +121,11 @@ class MockObservation:
         self.dv = dv
         self.freq_center = freq_center
         self.cell = cell
-        self.fits_filename = fits_filename
         self.sources = sources
+        default = "_".join(
+            f"{k}{s[key]['snr']}" for s in sources for k, key in (("line", "line"), ("cont", "continuum")) if key in s
+        )
+        self.fits_filename = fits_filename or os.path.join(support_folder, default + "_input.fits")
         self.direction = direction
         self.ptg_file = ptg_file or os.path.join(support_folder, "ptgfile.txt")
         self.calibrate_snr = calibrate_snr
@@ -181,15 +183,12 @@ class MockObservation:
 
     @property
     def project_name(self) -> str:
-        if self.fits_filename is None:
-            parts = []
-            for src in self.sources:
-                if "line" in src:
-                    parts.append(f"line{src['line']['snr']}")
-                if "continuum" in src:
-                    parts.append(f"cont{src['continuum']['snr']}")
-            self.fits_filename = os.path.join(self.support_folder, "_".join(parts) + "_input.fits")
         return os.path.basename(self.fits_filename).split("_input")[0]
+
+    def _name_ms(self) -> None:
+        """The noiseless and noisy MS that ``simobserve`` (or ``concat``) writes under the project."""
+        stem = f"{self.project_name}/{self.project_name}." + os.path.basename(self.alma_config)
+        self.ms_noiseless, self.ms_noisy = stem.replace("cfg", "ms"), stem.replace("cfg", "noisy.ms")
 
     # ------------------------------------------------------------------ cube
     def _source_pixels(self, source):
@@ -239,7 +238,6 @@ class MockObservation:
     def save_cube(self) -> str:
         if self.cube is None:
             raise RuntimeError("call create_cube() first")
-        _ = self.project_name  # resolves fits_filename
         os.makedirs(os.path.dirname(self.fits_filename), exist_ok=True)
         fits.writeto(self.fits_filename, self.cube, overwrite=True)
         return self.fits_filename
@@ -275,10 +273,8 @@ class MockObservation:
             part.save_cube()
             part._simobserve()
             parts.append(part)
-        cfg = os.path.basename(self.alma_config)
         os.makedirs(self.project_name, exist_ok=True)
-        self.ms_noiseless = f"{self.project_name}/{self.project_name}." + cfg.replace("cfg", "ms")
-        self.ms_noisy = f"{self.project_name}/{self.project_name}." + cfg.replace("cfg", "noisy.ms")
+        self._name_ms()
         for name in ("ms_noiseless", "ms_noisy"):
             shutil.rmtree(getattr(self, name), ignore_errors=True)
             concat(vis=[getattr(part, name) for part in parts], concatvis=getattr(self, name))
@@ -287,8 +283,6 @@ class MockObservation:
 
     def _simobserve(self) -> None:
         simobserve = tasks().simobserve
-        if self.fits_filename is None:
-            raise RuntimeError("call save_cube() first")
         os.makedirs(os.path.dirname(self.ptg_file) or ".", exist_ok=True)
         with open(self.ptg_file, "w") as f:
             f.write("\n".join(self._pointing_directions()))
@@ -311,10 +305,7 @@ class MockObservation:
             seed=self.seed,
             graphics="none",
         )
-        cfg = os.path.basename(self.alma_config)
-        self.ms_noiseless = f"{self.project_name}/{self.project_name}." + cfg.replace("cfg", "ms")
-        self.ms_noisy = f"{self.project_name}/{self.project_name}." + cfg.replace("cfg", "noisy.ms")
-        utils.getstatwtweights(self.ms_noisy)
+        self._name_ms()  # weights stay as simobserve writes them: reading corrects them from the data
 
     def run_imaging(self) -> None:
         casatasks = tasks()
@@ -338,7 +329,7 @@ class MockObservation:
             exportfits(imagename=name + ".image", fitsimage=name + ".fits", overwrite=True)
 
     # ------------------------------------------------------------------ plots
-    def plot_results(self, plots_dir: str = "plots", show: bool = False) -> None:
+    def plot_results(self, plots_dir: str = "plots") -> None:
         """Line / continuum maps (noiseless, noisy, SNR) for every source."""
         os.makedirs(plots_dir, exist_ok=True)
         cube_clean = fits.getdata(self.ms_noiseless.replace(".ms", ".im.fits"))[0]
@@ -349,7 +340,8 @@ class MockObservation:
         def triptych(clean, noisy, tag):
             std = np.nanstd(noisy - clean)
             snr = clean / std if std else clean
-            fig, axes = plt.subplots(1, 3, figsize=(12, 4))
+            fig = Figure(figsize=(12, 4))
+            axes = fig.subplots(1, 3)
             for ax, img, title in zip(
                 axes, (clean, noisy, snr), ("noiseless", "noisy", f"SNR (peak {np.nanmax(snr):.1f})"), strict=True
             ):
@@ -358,9 +350,6 @@ class MockObservation:
                 fig.colorbar(im, ax=ax)
             fig.tight_layout()
             fig.savefig(os.path.join(plots_dir, f"{self.project_name}_{tag}.png"))
-            if show:
-                plt.show()
-            plt.close(fig)
 
         for i, src in enumerate(self.sources):
             if "line" in src:
@@ -384,8 +373,9 @@ class MockObservation:
             shutil.rmtree(dest)
         os.makedirs(self.output_folder, exist_ok=True)
         shutil.move(self.project_name, dest)
-        for log in glob.glob("*.log") + glob.glob("*.last"):
-            os.remove(log)
+        for task in ("simobserve", "concat", "tclean", "exportfits"):
+            if os.path.exists(f"{task}.last"):  # CASA's record of the last call, written to the working directory
+                os.remove(f"{task}.last")
         self.ms_noiseless = os.path.join(self.output_folder, self.ms_noiseless)
         self.ms_noisy = os.path.join(self.output_folder, self.ms_noisy)
         return dest

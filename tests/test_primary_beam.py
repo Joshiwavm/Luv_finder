@@ -96,7 +96,12 @@ def test_simobserve_beam_follows_airy():
 
     dish = data.metadata.dish_diameter
     beam = primary_beam(offsets, freqs, dish)
-    best = least_squares(lambda k: primary_beam(offsets, freqs, dish, fwhm_factor=k[0]) - measured, [FWHM_FACTOR]).x[0]
+
+    # a FWHM factor k is the default beam at the offsets scaled by FWHM_FACTOR / k
+    def residual(k):
+        return primary_beam(offsets * FWHM_FACTOR / k[0], freqs, dish) - measured
+
+    best = least_squares(residual, [FWHM_FACTOR]).x[0]
     print(f"\nbest-fit FWHM factor {best:.4f} lambda/D (package default {FWHM_FACTOR})")
     print("offset/arcsec  freq/GHz  measured  PB(default)  diff/%")
     for off, freq, meas, pb in zip(offsets, freqs, measured, beam, strict=True):

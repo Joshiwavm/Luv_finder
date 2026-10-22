@@ -1,4 +1,4 @@
-"""Shared constants, the analytic ALMA primary beam and the mock-weight helper.
+"""Shared constants and the analytic ALMA primary beam.
 
 The primary beam follows the ALMA Technical Handbook: the measured FWHM of the 12 m and 7 m antennas is
 about 1.13 lambda / D, and CASA models the beam as an Airy pattern scaled so that its FWHM matches.
@@ -13,8 +13,6 @@ import jax
 import numpy as np
 from scipy.optimize import brentq
 from scipy.special import j1, jn_zeros
-
-from ._casa import tools
 
 C = const.c.value
 ARCSEC = np.deg2rad(1 / 3600)
@@ -51,13 +49,13 @@ def _airy(x, xp=np):
 X_HALF = brentq(lambda x: _airy(x) - 0.5, 1.0, _X_NULL)
 
 
-def primary_beam_fwhm(freq_hz, dish_diameter, fwhm_factor=FWHM_FACTOR):
-    return fwhm_factor * C / (freq_hz * dish_diameter * ARCSEC)
+def primary_beam_fwhm(freq_hz, dish_diameter):
+    return FWHM_FACTOR * C / (freq_hz * dish_diameter * ARCSEC)
 
 
-def primary_beam(offset_arcsec, freq_hz, dish_diameter, fwhm_factor=FWHM_FACTOR, xp=np):
+def primary_beam(offset_arcsec, freq_hz, dish_diameter, xp=np):
     """Primary-beam attenuation in [0, 1] at an angular offset from the pointing centre."""
-    fwhm = primary_beam_fwhm(freq_hz, dish_diameter, fwhm_factor)
+    fwhm = primary_beam_fwhm(freq_hz, dish_diameter)
     return _airy(2 * X_HALF * xp.asarray(offset_arcsec, dtype=float) / fwhm, xp)
 
 
@@ -66,47 +64,9 @@ def primary_beam_at(dra, ddec, offset, freq_hz, dish_diameter, xp=np):
     return primary_beam(xp.hypot(dra - offset[0], ddec - offset[1]), freq_hz, dish_diameter, xp=xp)
 
 
-def primary_beam_radius(level, freq_hz, dish_diameter, fwhm_factor=FWHM_FACTOR):
+def primary_beam_radius(level, freq_hz, dish_diameter):
     """Offset in arcsec at which the main lobe falls to ``level`` (``0 < level <= 1``)."""
     if not 0 < level <= 1:
         raise ValueError(f"level must be in (0, 1], got {level}")
     x = 0.0 if level == 1 else brentq(lambda x: _airy(x) - level, 0.0, _X_NULL)
-    return x / (2 * X_HALF) * primary_beam_fwhm(freq_hz, dish_diameter, fwhm_factor)
-
-
-def getstatwtweights(vis: str, seed: int = 0) -> None:
-    """Reset WEIGHT in-place from the scan-jackknifed real-part scatter.
-
-    ``simobserve`` leaves ``WEIGHT = 1`` and writes no ``WEIGHT_SPECTRUM``, so
-    this sets one weight per row from the injected noise level. Real data carry
-    per-channel weights; mocks built this way do not.
-    """
-    from .data import pair_weight, target_selection
-
-    rng = np.random.default_rng(seed)
-    fields, spws = target_selection(vis)
-    for field in fields:
-        for spw in spws:
-            ms = tools().ms()
-            ms.open(vis, nomodify=False)
-            ms.selectinit(reset=True)
-            ms.selectinit(datadescid=int(spw))
-            ms.select({"field_id": int(field)})
-            rec = ms.getdata(["data", "weight", "time"])
-            uvwght = pair_weight(rec["weight"][0], rec["weight"][1])
-
-            uvreal = (rec["data"][0].real + rec["data"][1].real) / 2.0
-            uvtime = np.ones_like(uvreal) * rec["time"].reshape(1, -1)
-            scans, idx = np.unique(uvtime, return_inverse=True)
-            neg = (idx % 2).astype(bool)
-            pos = ~neg
-            if len(scans) % 2 == 1:
-                pos[idx == idx[0, -1]] = False
-            white_noise = np.nanstd(0.5 * (uvreal[pos] - uvreal[neg]))
-            noise = rng.normal(white_noise, white_noise / np.sqrt(uvwght.size), size=uvwght.shape)
-            wgts = 1 / noise**2
-            rec["weight"][0] = wgts / 4
-            rec["weight"][1] = wgts / 4
-            ms.putdata(rec)
-            ms.reset()
-            ms.close()
+    return x / (2 * X_HALF) * primary_beam_fwhm(freq_hz, dish_diameter)
