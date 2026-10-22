@@ -36,9 +36,9 @@ GRID_KEYS = ("dra", "ddec", *TEMPLATE_KEYS)
 MASK_SNR, MASK_FWHM = 5.0, 1.0
 #: The brightest peaks per position that may mask (a position rarely holds more lines at ``MASK_SNR``).
 MASK_PEAKS = 4
-#: Arrays of a block's positions x templates x centres that :func:`_spectral` holds at once, at most: it sizes the
-#: position blocks, so a window's spectral fit stays within ``BLOCK_BYTES``.
-SPECTRAL_ARRAYS = 12
+#: Arrays of a block's positions x templates x centres that :func:`_spectral` holds at once (measured on ASPECS
+#: 3 mm, 2026-10-22): it sizes the position blocks, so a window's spectral fit stays within ``BLOCK_BYTES``.
+SPECTRAL_ARRAYS = 4
 #: FWHM of a grid's default source shape, a point to the filter, in units of the resolution (a sigma of 1/10).
 POINT = 0.1 / FWHM_TO_SIGMA
 #: Template FWHMs (km/s) a grid searches unless it names its own.
