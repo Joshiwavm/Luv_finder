@@ -14,7 +14,7 @@ Band 3 mosaic) export and search per pointing; see ROADMAP.md for what is still 
 - Run everything from the repo root; configs and outputs use root-relative paths.
 - `pytest` — CASA-free, uses `tests/fixtures/line13_line9_small.npz`. `pytest -m casa` simulates the smoke preset (needs CASA). `pytest --plots` also writes figures and a contact sheet to `plots/`.
 - `pre-commit run --all-files` — ruff lint + format, nbstripout. Keep it clean.
-- `make -C docs html` — Sphinx (furo, nbsphinx); tutorials in `docs/source/tutorials/` are committed executed and never re-run by the build.
+- `make -C docs html` — Sphinx (furo, nbsphinx; needs `pandoc`, `conda install --no-deps -c conda-forge pandoc`); tutorials in `docs/source/tutorials/` are committed executed and never re-run by the build.
 - CLIs: `luv-run <run.yaml> search [--workers N]|fit|summary|plots` (see `run.py`; catalogues come only from here), `luv-mock <yaml>`, `luv-find --ms X[.npz] [--grid yaml] [--jackknife] [--field N] [--continuum-order N|none] [--out X.npz]` (a quick look: every field, or `--field N`, PB-corrected and combined by `search_pointings`; prints the best point, draws the response).
 
 ## Architecture
