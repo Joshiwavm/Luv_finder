@@ -269,7 +269,7 @@
 <section id="make-mock-observations-using-mockgenerator.py">
 <h1>make mock observations using mockgenerator.py<a class="headerlink" href="#make-mock-observations-using-mockgenerator.py" title="Link to this heading">¶</a></h1>
 <div class="nbinput nblast docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[ ]:
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[1]:
 </pre></div>
 </div>
 <div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">luv_finder</span><span class="w"> </span><span class="kn">import</span> <span class="n">MockObservation</span>
@@ -277,7 +277,7 @@
 </div>
 </div>
 <div class="nbinput nblast docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[ ]:
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[2]:
 </pre></div>
 </div>
 <div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">mock_obs</span> <span class="o">=</span> <span class="n">MockObservation</span><span class="p">(</span>
@@ -301,7 +301,7 @@
 </div>
 </div>
 <div class="nbinput docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[ ]:
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[3]:
 </pre></div>
 </div>
 <div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">mock_obs</span><span class="o">.</span><span class="n">create_cube</span><span class="p">()</span>
@@ -309,44 +309,48 @@
 </pre></div>
 </div>
 </div>
-<div class="nboutput nblast docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area docutils container">
-<div class="highlight"><pre>
-Source at position (dra=-4.25 arcsec, ddec=23.5 arcsec) -&gt; pixel position (222.00, 111.00):
-  Line integrated flux: 1.906e+00 Jy km/s
-Source at position (dra=-12.0 arcsec, ddec=-4.25 arcsec) -&gt; pixel position (111.00, 80.00):
-  Line integrated flux: 1.320e+00 Jy km/s
-Cube saved to FITS file: ./support/line13_line9_input.fits
-</pre></div></div>
-</div>
-<div class="nbinput docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[ ]:
-</pre></div>
-</div>
-<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">mock_obs</span><span class="o">.</span><span class="n">simulate_observation</span><span class="p">()</span>
-</pre></div>
-</div>
-</div>
 <div class="nboutput docutils container">
 <div class="prompt empty docutils container">
 </div>
 <div class="output_area docutils container">
 <div class="highlight"><pre>
-simobserve complete with project name: line13_line9
+source (-4.25, 23.5): line flux 1.906e+00 Jy km/s
+source (-12.0, -4.25): line flux 1.320e+00 Jy km/s
 </pre></div></div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[3]:
+</pre></div>
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+&#39;support/line13_line9_input.fits&#39;
+</pre></div></div>
+</div>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[4]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">mock_obs</span><span class="o">.</span><span class="n">simulate_observation</span><span class="p">()</span>
+<span class="n">mock_obs</span><span class="o">.</span><span class="n">run_imaging</span><span class="p">()</span>
+</pre></div>
+</div>
 </div>
 <div class="nboutput nblast docutils container">
 <div class="prompt empty docutils container">
 </div>
 <div class="output_area stderr docutils container">
 <div class="highlight"><pre>
-2025-05-16 11:59:36     WARN    ms::putdata     Invalid field in putdata ignored: time
+2026-10-22 18:21:45     SEVERE  simobserve::MeasTable::dUTC(Double) (file /source/casa6/casatools/casacore/measures/Measures/MeasTable.cc, line 4290)   Leap second table TAI_UTC seems out-of-date.
+2026-10-22 18:21:45     SEVERE  simobserve::MeasTable::dUTC(Double) (file /source/casa6/casatools/casacore/measures/Measures/MeasTable.cc, line 4290)+  Until the table is updated (see the CASA documentation or your system admin),
+2026-10-22 18:21:45     SEVERE  simobserve::MeasTable::dUTC(Double) (file /source/casa6/casatools/casacore/measures/Measures/MeasTable.cc, line 4290)+  times and coordinates derived from UTC could be wrong by 1s or more.
+....10....20....30....40....50....60....70....80....90....100%
+2026-10-22 18:22:14     WARN    task_tclean::SIImageStore::restore (file /source/casa6/casatools/src/code/synthesis/ImagerObjects/SIImageStore.cc, line 2352)   Restoring with an empty model image. Only residuals will be processed to form the output restored image.
+2026-10-22 18:22:26     WARN    task_tclean::SIImageStore::restore (file /source/casa6/casatools/src/code/synthesis/ImagerObjects/SIImageStore.cc, line 2352)   Restoring with an empty model image. Only residuals will be processed to form the output restored image.
 </pre></div></div>
 </div>
 <div class="nbinput docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[ ]:
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[5]:
 </pre></div>
 </div>
 <div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">mock_obs</span><span class="o">.</span><span class="n">plot_results</span><span class="p">()</span>
@@ -354,89 +358,13 @@ simobserve complete with project name: line13_line9
 </pre></div>
 </div>
 </div>
-<div class="nboutput docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area stderr docutils container">
-<div class="highlight"><pre>
-2025-05-16 11:59:41     WARN    task_tclean::SIImageStore::restore (file /Users/casaci/bamboohome/xml-data/build-dir/CASA-CRBC665PLUS0-BPOSX12PY310/casa6/casatools/src/code/synthesis/ImagerObjects/SIImageStore.cc, line 2284)        Restoring with an empty model image. Only residuals will be processed to form the output restored image.
-</pre></div></div>
-</div>
-<div class="nboutput docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area docutils container">
-<div class="highlight"><pre>
-Imaging complete for noiseless data.
-</pre></div></div>
-</div>
-<div class="nboutput docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area stderr docutils container">
-<div class="highlight"><pre>
-2025-05-16 11:59:45     WARN    task_tclean::SIImageStore::restore (file /Users/casaci/bamboohome/xml-data/build-dir/CASA-CRBC665PLUS0-BPOSX12PY310/casa6/casatools/src/code/synthesis/ImagerObjects/SIImageStore.cc, line 2284)        Restoring with an empty model image. Only residuals will be processed to form the output restored image.
-</pre></div></div>
-</div>
-<div class="nboutput docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area docutils container">
-<div class="highlight"><pre>
-Imaging complete for noisy data.
-</pre></div></div>
-</div>
-<div class="nboutput docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area docutils container">
-<img alt="../_images/tutorials_simulate-mock-observation_6_4.png" src="../_images/tutorials_simulate-mock-observation_6_4.png" />
-</div>
-</div>
-<div class="nboutput docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area docutils container">
-<img alt="../_images/tutorials_simulate-mock-observation_6_5.png" src="../_images/tutorials_simulate-mock-observation_6_5.png" />
-</div>
-</div>
-<div class="nboutput docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area docutils container">
-<img alt="../_images/tutorials_simulate-mock-observation_6_6.png" src="../_images/tutorials_simulate-mock-observation_6_6.png" />
-</div>
-</div>
-<div class="nboutput docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area docutils container">
-<img alt="../_images/tutorials_simulate-mock-observation_6_7.png" src="../_images/tutorials_simulate-mock-observation_6_7.png" />
-</div>
-</div>
-<div class="nboutput docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area docutils container">
-<img alt="../_images/tutorials_simulate-mock-observation_6_8.png" src="../_images/tutorials_simulate-mock-observation_6_8.png" />
-</div>
-</div>
-<div class="nboutput docutils container">
-<div class="prompt empty docutils container">
-</div>
-<div class="output_area docutils container">
-<img alt="../_images/tutorials_simulate-mock-observation_6_9.png" src="../_images/tutorials_simulate-mock-observation_6_9.png" />
-</div>
-</div>
 <div class="nboutput nblast docutils container">
-<div class="prompt empty docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[5]:
+</pre></div>
 </div>
 <div class="output_area docutils container">
 <div class="highlight"><pre>
-Plotting complete.
-Removed existing destination folder: output/ms_files/line13_line9
-Moved simulation folder &#39;line13_line9&#39; to output/ms_files
-Removed redundant CASA log files
+&#39;output/ms_files/line13_line9&#39;
 </pre></div></div>
 </div>
 </section>
