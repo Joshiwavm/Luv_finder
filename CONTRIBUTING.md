@@ -19,7 +19,7 @@ pre-commit install
 pre-commit run --all-files   # ruff lint + format, nbstripout
 pytest                       # CASA-free, on the bundled fixture
 pytest -m casa               # if you touched the mocks or the CASA I/O
-make -C docs html            # if you touched the documentation or docstrings
+make -C docs html            # if you touched the docs or docstrings; needs pandoc
 ```
 
 Add a line under `[Unreleased]` in `CHANGELOG.md`.

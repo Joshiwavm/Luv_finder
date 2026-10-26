@@ -24,6 +24,7 @@ from functools import cached_property
 from pathlib import Path
 from typing import NamedTuple
 
+import jax
 import numpy as np
 import yaml
 from astropy.table import Table
@@ -268,6 +269,8 @@ class Run:
         cat["unit"], cat["unit_id"] = unit, cat["id"]
         self._save_maps(unit, result, cat)
         del result
+        # each compiled kernel holds memory maps (65530 per process on Linux); a unit's shapes are its own
+        jax.clear_caches()
         part = self.path(unit, ".ecsv.part")
         cat.write(part, format="ascii.ecsv", overwrite=True)
         os.replace(part, self.path(unit, ".ecsv"))

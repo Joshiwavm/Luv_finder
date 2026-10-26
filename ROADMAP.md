@@ -149,18 +149,12 @@ visibilities, so the Band 1 default grid (21,675 points, 415 k rows in the
   style) and recover them through the same path, to turn the S/N limit into a
   flux limit per coverage (on a mosaic the S/N cut is uniform, the flux limit is
   not).
-- **Memory per trial centre.** Units are chunked to `max_channels` (`unit_plan`; exact on
-  the `edge` mock, 2026-10-21), but a search holds about 23 position x template x centre
-  arrays of a pointing and 13 of the mosaic box (float64; measured on mocks), 127 MB per
-  centre for ASPECS 3 mm and 169 MB at 1.2 mm. Within 48 GB a chunk holds about one
-  window, so each window is also searched as two chunks' neighbour (x2.9 the collapses).
-  Without the copies (`pb_corrected` in place, the mosaic's results in its sums) about
-  78 MB at 3 mm; with float32 mosaic sums about 51 MB, chunks of ~4 windows, +50%.
-  J0459 needs no chunks (24-31 MB per centre, one unit per group).
-- **Weights in an alternating mosaic.** `weight_scale` pairs integrations <= 450 s apart
-  in any field. On the `mosaic` mock, whose pointings alternate every 10 s, a pair mixes
-  two skies and with bright continuum the weights are 3.3% low in power. Pair within a
-  field first, across fields only where a scan has no partner (ASPECS 1.2 mm).
+- **Chunk size for ASPECS.** A search holds no copies since a357a7f (float64), about
+  78 MB per trial centre at 3 mm and 100 MB at 1.2 mm (estimated from the mocks). The
+  ASPECS runs set `max_channels: 480`, two to three windows per chunk. The 2026-10-22
+  rerun (helada, 4 cores a band) peaks at 34 GB at 1.2 mm, 11 chunks in 16 h, with the
+  19 Oct catalogue unchanged (6 detections, fit fluxes within 0.00 sigma); 3 mm is
+  running, ~30 GB so far. J0459 needs no chunks (one unit per group).
 - **Fidelity per template width.** ASPECS computes the fidelity per kernel width:
   narrow templates have more independent trials than broad ones at the same S/N.
   The catalogue pools all templates. Its noise is a Gaussian tail fitted to the
