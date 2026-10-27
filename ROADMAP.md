@@ -33,8 +33,11 @@ it is detected when it passes both. The S/N accounts for the correlation between
 channels that ALMA's Hanning response leaves, measured on the jackknife. The
 continuum is a degree-1 polynomial fitted with the template, with every line at
 S/N >= 5 at that position masked over one template FWHM; the fit does the same.
-On 2026-10-19 the J0459 Band 3 mosaic gives 12 lines and Band 1 4; ASPECS 3 mm 13
-and 1.2 mm 6, all published (13 of the 16 published 3 mm lines).
+On 2026-10-19 the J0459 Band 3 mosaic gives 12 lines and Band 1 4. With the windows
+joined (2026-10-22 rerun) ASPECS 3 mm gives 12 and 1.2 mm 6, all published (12 of the
+16 published 3 mm lines): two 3 mm lines that the per-window search split at a window
+edge are now one, at S/N 8.9 and 10.4 instead of 6.9 and 9.3, and one at S/N 6.2 falls
+to a near miss (fidelity 0.59).
 
 Assumptions, stated in the paper rather than lifted:
 
@@ -153,8 +156,10 @@ visibilities, so the Band 1 default grid (21,675 points, 415 k rows in the
   78 MB per trial centre at 3 mm and 100 MB at 1.2 mm (estimated from the mocks). The
   ASPECS runs set `max_channels: 480`, two to three windows per chunk. The 2026-10-22
   rerun (helada, 4 cores a band) peaks at 34 GB at 1.2 mm, 11 chunks in 16 h, with the
-  19 Oct catalogue unchanged (6 detections, fit fluxes within 0.00 sigma); 3 mm is
-  running, ~30 GB so far. J0459 needs no chunks (one unit per group).
+  19 Oct catalogue unchanged (6 detections, fit fluxes within 0.00 sigma); 3 mm peaks
+  at 31 GB, 11 chunks in 92 h, as each chunk also collapses its neighbouring blocks
+  whole (about 1.3x the per-window search's CPU). J0459 needs no chunks (one unit per
+  group).
 - **Fidelity per template width.** ASPECS computes the fidelity per kernel width:
   narrow templates have more independent trials than broad ones at the same S/N.
   The catalogue pools all templates. Its noise is a Gaussian tail fitted to the
