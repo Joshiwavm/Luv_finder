@@ -169,15 +169,19 @@ def _lines(peak, which, freq, centres, widths, fwhm=MASK_FWHM):
 
 
 @jax.jit
-def _continuum(sig, weight, freq, centres, widths, rho, snr):
-    """A flat spectrum fitted at every position without the channels of its lines: ``num``, ``var``, ``var_c``.
-
-    Each ``(n_shape, n_dra, n_ddec)``: ``F = num / var`` with variance ``var_c / var^2`` under the channel
-    correlation ``rho``. A line peaking at ``MASK_SNR`` or more there (``snr``, the window's search) masks
-    ``CONTINUUM_MASK_FWHM`` of its template's FWHM around its peak, so it does not leak into the continuum.
-    """
+def _line_free(snr, freq, centres, widths):
+    """1 but in the channels of the lines peaking at ``MASK_SNR`` or more at each position (``snr``, a window's
+    search), ``CONTINUUM_MASK_FWHM`` of their template's FWHM around the peak: ``(n_shape, n_dra, n_ddec, n_chan)``."""
     _, strength, _, reach = _lines(*_peaks(snr), freq, centres, widths, CONTINUUM_MASK_FWHM)
-    keep = 1.0 - jnp.max((strength > 0)[..., None] * reach, axis=-2)  # (n_shape, n_dra, n_ddec, n_chan)
+    return 1.0 - jnp.max((strength > 0)[..., None] * reach, axis=-2)
+
+
+@jax.jit
+def _continuum(sig, weight, rho, keep):
+    """A flat spectrum fitted at every position in the channels ``keep`` (:func:`_line_free`): ``num``, ``var``,
+    ``var_c``, each ``(n_shape, n_dra, n_ddec)``. ``F = num / var`` with variance ``var_c / var^2`` under the
+    channel correlation ``rho``; without the lines' channels, the lines do not leak into the continuum.
+    """
     num = jnp.einsum("sabm,msab->sab", keep, sig)
     var = jnp.einsum("sabm,ms->sab", keep, weight)
     h = keep * jnp.sqrt(weight.T)[:, None, None, :]
@@ -491,7 +495,8 @@ class MatchedFilter(_Grid):
     ``band`` (Hz, low and high) keeps the trial centres there, a chunk of a long spectrum: every window is
     still fitted over all its centres, so its continuum and its masks are those of the whole spectrum.
     ``core`` (Hz) the windows whose continuum this search gives, those centred in it (None: every window),
-    so the chunks of a spectrum give each window's continuum once.
+    so the chunks of a spectrum give each window's continuum once. Without ``lines`` only the continuum is
+    computed, over every channel (a model's response, say).
     """
 
     def __init__(
@@ -502,6 +507,7 @@ class MatchedFilter(_Grid):
         channel_noise: str | dict | None = "measure",
         band: tuple[float, float] | None = None,
         core: tuple[float, float] | None = None,
+        lines: bool = True,
     ):
         if isinstance(channel_noise, str) and channel_noise != "measure":
             raise ValueError(f'channel_noise must be "measure", None or a dict, got {channel_noise!r}')
@@ -518,6 +524,7 @@ class MatchedFilter(_Grid):
         if not self.freqs.size:
             raise ValueError(f"no trial centre in the band {lo / 1e9:.4f}-{hi / 1e9:.4f} GHz")
         self.core = core or (-np.inf, np.inf)
+        self.lines = lines
         self.result: SearchResult | None = None
 
     @property
@@ -546,7 +553,8 @@ class MatchedFilter(_Grid):
         cov = covariance(bmaj * ARCSEC, bmin * ARCSEC, pa)
         # windows that overlap in frequency add by inverse variance, (n_dra, n_ddec, n_template, n_centre)
         layout = (len(axes["dra"]), len(axes["ddec"]), bmin.size * len(axes["width"]))
-        w = np.zeros((*layout, self.freqs.size))
+        freqs = self.freqs if self.lines else self.freqs[:0]
+        w = np.zeros((*layout, freqs.size))
         wflux = np.zeros_like(w)
         tol = 1e-3 * np.diff(self.lattice).min() if self.lattice.size > 1 else 1.0
         reach = _reach(data.chunks, max(self.axes["width"]))
@@ -569,6 +577,8 @@ class MatchedFilter(_Grid):
                         with np.errstate(divide="ignore", invalid="ignore"):
                             cw[rows, ..., mine] = np.nan_to_num(var**2 / var_c)
                             cwflux[rows, ..., mine] = np.nan_to_num(num * var / var_c)
+                    if not self.lines:
+                        continue
                     # (n_rows, n_ddec, n_template, n_centre), the templates in the order of the grid
                     shape = (*pair[0].shape[2:4], -1, at.stop - at.start)
                     snr, error = (a[..., keep].transpose(2, 3, 0, 1, 4).reshape(shape) for a in pair)
@@ -579,11 +589,12 @@ class MatchedFilter(_Grid):
         coverage = np.broadcast_to(1.0, (*snr.shape[:2], snr.shape[-1]))
         continuum = None
         if owned:
-            freqs = np.array([c.freq.mean() for c in owned])
+            centres = np.array([c.freq.mean() for c in owned])
             csnr, cerror = _estimate(cw, cwflux, 0.0)
             caxes = {**self.axes, "width": [0.0]}  # the shapes, in the order of the search's templates
-            continuum = SearchResult(caxes, freqs, csnr, cerror, np.broadcast_to(1.0, (*csnr.shape[:2], freqs.size)))
-        return SearchResult(dict(self.axes), self.freqs, snr, error, coverage, continuum=continuum)
+            ccov = np.broadcast_to(1.0, (*csnr.shape[:2], centres.size))
+            continuum = SearchResult(caxes, centres, csnr, cerror, ccov)
+        return SearchResult(dict(self.axes), freqs, snr, error, coverage, continuum=continuum)
 
     def _window(self, chunk: Chunk, axes: dict, cov: tuple, centres: np.ndarray, continuum: bool = False):
         """S/N and error of one window at ``centres`` per block of ``dra`` rows: (rows, continuum, snr, error), the
@@ -594,10 +605,18 @@ class MatchedFilter(_Grid):
         per_row = SPECTRAL_ARRAYS * 8 * len(cov[0]) * widths.size * len(axes["ddec"]) * centres.size
         start = 0
         for n, collapsed in _blocks(chunk, axes["dra"], axes["ddec"], cov, per_row):
-            snr, error = _spectral(*collapsed, freq, centres, widths, rho, order=self.continuum_order)
-            cont = _continuum(*collapsed, freq, centres, widths, rho, snr) if continuum else None
-            cont = None if cont is None else tuple(np.asarray(a)[:, :n] for a in cont)
-            yield slice(start, start + n), cont, np.asarray(snr)[:, :, :n], np.asarray(error)[:, :, :n]
+            snr, error = None, None
+            if self.lines:
+                snr, error = _spectral(*collapsed, freq, centres, widths, rho, order=self.continuum_order)
+            cont = None
+            if continuum:
+                sig, weight = collapsed
+                every = jnp.ones(jnp.moveaxis(sig, 0, -1).shape)
+                keep = _line_free(snr, freq, centres, widths) if self.lines else every
+                cont = tuple(np.asarray(a)[:, :n] for a in _continuum(sig, weight, rho, keep))
+            if self.lines:
+                snr, error = np.asarray(snr)[:, :, :n], np.asarray(error)[:, :, :n]
+            yield slice(start, start + n), cont, snr, error
             start += n
 
 
@@ -674,3 +693,20 @@ def search_pointings(
             yield result
 
     return combine_pointings(pointings(), span, own=True)
+
+
+def continuum_response(
+    data: DataHandler, grid_cfg: dict | None, pb_limit: float = PB_LIMIT, cores: int | None = None
+) -> SearchResult:
+    """The continuum per window of in-memory ``data`` (a model's visibilities, say) on the search's grid: every
+    field PB-corrected and combined as :func:`search_pointings` does, over every channel."""
+    cfg = {**(grid_cfg or {}), "pb_limit": pb_limit}
+
+    def pointings():
+        for field in sorted({c.field for c in data.chunks}):
+            one = DataHandler(chunks=[c for c in data.chunks if c.field == field], metadata=data.metadata)
+            mf = MatchedFilter(one, build_grid(one, cfg), channel_noise=None, lines=False)
+            mf.run(cores=cores)
+            yield _correct(mf.result, one, pb_limit)
+
+    return combine_pointings(pointings(), own=True).continuum

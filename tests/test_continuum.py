@@ -1,6 +1,7 @@
 """The continuum: the polynomial under the lines, one default for search and fit; mock continua with a spectral
 index; and continuum sources, summed over every channel without the lines'."""
 
+import copy
 import dataclasses
 
 import numpy as np
@@ -28,6 +29,18 @@ def test_mock_continuum_follows_its_spectral_index(index):
     nu = f_start + df * np.arange(20)
     spectrum = cube[:, 16, 16]
     np.testing.assert_allclose(spectrum / spectrum[10], (nu / nu[10]) ** index, rtol=1e-12)
+
+
+def test_mock_windows_share_one_continuum():
+    """A window away from the mock's ``freq_center`` holds the same power law, not one renormalised at its centre."""
+    mock = MockObservation(
+        cube_shape=(20, 32, 32), freq_center="85GHz", dv="55km/s", integration_time="10min",
+        sources=[{"position": (0.0, 0.0), "continuum": {"snr": 10.0, "index": 3.5}}],
+    )  # fmt: skip
+    near, far = mock.create_cube()[10, 16, 16], copy.copy(mock)
+    far.freq_center = "95GHz"
+    df, f_start, _ = far._freq_axis()
+    assert far.create_cube()[10, 16, 16] / near == pytest.approx(((f_start + 10 * df) / 85) ** 3.5, rel=1e-3)
 
 
 @pytest.mark.parametrize(("filter_cfg", "order"), [({}, CONTINUUM_ORDER), ({"continuum_order": 2}, 2),
@@ -231,3 +244,17 @@ def test_chunks_give_each_windows_continuum_once():
     w = sum(p.error**-2.0 for p in parts)
     assert (sum(p.flux * p.error**-2.0 for p in parts) / w) == pytest.approx(whole.flux, rel=1e-9)
     assert w**-0.5 == pytest.approx(whole.error, rel=1e-9)
+
+
+@pytest.mark.parametrize("n", [1, 3, 8])
+def test_binned_hanning_noise_keeps_its_weights(n):
+    """Binned Hanning-correlated noise has the variance its binned weights say, correlated as returned."""
+    rng = np.random.default_rng(0)
+    raw = rng.standard_normal((98, 20000)) + 1j * rng.standard_normal((98, 20000))
+    noise = (0.25 * raw[:-2] + 0.5 * raw[1:-1] + 0.25 * raw[2:]) / np.sqrt(0.375)  # unit variance per channel
+    chunk = _empty(0, 40e9, n_chan=96, n_vis=20000)
+    binned, rho = dataclasses.replace(chunk, X=noise).binned(n, np.array([1.0, 2 / 3, 1 / 6]))
+    v = binned.vis[: 96 // n]
+    assert np.mean(np.abs(v) ** 2 * binned.w[: 96 // n]) / 2 == pytest.approx(1.0, rel=0.02)
+    lag1 = np.mean((v[1:] * v[:-1].conj()).real) / np.mean(np.abs(v) ** 2)
+    assert lag1 == pytest.approx(rho[1] if rho.size > 1 else 0.0, abs=0.02)

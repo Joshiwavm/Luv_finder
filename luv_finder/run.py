@@ -16,6 +16,7 @@ under ``output``, so plotting never repeats a search::
 
 from __future__ import annotations
 
+import dataclasses
 import os
 import subprocess
 import sys
@@ -27,16 +28,17 @@ from typing import NamedTuple
 import jax
 import numpy as np
 import yaml
-from astropy.table import Table
+from astropy.table import Table, vstack
 
 from .catalogue import RELIABILITY, bright_lines, catalogue, continuum_catalogue, merge_catalogues
-from .data import Metadata, WeightScale, fields_in, iter_chunks, load, target_selection, write_npz
+from .data import DataHandler, Metadata, WeightScale, fields_in, iter_chunks, load, target_selection, write_npz
 from .matchedfilter import (
     GRID_KEYS,
     WIDTHS,
     SearchResult,
     _union_lattice,
     combine_pointings,
+    continuum_response,
     grid_axis,
     search_pointings,
     window_groups,
@@ -46,6 +48,8 @@ from .utils import PB_LIMIT
 
 #: Name of the config copy every run keeps in its output directory.
 RUN_FILE = "run.yaml"
+#: Most rounds of continuum subtraction (:meth:`Run.continuum_sources`).
+MAX_ROUNDS = 5
 
 #: Defaults of the run config; ``data`` and ``output`` have none.
 DEFAULTS = {
@@ -390,24 +394,6 @@ class Run:
         beam = {u: max(c.meta["hwhm_major"]) for u, c in zip(self.units, cats, strict=True)}
         cat = merge_catalogues(cats, self.config["reliability"], beam)
         cat.write(self.output / "catalogue.ecsv", format="ascii.ecsv", overwrite=True)
-        if all(self.path(u, "_continuum.npz").exists() for u in self.units):
-            self.merge_continuum(cat)
-        return cat
-
-    def merge_continuum(self, lines: Table) -> Table:
-        """The continuum sources over the whole spectrum, against its jackknife, with their in-band spectra:
-        ``continuum.ecsv`` (:func:`~luv_finder.catalogue.continuum_catalogue`).
-
-        ``lines`` lists the detected lines (ids of ``lines``) within a beam (the response's half power) of each.
-        """
-        cat = continuum_catalogue(self._continuum(), ref=self.metadata.ref, **self.config["reliability"])
-        beam = max(cat.meta["hwhm_major"])
-        found = lines[lines["detected"]]
-        cat["lines"] = [
-            ",".join(str(i) for i in found["id"][np.hypot(found["dra"] - r["dra"], found["ddec"] - r["ddec"]) <= beam])
-            for r in cat
-        ]
-        cat.write(self.output / "continuum.ecsv", format="ascii.ecsv", overwrite=True)
         return cat
 
     # --------------------------------------------------------------------- fit
@@ -445,7 +431,89 @@ class Run:
         fitted["near_miss"] = near
         fitted.write(self.output / "lines_fit.ecsv", format="ascii.ecsv", overwrite=True)
         self.moment_maps()
+        if all(self.path(u, "_continuum.npz").exists() for u in self.units):
+            self.continuum_sources()
         return fitted
+
+    def continuum_sources(self) -> Table:
+        """The continuum sources, deconvolved and fitted: ``continuum.ecsv``.
+
+        The search's continuum (every window of every unit) is catalogued against its jackknife. Its bright
+        detections, those above the response's sidelobe level times the brightest, are fitted on the exports
+        binned to ``BIN_FRACTION`` (position, FWHM shape and a flux density per window) and their response
+        through the same filter, PB correction and mosaic comes off the continuum; the residual is catalogued
+        again, until no source left can raise a sidelobe to the floor. Its detections are fitted too, with the
+        model subtracted. Each source has its in-band spectrum (``meta["spectra"]``), ``alpha``, the round it was
+        subtracted in (0: not) and the detected lines within a beam.
+        """
+        from .fit import CONTINUUM_COLUMNS, continuum_model, fit_continuum
+
+        data, noise, widen = self._binned()
+        found = self.catalogue
+        found = found[found["detected"]]
+        windows, rel, dish = self._continuum(), self.config["reliability"], self.metadata.dish_diameter
+        options = dict(channel_noise=noise, widen=widen, pb_limit=self.config["pb_limit"], cores=self.config["cores"])
+        rounds, residual, model = [], windows, None
+
+        def less_model(chunks):
+            if model is None:
+                return chunks
+            modelled = continuum_model(chunks, model, dish)
+            return [dataclasses.replace(c, X=c.X - m.X) for c, m in zip(chunks, modelled, strict=True)]
+
+        for n in range(1, MAX_ROUNDS + 1):
+            cat = continuum_catalogue(residual, ref=self.metadata.ref, **rel)
+            snr = np.asarray(cat["snr"])[np.asarray(cat["detected"])]
+            if not snr.size or snr.max() * max(cat.meta["sidelobe"]) < rel["floor"]:
+                break
+            bright = cat["detected"] & (cat["snr"] >= snr.max() * max(cat.meta["sidelobe"]))
+            residual_data = DataHandler(chunks=less_model(data.chunks), metadata=data.metadata)
+            fitted = fit_continuum(residual_data, cat, found, rows=bright, **options)[bright]
+            fitted = fitted[np.isfinite(np.asarray(fitted["fit_dra"], dtype=float))]
+            if not len(fitted):
+                break
+            fitted["round"] = n
+            rounds.append(fitted)
+            model = _stack(rounds)
+            response = continuum_response(
+                DataHandler(chunks=continuum_model(data.chunks, model, dish), metadata=data.metadata),
+                self.config["grid"], self.config["pb_limit"], self.config["cores"],
+            )  # fmt: skip
+            residual = _less(windows, response)
+        cat = continuum_catalogue(residual, ref=self.metadata.ref, **rel)
+        residual_data = DataHandler(chunks=less_model(data.chunks), metadata=data.metadata)
+        rest = fit_continuum(residual_data, cat, found, rows=cat["detected"], **options)
+        rest["round"] = 0
+        out = _stack([*rounds, rest])
+        beam = max(cat.meta["hwhm_major"])
+        out["lines"] = [
+            ",".join(str(i) for i in found["id"][np.hypot(found["dra"] - r["dra"], found["ddec"] - r["ddec"]) <= beam])
+            for r in out
+        ]
+        for name in CONTINUUM_COLUMNS:
+            if name in out.colnames and CONTINUUM_COLUMNS[name]:
+                out[name].unit = CONTINUUM_COLUMNS[name]
+        out.write(self.output / "continuum.ecsv", format="ascii.ecsv", overwrite=True)
+        return out
+
+    def _binned(self):
+        """Every block's export binned to ``BIN_FRACTION`` of its frequency, the binned channels' correlation per
+        window, and the widest bin (km/s)."""
+        from .data import ChannelNoise
+        from .fit import BIN_FRACTION
+
+        chunks, noise, widen = [], {}, 0.0
+        for block in self.plan["blocks"]:
+            rho = self.weights(block)
+            for c in load(str(self.export_path(block))).chunks:
+                step = np.abs(np.diff(c.freq)).min()
+                n = max(1, int(BIN_FRACTION * c.freq.mean() / step))
+                n = max(d for d in range(1, n + 1) if c.freq.size % d == 0)  # equal runs: uniform channels
+                binned, noise_rho = c.binned(n, rho.get(f"{c.spw}_rho"))
+                chunks.append(binned)
+                noise[c.spw] = ChannelNoise(np.ones(binned.freq.size), noise_rho)
+                widen = max(widen, n * step / c.freq.mean() * C_KMS)
+        return DataHandler(chunks=chunks, metadata=self.metadata), noise, widen
 
     @property
     def fit_options(self) -> dict:
@@ -661,3 +729,25 @@ class RunPlots:
 
 
 __all__ = ["Run", "RunPlots", "Unit", "unit_name", "unit_plan"]
+
+
+def _stack(tables: list[Table]) -> Table:
+    """Continuum catalogues as one, numbered anew, their spectra with them."""
+    out = vstack(tables, metadata_conflicts="silent")
+    spectra = [t.meta.get("spectra", {}).get(str(i)) for t in tables for i in t["id"]]
+    out["id"] = np.arange(1, len(out) + 1)
+    out.meta["spectra"] = {str(i): s for i, s in zip(out["id"], spectra, strict=True) if s is not None}
+    out.meta |= {k: v for k, v in tables[-1].meta.items() if k != "spectra"}
+    return out
+
+
+def _less(windows: SearchResult, model: SearchResult) -> SearchResult:
+    """The continuum per window ``windows`` less the ``model``'s, window by window (matched in frequency) on
+    the union of their lattices; the errors and the jackknife are the data's."""
+    span = tuple(_union_lattice([windows.axes[k], model.axes[k]], k)[0] for k in ("dra", "ddec"))
+    data, model = (combine_pointings([r], span) for r in (windows, model))
+    match = np.abs(model.freqs[None] - data.freqs[:, None]).argmin(axis=1)
+    flux = data.flux - np.nan_to_num(model.flux[..., match])
+    out = dataclasses.replace(data, snr=flux / data.error)
+    out.jackknife = data.jackknife
+    return out

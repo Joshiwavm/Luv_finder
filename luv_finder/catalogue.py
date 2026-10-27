@@ -411,7 +411,7 @@ def continuum_catalogue(windows: SearchResult, ref=None, **reliability) -> Table
     for n, (f, e) in enumerate(zip(flux, error, strict=True)):
         ok = np.isfinite(f) & np.isfinite(e)
         x, w = np.log(windows.freqs[ok] / total.freqs[0]), e[ok] ** -2.0
-        if np.ptp(x, initial=0.0) > 0:
+        if x.size > 1 and np.ptp(x) > 0:
             a = np.linalg.inv([[w.sum(), w @ x], [w @ x, w @ x**2]])  # covariance of (S0, S0 alpha)
             s0, b = a @ [w @ f[ok], w @ (x * f[ok])]
             alpha[:, n] = b / s0, np.sqrt(a[1, 1] - 2 * b / s0 * a[0, 1] + (b / s0) ** 2 * a[0, 0]) / abs(s0)
