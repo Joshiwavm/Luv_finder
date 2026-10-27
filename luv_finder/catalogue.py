@@ -366,6 +366,7 @@ def catalogue(
     if band is not None:
         found = {name: [g for g in gs if band[0] <= result.freqs[g.k] < band[1]] for name, gs in found.items()}
     snr = {name: np.array([g.snr for g in gs]) for name, gs in found.items()}
+    kernels = {name: result.templates[np.array([g.t for g in gs], dtype=int)] for name, gs in found.items()}
     i, j, t, c = (np.array([getattr(g, a) for g in found["data"]], dtype=int) for a in "ijtk")
     templates = result.templates[t]
     columns = {"id": np.arange(1, i.size + 1), "dra": np.asarray(result.axes["dra"])[i]}
@@ -379,7 +380,7 @@ def catalogue(
     columns |= {"line_flux": peak * error * per_width, "line_flux_error": error * per_width}
     columns["coverage"] = result.coverage[i, j, c]
     columns["n_peaks"] = np.array([g.n_peaks for g in found["data"]], dtype=int)
-    reliable, meta = _reliability(snr, floor, k, fidelity_min, rule)
+    reliable, meta = _reliability(snr, kernels, floor, k, fidelity_min, rule)
     search = {"jackknife_spread": jackknife_spread(result)} | {key: getattr(nc, key) for key in SEARCH_META[1:]}
     cat = Table(columns | reliable, meta={key: value.tolist() for key, value in search.items()} | meta)
     for name, unit in UNITS.items():
@@ -441,11 +442,33 @@ def passes(ratio, lower, fid, k: float, fidelity_min: float) -> tuple[np.ndarray
 
 
 def _reliability(
-    snr: dict, floor: float, k: float, fidelity_min: float, rule: str = DETECTION_RULE
+    snr: dict, kernels: dict, floor: float, k: float, fidelity_min: float, rule: str = DETECTION_RULE
 ) -> tuple[dict, dict]:
-    """Likelihood ratio, fidelity and detection of the data groups against the jackknife's, as columns and meta."""
-    ratio, lower = likelihood(snr["data"], snr["jackknife"])
-    fid, (amplitude, sigma), bins = fidelity(snr["data"], snr["jackknife"], floor)
+    """Likelihood ratio, fidelity and detection of the data groups against the jackknife's, as columns and meta.
+
+    Per kernel (``kernels``: each group's template, a row of :data:`TEMPLATE_KEYS`, as ``snr``): a group is
+    tested against the jackknife groups of its own template only, since kernels of different size make
+    different numbers of independent trials (González-López et al. 2019). ``meta["kernels"]`` has each
+    kernel's tests; the noise tail and the binned fidelity of all kernels pooled are for the eye.
+    """
+    data = snr["data"]
+    ratio, lower, fid = np.full(data.size, np.nan), np.zeros(data.size, dtype=bool), np.full(data.size, np.nan)
+    per_kernel = []
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")  # a kernel with too few noise groups has no fitted tail: NaN
+        for kernel in np.unique(kernels["data"], axis=0):
+            d = np.all(kernels["data"] == kernel, axis=1)
+            j = np.all(kernels["jackknife"] == kernel, axis=1) if len(kernels["jackknife"]) else np.zeros(0, bool)
+            ratio[d], lower[d] = likelihood(data[d], snr["jackknife"][j])
+            fid[d], (amp, sig), bins = fidelity(data[d], snr["jackknife"][j], floor)
+            lr_k, fid_k = passes(ratio[d], lower[d], fid[d], k, fidelity_min)
+            per_kernel.append(
+                {"template": kernel.tolist(), "n_data": int(d.sum()), "n_jackknife": int(j.sum()),
+                 "noise_amplitude": float(amp), "noise_sigma": float(sig),
+                 "snr_likelihood": float(data[d][ratio[d] >= k].min()) if (ratio[d] >= k).any() else np.nan,
+                 "snr_fidelity": float(data[d][fid_k].min()) if fid_k.any() else np.nan}
+            )  # fmt: skip
+    _, (amplitude, sigma), bins = fidelity(data, snr["jackknife"], floor)
     lr, fid_ok = passes(ratio, lower, fid, k, fidelity_min)
     if rule == "or":
         detected = lr | fid_ok
@@ -459,7 +482,9 @@ def _reliability(
     for key, passed in (("snr_likelihood", ratio >= k), ("snr_fidelity", fid_ok)):
         meta[key] = float(snr["data"][passed].min()) if passed.any() else np.nan
     meta |= {f"snr_{name}": values.tolist() for name, values in snr.items()}
+    meta |= {f"template_{name}": np.asarray(values).tolist() for name, values in kernels.items() if name != "data"}
     meta["fidelity_bins"] = {key: values.tolist() for key, values in bins.items()}
+    meta["kernels"] = per_kernel
     return columns, meta
 
 
@@ -475,13 +500,18 @@ def merge_catalogues(cats: Sequence[Table], reliability: dict | None = None, bea
     order = np.argsort(-np.asarray(cat["snr"]), kind="stable")
     snr = {"data": np.asarray(cat["snr"])[order]}
     snr |= {name: np.concatenate([c.meta[f"snr_{name}"] for c in cats]) for name in ("jackknife", "negative")}
+    kernels = {
+        name: np.concatenate([np.reshape(c.meta[f"template_{name}"], (-1, len(TEMPLATE_KEYS))) for c in cats])
+        for name in ("jackknife", "negative")
+    }
     cat = cat[order]
     cat["id"] = np.arange(1, len(cat) + 1)
     one = np.ones(len(cat), dtype=bool)
     if beam is not None:
         cat["duplicate_of"] = duplicates(cat, beam)
         one = np.asarray(cat["duplicate_of"] == 0)
-    reliable, meta = _reliability({**snr, "data": snr["data"][one]}, *(given[key] for key in RELIABILITY))
+    kernels["data"] = np.c_[tuple(np.asarray(cat[key], dtype=float) for key in TEMPLATE_KEYS)][one]
+    reliable, meta = _reliability({**snr, "data": snr["data"][one]}, kernels, *(given[key] for key in RELIABILITY))
     for name, values in reliable.items():
         cat[name] = np.full(len(cat), False if values.dtype == bool else np.nan, dtype=values.dtype)
         cat[name][one] = values

@@ -319,10 +319,34 @@ def test_detection_rule_or_contains_and():
     noise = _gaussian_tail(rng, 2000, 1.1)
     snr = {"data": np.concatenate([_gaussian_tail(rng, 2000, 1.1), rng.uniform(5.0, 8.0, 40)]), "jackknife": noise}
     snr["negative"] = noise
-    either, both = (_reliability(snr, 4.0, 3.0, 0.6, rule)[0]["detected"] for rule in ("or", "and"))
+    kernels = _one_kernel(snr)
+    either, both = (_reliability(snr, kernels, 4.0, 3.0, 0.6, rule)[0]["detected"] for rule in ("or", "and"))
     assert both.sum() < either.sum() and np.all(either[both])
     with pytest.raises(ValueError, match="rule"):
-        _reliability(snr, 4.0, 3.0, 0.6, "xor")
+        _reliability(snr, kernels, 4.0, 3.0, 0.6, "xor")
+
+
+def _one_kernel(snr):
+    """Every group of ``snr`` found with one template."""
+    return {name: np.zeros((len(values), 4)) for name, values in snr.items()}
+
+
+def test_each_kernel_is_tested_against_its_own_noise():
+    """A broad kernel's group is tested against the broad kernel's few noise groups, not the narrow one's many."""
+    rng = np.random.default_rng(3)
+    narrow, broad = _gaussian_tail(rng, 4000, 1.2), _gaussian_tail(rng, 100, 1.0)
+    snr = {"data": np.r_[narrow, broad, 5.2], "jackknife": np.r_[narrow, broad]}
+    snr["negative"] = snr["jackknife"]
+    templates = np.array([[0, 0, 0, 100.0], [0, 0, 0, 500.0]])
+    label = {
+        "data": np.r_[np.zeros(4000, int), np.ones(101, int)],
+        "jackknife": np.r_[np.zeros(4000, int), np.ones(100, int)],
+    }
+    kernels = {name: templates[label.get(name, label["jackknife"])] for name in snr}
+    per_kernel = _reliability(snr, kernels, 4.0, 3.0, 0.6)
+    pooled = _reliability(snr, _one_kernel(snr), 4.0, 3.0, 0.6)
+    assert per_kernel[0]["fidelity"][-1] > 0.6 > pooled[0]["fidelity"][-1]
+    assert [k["n_jackknife"] for k in per_kernel[1]["kernels"]] == [4000, 100]
 
 
 def test_bright_lines_flags_only_groups_at_bright_snr():
