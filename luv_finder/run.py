@@ -29,9 +29,18 @@ import numpy as np
 import yaml
 from astropy.table import Table
 
-from .catalogue import RELIABILITY, bright_lines, catalogue, merge_catalogues
+from .catalogue import RELIABILITY, bright_lines, catalogue, continuum_catalogue, merge_catalogues
 from .data import Metadata, WeightScale, fields_in, iter_chunks, load, target_selection, write_npz
-from .matchedfilter import WIDTHS, grid_axis, search_pointings, window_groups
+from .matchedfilter import (
+    GRID_KEYS,
+    WIDTHS,
+    SearchResult,
+    _union_lattice,
+    combine_pointings,
+    grid_axis,
+    search_pointings,
+    window_groups,
+)
 from .model import C_KMS, CONTINUUM_ORDER
 from .utils import PB_LIMIT
 
@@ -262,12 +271,14 @@ class Run:
             cores=self.config["cores"],
             pb_limit=self.config["pb_limit"],
             band=band,
+            core=core,
             **self.config["filter"],
         )
         print(f"[{unit}: search {time.perf_counter() - clock:.0f} s]", flush=True)
         cat = catalogue(result, ref=self.metadata.ref, band=core, **rel)
         cat["unit"], cat["unit_id"] = unit, cat["id"]
         self._save_maps(unit, result, cat)
+        self._save_continuum(unit, result.continuum)
         del result
         # each compiled kernel holds memory maps (65530 per process on Linux); a unit's shapes are its own
         jax.clear_caches()
@@ -338,6 +349,37 @@ class Run:
                 group_jk=jk[i, j].astype(np.float32),
             )
 
+    def _save_continuum(self, unit, cont):
+        """The unit's continuum per window, and its jackknife: ``_continuum.npz`` (see the run format)."""
+        np.savez(
+            self.path(unit, "_continuum.npz"),
+            **{f"axis_{k}": cont.axes[k] for k in GRID_KEYS},
+            freqs=cont.freqs,
+            **{f"{p}{k}": getattr(r, k) for p, r in (("", cont), ("jk_", cont.jackknife)) for k in ("snr", "error")},
+            coverage=cont.coverage,
+        )
+
+    def _continuum(self) -> SearchResult:
+        """Every unit's continuum per window, on the union of their lattices: one entry per window of the run."""
+        parts = []
+        for unit in self.units:
+            with np.load(self.path(unit, "_continuum.npz")) as f:
+                axes = {k: f[f"axis_{k}"].tolist() for k in GRID_KEYS}
+                jk = SearchResult(axes, f["freqs"], f["jk_snr"], f["jk_error"], f["coverage"])
+                parts.append(SearchResult(axes, f["freqs"], f["snr"], f["error"], f["coverage"], jk))
+        span = tuple(_union_lattice([p.axes[k] for p in parts], k)[0] for k in ("dra", "ddec"))
+        parts = [combine_pointings([p], span, own=True) for p in parts]  # each on the union
+
+        def joined(rs):
+            return SearchResult(
+                parts[0].axes, np.concatenate([r.freqs for r in rs]),
+                *(np.concatenate([getattr(r, k) for r in rs], axis=-1) for k in ("snr", "error", "coverage")),
+            )  # fmt: skip
+
+        out = joined(parts)
+        out.jackknife = joined([p.jackknife for p in parts])
+        return out
+
     def merge(self) -> Table:
         """The units' catalogues as one, reliability over their whole volume: ``catalogue.ecsv``.
 
@@ -348,6 +390,24 @@ class Run:
         beam = {u: max(c.meta["hwhm_major"]) for u, c in zip(self.units, cats, strict=True)}
         cat = merge_catalogues(cats, self.config["reliability"], beam)
         cat.write(self.output / "catalogue.ecsv", format="ascii.ecsv", overwrite=True)
+        if all(self.path(u, "_continuum.npz").exists() for u in self.units):
+            self.merge_continuum(cat)
+        return cat
+
+    def merge_continuum(self, lines: Table) -> Table:
+        """The continuum sources over the whole spectrum, against its jackknife, with their in-band spectra:
+        ``continuum.ecsv`` (:func:`~luv_finder.catalogue.continuum_catalogue`).
+
+        ``lines`` lists the detected lines (ids of ``lines``) within a beam (the response's half power) of each.
+        """
+        cat = continuum_catalogue(self._continuum(), ref=self.metadata.ref, **self.config["reliability"])
+        beam = max(cat.meta["hwhm_major"])
+        found = lines[lines["detected"]]
+        cat["lines"] = [
+            ",".join(str(i) for i in found["id"][np.hypot(found["dra"] - r["dra"], found["ddec"] - r["ddec"]) <= beam])
+            for r in cat
+        ]
+        cat.write(self.output / "continuum.ecsv", format="ascii.ecsv", overwrite=True)
         return cat
 
     # --------------------------------------------------------------------- fit
@@ -418,6 +478,11 @@ class Run:
     def catalogue(self) -> Table:
         """The merged catalogue (``catalogue.ecsv``)."""
         return Table.read(self.output / "catalogue.ecsv")
+
+    @property
+    def continuum(self) -> Table:
+        """The continuum catalogue (``continuum.ecsv``)."""
+        return Table.read(self.output / "continuum.ecsv")
 
     @property
     def lines(self) -> Table:

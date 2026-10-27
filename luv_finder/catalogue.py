@@ -9,7 +9,7 @@ from astropy.table import Table, vstack
 from scipy import fft, ndimage, optimize, special, stats
 
 from .data import sky_direction
-from .matchedfilter import TEMPLATE_KEYS, SearchResult
+from .matchedfilter import TEMPLATE_KEYS, SearchResult, continuum
 from .model import C_KMS, LINE_FLUX
 from .utils import BLOCK_BYTES
 
@@ -207,7 +207,8 @@ def groups(snr: np.ndarray, result: SearchResult, nc: ResponseCorrelation, floor
         dx, dy, dc = x[free] - x[r], y[free] - y[r], chan[free] - chan[r]
         major = dx * np.sin(pa[tr]) + dy * np.cos(pa[tr])
         minor = dx * np.cos(pa[tr]) - dy * np.sin(pa[tr])
-        r2 = (major / nc.hwhm_major[tr]) ** 2 + (minor / nc.hwhm_minor[tr]) ** 2 + (dc / nc.spectral_hwhm[tr]) ** 2
+        spectral = (dc / nc.spectral_hwhm[tr]) ** 2 if result.freqs.size > 1 else 0.0  # a continuum: one channel
+        r2 = (major / nc.hwhm_major[tr]) ** 2 + (minor / nc.hwhm_minor[tr]) ** 2 + spectral
         inside = free[r2 <= 1]
         owner[inside] = r
         found.append(Group(int(i[r]), int(j[r]), int(tr), int(k[r]), float(value[r]), inside.size))
@@ -386,6 +387,39 @@ def catalogue(
             cat[name].unit = unit
     if note := bright_lines(cat):
         warnings.warn(note, stacklevel=2)
+    return cat
+
+
+def continuum_catalogue(windows: SearchResult, ref=None, **reliability) -> Table:
+    """Catalogue the continuum sources of a search's continuum per window (``SearchResult.continuum``).
+
+    Grouped and tested as :func:`catalogue` on the windows combined (:func:`~luv_finder.matchedfilter.continuum`,
+    ``freq_ghz`` their mean frequency), each source has its in-band spectrum, the flux density and error of every
+    window at its position and template (``meta["spectra"]``), and the spectral index ``alpha`` (``S ~ nu^alpha``)
+    fitted to it, linearised about ``freq_ghz``.
+    """
+    total = continuum(windows)
+    cat = catalogue(total, ref=ref, **reliability)
+    cat.remove_columns(["width", "line_flux", "line_flux_error"])
+    i, j = (
+        np.abs(np.asarray(windows.axes[k])[None] - np.asarray(cat[k])[:, None]).argmin(axis=1) for k in ("dra", "ddec")
+    )
+    shapes = np.c_[cat["bmin"], cat["bmaj"], cat["pa"]].astype(float)
+    t = np.abs(windows.templates[None, :, :3] - shapes[:, None]).sum(axis=2).argmin(axis=1)
+    flux, error = windows.flux[i, j, t], windows.error[i, j, t]
+    alpha = np.full((2, len(cat)), np.nan)
+    for n, (f, e) in enumerate(zip(flux, error, strict=True)):
+        ok = np.isfinite(f) & np.isfinite(e)
+        x, w = np.log(windows.freqs[ok] / total.freqs[0]), e[ok] ** -2.0
+        if np.ptp(x, initial=0.0) > 0:
+            a = np.linalg.inv([[w.sum(), w @ x], [w @ x, w @ x**2]])  # covariance of (S0, S0 alpha)
+            s0, b = a @ [w @ f[ok], w @ (x * f[ok])]
+            alpha[:, n] = b / s0, np.sqrt(a[1, 1] - 2 * b / s0 * a[0, 1] + (b / s0) ** 2 * a[0, 0]) / abs(s0)
+    cat["alpha"], cat["alpha_error"] = alpha
+    cat.meta["spectra"] = {
+        str(k): {"freq_ghz": (windows.freqs / 1e9).tolist(), "flux": f.tolist(), "error": e.tolist()}
+        for k, f, e in zip(cat["id"], flux, error, strict=True)
+    }
     return cat
 
 

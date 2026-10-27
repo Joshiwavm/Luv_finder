@@ -1,10 +1,16 @@
-"""The continuum polynomial: one default for search and fit, and mock continua with a spectral index."""
+"""The continuum: the polynomial under the lines, one default for search and fit; mock continua with a spectral
+index; and continuum sources, summed over every channel without the lines'."""
+
+import dataclasses
 
 import numpy as np
 import pytest
 
+from luv_finder import DataHandler, Gaussian, MatchedFilter
+from luv_finder.data import C, Chunk, Metadata
+from luv_finder.matchedfilter import continuum
 from luv_finder.mock import MockObservation
-from luv_finder.model import CONTINUUM_ORDER
+from luv_finder.model import C_KMS, CONTINUUM_ORDER
 from luv_finder.run import Run
 
 
@@ -164,3 +170,64 @@ def test_rows_without_a_bright_line_skip_the_masked_fit_unchanged():
         alone = _search(spectra, [offsets[i]], [offsets[j]])
         np.testing.assert_allclose(result.snr[i, j], alone.snr[0, 0], rtol=1e-9, atol=1e-12)
         np.testing.assert_allclose(result.error[i, j], alone.error[0, 0], rtol=1e-9)
+
+
+# ---------------------------------------------------------------- continuum sources
+def _empty(spw, freq0, n_chan=40, n_vis=300, seed=0):
+    """Empty unit-weight window of 100 km/s channels at random uv within 30 klambda."""
+    r = np.random.default_rng(seed)
+    freq = freq0 * (1 + (np.arange(n_chan) - n_chan // 2) * 100 / C_KMS)
+    u, v = r.uniform(-3e4, 3e4, (2, n_vis)) * C / freq0
+    zeros = np.zeros(n_vis, dtype=int)
+    return Chunk(0, spw, np.zeros(2), freq, u, v, np.arange(n_vis, dtype=float), zeros, zeros,
+                 np.zeros((n_chan, n_vis), dtype=complex), np.ones((n_chan, n_vis), dtype=np.float32))  # fmt: skip
+
+
+def _sky(chunks, flux=1e-3, line_snr=0.0, pos=(2.0, -1.0)):
+    """Noiseless windows seeing a point source of continuum ``flux`` at ``pos``, with a line on window 0."""
+    out = []
+    for c in chunks:
+        vis = flux * np.conj(c.phase(*pos))
+        if line_snr and c.spw == 0:
+            src = Gaussian(dra=pos[0], ddec=pos[1], nu_center=c.freq[20], width=300.0)
+            line = src.profile(c)
+            vis = vis + line * line_snr / np.sqrt(np.sum((line * c.phase(*pos)).real ** 2))
+        out.append(dataclasses.replace(c, X=vis))
+    metadata = Metadata(12.0, (0.0, 0.0), 40e9, float(np.hypot(chunks[0].u, chunks[0].v).max() * 41e9 / C))
+    return DataHandler(chunks=out, metadata=metadata)
+
+
+def _continuum_of(data, pos=(2.0, -1.0), **options):
+    mf = MatchedFilter(data, {"dra": pos[0], "ddec": pos[1], "width": 300.0}, channel_noise=None, **options)
+    mf.run()
+    return mf.result
+
+
+WINDOWS = [_empty(0, 40e9), _empty(1, 42e9, seed=1)]
+
+
+def test_continuum_is_the_injected_flux_density():
+    """A point source's continuum is its flux density, its error that of every channel of every window."""
+    result = _continuum_of(_sky(WINDOWS))
+    assert result.continuum.snr.shape == (1, 1, 1, 2)
+    total = continuum(result.continuum)
+    assert total.flux[0, 0, 0, 0] == pytest.approx(1e-3, rel=1e-9)
+    assert total.error[0, 0, 0, 0] == pytest.approx(1 / np.sqrt(sum(c.w.sum() for c in WINDOWS)), rel=1e-6)
+    assert total.freqs[0] == pytest.approx(41e9, rel=1e-3)
+
+
+def test_a_line_on_the_source_stays_out_of_its_continuum():
+    """A S/N 100 line at the source masks its channels: the continuum moves by less than 0.01 sigma."""
+    plain, lined = (continuum(_continuum_of(_sky(WINDOWS, line_snr=s)).continuum) for s in (0.0, 100.0))
+    assert abs(lined.flux - plain.flux)[0, 0, 0, 0] < 0.01 * plain.error[0, 0, 0, 0]
+    assert lined.error[0, 0, 0, 0] > plain.error[0, 0, 0, 0]  # the line's channels are out
+
+
+def test_chunks_give_each_windows_continuum_once():
+    """Two searches owning one window each combine into the continuum of one search of both."""
+    data, whole = _sky(WINDOWS), continuum(_continuum_of(_sky(WINDOWS)).continuum)
+    parts = [_continuum_of(data, core=core).continuum for core in ((0, 41e9), (41e9, np.inf))]
+    assert [p.freqs.size for p in parts] == [1, 1]
+    w = sum(p.error**-2.0 for p in parts)
+    assert (sum(p.flux * p.error**-2.0 for p in parts) / w) == pytest.approx(whole.flux, rel=1e-9)
+    assert w**-0.5 == pytest.approx(whole.error, rel=1e-9)

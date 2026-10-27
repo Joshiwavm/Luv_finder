@@ -30,7 +30,9 @@ def test_run_writes_every_product(run):
         run.path(unit, ".ecsv"),
         run.path(unit, "_maps.npz"),
         run.path(unit, "_weights.npz"),
+        run.path(unit, "_continuum.npz"),
         run.output / "catalogue.ecsv",
+        run.output / "continuum.ecsv",
         run.output / "lines_fit.ecsv",
         run.output / "line_maps.npz",
     ):
