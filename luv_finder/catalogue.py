@@ -6,7 +6,7 @@ from dataclasses import dataclass
 
 import numpy as np
 from astropy.table import Table, vstack
-from scipy import fft, ndimage, optimize, special, stats
+from scipy import fft, ndimage, optimize, stats
 
 from .data import sky_direction
 from .matchedfilter import TEMPLATE_KEYS, SearchResult, continuum
@@ -194,20 +194,27 @@ def _maxima(snr: np.ndarray, floor: float) -> tuple[np.ndarray, ...]:
 
 def groups(snr: np.ndarray, result: SearchResult, nc: ResponseCorrelation, floor: float = 4.0) -> list[Group]:
     """Group the local maxima of ``snr`` into candidates, one per source, brightest first."""
+    from scipy.spatial import cKDTree
+
     i, j, t, k, value = _maxima(snr, floor)
     x, y = np.asarray(result.axes["dra"])[i], np.asarray(result.axes["ddec"])[j]
-    chan = result.freqs[k] / _channel_width(result.freqs)
+    line = result.freqs.size > 1  # else a continuum: one channel
+    chan = result.freqs[k] / _channel_width(result.freqs) if line else np.zeros(i.size)
     pa = np.radians(nc.pa)
+    # every ellipsoid lies within sqrt(2) of its centre in units of the widest one
+    scale = np.array([np.max(nc.hwhm_major)] * 2 + [np.max(nc.spectral_hwhm) if line else 1.0])
+    tree = cKDTree(np.c_[x, y, chan] / scale)
     owner = np.full(i.size, -1)
     found = []
     for r in range(i.size):
         if owner[r] >= 0:
             continue
-        free, tr = np.flatnonzero(owner < 0), t[r]
+        near = np.asarray(tree.query_ball_point(np.r_[x[r], y[r], chan[r]] / scale, np.sqrt(2) * (1 + 1e-9)))
+        free, tr = np.sort(near[owner[near] < 0]), t[r]
         dx, dy, dc = x[free] - x[r], y[free] - y[r], chan[free] - chan[r]
         major = dx * np.sin(pa[tr]) + dy * np.cos(pa[tr])
         minor = dx * np.cos(pa[tr]) - dy * np.sin(pa[tr])
-        spectral = (dc / nc.spectral_hwhm[tr]) ** 2 if result.freqs.size > 1 else 0.0  # a continuum: one channel
+        spectral = (dc / nc.spectral_hwhm[tr]) ** 2 if line else 0.0
         r2 = (major / nc.hwhm_major[tr]) ** 2 + (minor / nc.hwhm_minor[tr]) ** 2 + spectral
         inside = free[r2 <= 1]
         owner[inside] = r
@@ -215,33 +222,64 @@ def groups(snr: np.ndarray, result: SearchResult, nc: ResponseCorrelation, floor
     return found
 
 
-def likelihood(snr_data, snr_noise) -> tuple[np.ndarray, np.ndarray]:
-    """``N_data(>= gamma) / N_noise(>= gamma)`` of peak counts at every data S/N (Vio & Andreani 2021).
+#: How the likelihood ratio and the fidelity combine into ``detected``: "and" (both) or "or" (either).
+DETECTION_RULE = "and"
+#: Default reliability tests: the S/N floor of the groups, the likelihood ratio ``k``, the fidelity and the rule.
+RELIABILITY = {"floor": 4.0, "k": 3.0, "fidelity_min": 0.6, "rule": DETECTION_RULE}
+#: Lowest S/N of the noise peaks the noise model is fitted to (the data's groups start at ``floor``).
+NOISE_FLOOR = 2.5
+#: Fewest noise peaks above :data:`NOISE_FLOOR` to fit the model to; fewer, and nothing is detected.
+MIN_NOISE = 10
 
-    Above the brightest noise group the ratio diverges; those groups get its last finite value,
-    ``N_data(>= that group) / 1``, as a lower limit (flagged in the second array).
+
+def peak_exponent(snr_noise, floor: float = NOISE_FLOOR) -> float:
+    """Exponent ``m`` of the noise peak counts ``N(>= u) ~ u^m exp(-u^2 / 2)`` above ``floor``, by unbinned ML.
+
+    The expected number of peaks of a smooth Gaussian field above ``u`` (its Euler characteristic, Vio &
+    Andreani 2021) is a polynomial in ``u`` times ``exp(-u^2 / 2)``, ``m`` about the field's dimension
+    minus one, plus one for the search over template sizes. NaN, with a warning, below :data:`MIN_NOISE`
+    peaks.
     """
-    snr_data, snr_noise = np.asarray(snr_data, dtype=float), np.asarray(snr_noise, dtype=float)
-    n_data, n_noise = (x.size - np.searchsorted(np.sort(x), snr_data) for x in (snr_data, snr_noise))
-    lower = n_noise == 0
-    ratio = n_data / np.maximum(n_noise, 1)
-    ratio[lower] = np.sum(snr_data >= snr_noise.max(initial=-np.inf))
-    return ratio, lower
+    u = np.asarray(snr_noise, dtype=float)
+    u = u[u >= floor]
+    if u.size < MIN_NOISE:
+        warnings.warn(f"only {u.size} noise peaks above S/N {floor:g}, too few to fit the noise", stacklevel=2)
+        return np.nan
+    x = np.log(u / floor)
+
+    def nll(m):  # density -dS/du of the survival S(u) = (u / floor)^m exp(-(u^2 - floor^2) / 2)
+        return -np.sum(m * x + np.log(u - m / u))
+
+    return float(optimize.minimize_scalar(nll, bounds=(-5.0, floor**2 * (1 - 1e-6)), method="bounded").x)
 
 
-def fidelity(snr_data, snr_noise, floor: float, step: float = 0.25) -> tuple[np.ndarray, tuple, dict]:
-    """Fidelity ``1 - N_noise / N_data`` per S/N bin, ``N_noise`` from a Gaussian tail fitted to ``snr_noise``.
+def noise_above(u, n: int, m: float, floor: float = NOISE_FLOOR) -> np.ndarray:
+    """Expected noise peaks at or above ``u`` of a kernel with ``n`` noise peaks above ``floor``."""
+    u = np.asarray(u, dtype=float)
+    return n * np.exp(m * np.log(u / floor) - (u**2 - floor**2) / 2)
 
-    The noise groups above ``floor`` are fitted, unbinned, with ``N(>= s) = A erfc(s / sqrt(2) sigma)``
-    (González-López et al. 2019), so the fidelity at high S/N comes from the tail and not from a few
-    sparse bins, and an excess of data over noise near the floor leaves it alone. Every data group gets
-    its bin's fidelity. Returns those, ``(A, sigma)`` and the bins: the binned counts, their fidelity
-    with its error and the ``model`` fidelity.
+
+def likelihood(snr_data, noise) -> np.ndarray:
+    """``N_data(>= gamma) / N_noise(>= gamma)`` at every data S/N (Vio & Andreani 2021); ``noise(u)`` the
+    expected noise peaks at or above ``u`` (:func:`noise_above`), infinite where it is zero."""
+    snr_data = np.asarray(snr_data, dtype=float)
+    n_data = snr_data.size - np.searchsorted(np.sort(snr_data), snr_data)
+    with np.errstate(divide="ignore"):
+        return n_data / noise(snr_data)
+
+
+def fidelity(snr_data, snr_noise, noise, floor: float, step: float = 0.25) -> tuple[np.ndarray, dict]:
+    """Fidelity ``1 - N_noise / N_data`` per S/N bin from ``floor``, ``N_noise`` from the noise model ``noise``.
+
+    Every data group gets its bin's fidelity. The bins hold the counts of the data and of the noise
+    groups ``snr_noise``, their binned fidelity with its error (for the eye) and the ``model`` fidelity.
     """
     snr_data, snr_noise = np.asarray(snr_data, dtype=float), np.asarray(snr_noise, dtype=float)
     top = max(snr_data.max(initial=floor), snr_noise.max(initial=floor))
     edges = floor + step * np.arange(int((top - floor) / step) + 2)
     n_data, n_noise = (np.histogram(x, edges)[0] for x in (snr_data, snr_noise))
+    expected = -np.diff(noise(edges))
+    model = np.clip(1 - expected / np.maximum(n_data, 1), 0, 1)
     use = n_data > 0
     d, n = n_data[use], n_noise[use]
     bins = {
@@ -250,28 +288,10 @@ def fidelity(snr_data, snr_noise, floor: float, step: float = 0.25) -> tuple[np.
         "n_noise": n,
         "fidelity": np.clip(1 - n / d, 0, 1),
         "error": np.sqrt(np.maximum(n, 1) + n**2 / d) / d,
+        "model": model[use],
     }
-    noise = snr_noise[snr_noise >= floor]
-    if noise.size < 3:
-        warnings.warn(f"only {noise.size} noise groups above S/N {floor:g}, too few to fit the noise", stacklevel=2)
-        bins["model"] = np.full(d.shape, np.nan)
-        return np.full(snr_data.shape, np.nan), (np.nan, np.nan), bins
+    return model[np.clip(np.searchsorted(edges, snr_data, side="right") - 1, 0, model.size - 1)], bins
 
-    def nll(sigma):
-        return np.sum(noise**2) / (2 * sigma**2) + noise.size * (np.log(sigma) + special.log_ndtr(-floor / sigma))
-
-    sigma = optimize.minimize_scalar(nll, bounds=(0.1, 10.0), method="bounded").x
-    above = noise.size * np.exp(special.log_ndtr(-edges / sigma) - special.log_ndtr(-floor / sigma))
-    model = np.clip(1 - (above[:-1] - above[1:]) / np.maximum(n_data, 1), 0, 1)
-    bins["model"] = model[use]
-    amplitude = noise.size / special.erfc(floor / (np.sqrt(2) * sigma))
-    return model[np.searchsorted(edges, snr_data, side="right") - 1], (amplitude, sigma), bins
-
-
-#: How the likelihood ratio and the fidelity combine into ``detected``: "and" (both) or "or" (either).
-DETECTION_RULE = "and"
-#: Default reliability tests: the S/N floor of the groups, the likelihood ratio ``k``, the fidelity and the rule.
-RELIABILITY = {"floor": 4.0, "k": 3.0, "fidelity_min": 0.6, "rule": DETECTION_RULE}
 
 #: S/N from which a line's sidelobes (``sidelobe`` of a few per cent) reach a few sigma elsewhere in the search:
 #: flagged by :func:`bright_lines`, not subtracted.
@@ -311,14 +331,13 @@ def catalogue(
     """Catalogue the line candidates of a search: one row per group of the data, by S/N descending.
 
     The noise correlation of ``result`` is measured, and the data, the jackknife and the negated
-    data are grouped (:func:`groups`) on the filter's S/N (see the module docstring). Each data
-    group gets the likelihood ratio and the fidelity against the jackknife's groups
-    (:func:`likelihood`, :func:`fidelity`). A group passes the likelihood ratio if
-    ``Lambda >= k`` or no jackknife group is as bright: there ``Lambda`` diverges, and its lower
-    limit is the last finite value, at the brightest jackknife group. It is ``detected`` if it passes
-    the likelihood ratio and its fidelity is at least ``fidelity_min`` (``rule="and"``, the default;
-    a fidelity that could not be fitted does not count against it), or either (``rule="or"``). Nothing
-    is clipped: the candidates are ``cat[cat["detected"]]``.
+    data are grouped (:func:`groups`) on the filter's S/N (see the module docstring), the data from
+    ``floor``, the jackknife and the negated data from :data:`NOISE_FLOOR`. Each data group gets the
+    likelihood ratio and the fidelity against the noise peak counts modelled on the jackknife's groups
+    of its own kernel (:func:`peak_exponent`, :func:`likelihood`, :func:`fidelity`). It is ``detected``
+    if ``Lambda >= k`` and its fidelity is at least ``fidelity_min`` (``rule="and"``, the default), or
+    either (``rule="or"``); without a noise model (fewer than :data:`MIN_NOISE` noise peaks) nothing
+    is. Nothing is clipped: the candidates are ``cat[cat["detected"]]``.
 
     Parameters
     ----------
@@ -344,10 +363,10 @@ def catalogue(
         Columns ``id``, ``dra``, ``ddec`` (arcsec), ``ra``, ``dec`` (deg, with ``ref``),
         ``freq_ghz``, the template's ``bmin``, ``bmaj``, ``pa`` and ``width``, the ``snr``,
         ``flux`` and ``error`` (Jy) and ``line_flux``, ``line_flux_error`` (Jy km/s) at the
-        brightest maximum, ``coverage``, ``n_peaks``, ``likelihood``, ``likelihood_lower_limit``,
-        ``fidelity`` and ``detected``. ``meta`` holds the ``jackknife_spread``, the noise
+        brightest maximum, ``coverage``, ``n_peaks``, ``likelihood``, ``fidelity`` and
+        ``detected``. ``meta`` holds the ``jackknife_spread``, the noise
         correlation's ``hwhm_major``, ``hwhm_minor``, ``pa``, ``spectral_hwhm`` and ``sidelobe``,
-        the thresholds, the jackknife's noise tail (``noise_amplitude``, ``noise_sigma``), the
+        the thresholds, the noise model (``noise_floor``, ``noise_exponent``, ``kernels``), the
         lowest data S/N with ``Lambda >= k`` (``snr_likelihood``) and with a fidelity of at least
         ``fidelity_min`` (``snr_fidelity``), NaN if none, the S/N of every group of the data, the
         jackknife and the negated data (``snr_data``, ``snr_jackknife``, ``snr_negative``) and the
@@ -360,8 +379,12 @@ def catalogue(
     """
     nc = response_correlation(result)
     found = {
-        name: groups(values, result, nc, floor)
-        for name, values in (("data", result.snr), ("jackknife", result.jackknife.snr), ("negative", -result.snr))
+        name: groups(values, result, nc, low)
+        for name, values, low in (
+            ("data", result.snr, floor),
+            ("jackknife", result.jackknife.snr, NOISE_FLOOR),
+            ("negative", -result.snr, NOISE_FLOOR),
+        )
     }
     if band is not None:
         found = {name: [g for g in gs if band[0] <= result.freqs[g.k] < band[1]] for name, gs in found.items()}
@@ -436,51 +459,52 @@ def bright_lines(cat: Table) -> str:
     )
 
 
-def passes(ratio, lower, fid, k: float, fidelity_min: float) -> tuple[np.ndarray, np.ndarray]:
-    """Which groups pass the likelihood ratio (``>= k`` or a lower limit) and which the fidelity (NaN: neither)."""
-    return (np.asarray(ratio) >= k) | np.asarray(lower, dtype=bool), np.asarray(fid) >= fidelity_min
+def passes(ratio, fid, k: float, fidelity_min: float) -> tuple[np.ndarray, np.ndarray]:
+    """Which groups pass the likelihood ratio and which the fidelity (NaN passes neither)."""
+    return np.asarray(ratio) >= k, np.asarray(fid) >= fidelity_min
 
 
 def _reliability(
     snr: dict, kernels: dict, floor: float, k: float, fidelity_min: float, rule: str = DETECTION_RULE
 ) -> tuple[dict, dict]:
-    """Likelihood ratio, fidelity and detection of the data groups against the jackknife's, as columns and meta.
+    """Likelihood ratio, fidelity and detection of the data groups against the noise model, as columns and meta.
 
-    Per kernel (``kernels``: each group's template, a row of :data:`TEMPLATE_KEYS`, as ``snr``): a group is
-    tested against the jackknife groups of its own template only, since kernels of different size make
-    different numbers of independent trials (González-López et al. 2019). ``meta["kernels"]`` has each
-    kernel's tests; the noise tail and the binned fidelity of all kernels pooled are for the eye.
+    The noise is the jackknife's peaks above :data:`NOISE_FLOOR`: one exponent for the whole search
+    (:func:`peak_exponent`) and, per kernel (``kernels``: each group's template, a row of
+    :data:`TEMPLATE_KEYS`, as ``snr``), the number of its peaks, since kernels of different size make
+    different numbers of independent trials (González-López et al. 2019). Each data group is tested
+    against its own kernel's model. ``meta["kernels"]`` has each kernel's counts and thresholds.
     """
-    data = snr["data"]
-    ratio, lower, fid = np.full(data.size, np.nan), np.zeros(data.size, dtype=bool), np.full(data.size, np.nan)
-    per_kernel = []
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore")  # a kernel with too few noise groups has no fitted tail: NaN
-        for kernel in np.unique(kernels["data"], axis=0):
-            d = np.all(kernels["data"] == kernel, axis=1)
-            j = np.all(kernels["jackknife"] == kernel, axis=1) if len(kernels["jackknife"]) else np.zeros(0, bool)
-            ratio[d], lower[d] = likelihood(data[d], snr["jackknife"][j])
-            fid[d], (amp, sig), bins = fidelity(data[d], snr["jackknife"][j], floor)
-            lr_k, fid_k = passes(ratio[d], lower[d], fid[d], k, fidelity_min)
-            per_kernel.append(
-                {"template": kernel.tolist(), "n_data": int(d.sum()), "n_jackknife": int(j.sum()),
-                 "noise_amplitude": float(amp), "noise_sigma": float(sig),
-                 "snr_likelihood": float(data[d][ratio[d] >= k].min()) if (ratio[d] >= k).any() else np.nan,
-                 "snr_fidelity": float(data[d][fid_k].min()) if fid_k.any() else np.nan}
-            )  # fmt: skip
-    _, (amplitude, sigma), bins = fidelity(data, snr["jackknife"], floor)
-    lr, fid_ok = passes(ratio, lower, fid, k, fidelity_min)
-    if rule == "or":
-        detected = lr | fid_ok
-    elif rule == "and":
-        detected = lr & (fid_ok | np.isnan(fid))
-    else:
+    if rule not in ("or", "and"):
         raise ValueError(f'rule is "or" or "and", not {rule!r}')
-    columns = {"likelihood": ratio, "likelihood_lower_limit": lower, "fidelity": fid, "detected": detected}
+    data, jackknife = snr["data"], snr["jackknife"]
+    m = peak_exponent(jackknife)
+    ratio, fid = np.full(data.size, np.nan), np.full(data.size, np.nan)
+    per_kernel = []
+    for kernel in np.unique(np.r_[kernels["data"], kernels["jackknife"]], axis=0):
+        d = np.all(kernels["data"] == kernel, axis=1)
+        n = int(np.sum(np.all(kernels["jackknife"] == kernel, axis=1)))
+
+        def noise(u, n=n):
+            return noise_above(u, n, m)
+
+        ratio[d] = likelihood(data[d], noise)
+        fid[d] = fidelity(data[d], [], noise, floor)[0]
+        lr_k, fid_k = passes(ratio[d], fid[d], k, fidelity_min)
+        per_kernel.append(
+            {"template": kernel.tolist(), "n_data": int(d.sum()), "n_jackknife": n,
+             "snr_likelihood": float(data[d][lr_k].min()) if lr_k.any() else np.nan,
+             "snr_fidelity": float(data[d][fid_k].min()) if fid_k.any() else np.nan}
+        )  # fmt: skip
+    n_all = [kn["n_jackknife"] for kn in per_kernel]
+    bins = fidelity(data, jackknife[jackknife >= floor], lambda u: noise_above(u, sum(n_all), m), floor)[1]
+    lr, fid_ok = passes(ratio, fid, k, fidelity_min)
+    detected = lr | fid_ok if rule == "or" else lr & fid_ok
+    columns = {"likelihood": ratio, "fidelity": fid, "detected": detected}
     meta = {"floor": float(floor), "k": float(k), "fidelity_min": float(fidelity_min), "rule": rule}
-    meta |= {"noise_amplitude": float(amplitude), "noise_sigma": float(sigma)}
-    for key, passed in (("snr_likelihood", ratio >= k), ("snr_fidelity", fid_ok)):
-        meta[key] = float(snr["data"][passed].min()) if passed.any() else np.nan
+    meta |= {"noise_floor": NOISE_FLOOR, "noise_exponent": m}
+    for key, passed in (("snr_likelihood", lr), ("snr_fidelity", fid_ok)):
+        meta[key] = float(data[passed].min()) if passed.any() else np.nan
     meta |= {f"snr_{name}": values.tolist() for name, values in snr.items()}
     meta |= {f"template_{name}": np.asarray(values).tolist() for name, values in kernels.items() if name != "data"}
     meta["fidelity_bins"] = {key: values.tolist() for key, values in bins.items()}

@@ -235,16 +235,16 @@ def test_reliability_figure(plots):
 
     rng = np.random.default_rng(3)
 
-    def noise(n):
-        return 4.0 + np.abs(rng.normal(0, 0.6, n))
+    def noise(n, low=2.5):
+        return low + np.abs(rng.normal(0, 0.6, n))
 
     bright = np.array([5.1, 5.5, 5.9, 6.4, 7.2, 8.0])
-    data, jackknife, negative = np.r_[noise(160), bright], noise(150), noise(140)
+    data, jackknife, negative = np.r_[noise(160, 4.0), bright], noise(3000), noise(2800)
     normal = _reliability_catalogue(data, jackknife, negative)
     assert normal["detected"].any()
     nan_fit = _reliability_catalogue(bright, np.array([]), np.array([]))
-    assert np.isnan(nan_fit.meta["noise_sigma"])
-    nothing = _reliability_catalogue(noise(160), jackknife, negative)
+    assert np.isnan(nan_fit.meta["noise_exponent"])
+    nothing = _reliability_catalogue(noise(160, 4.0), jackknife, negative)
     nothing["detected"] = False
     empty = _reliability_catalogue(np.array([]), np.array([]), np.array([]))
     for name, cat in (("normal", normal), ("nan_fit", nan_fit), ("nothing", nothing), ("empty", empty)):
@@ -325,3 +325,20 @@ def test_erf_curve_recovers_centre_and_width():
     centre, width = erf_curve(snr, 0.5 * (1 + special.erf((snr - 6.0) / (np.sqrt(2) * 0.4))))
     assert (centre, width) == (pytest.approx(6.0), pytest.approx(0.4))
     assert np.isnan(erf_curve([5.0, 6.0], [0.0, 1.0])).all()
+
+
+def test_continuum_spectra(plots):
+    """One source per panel, its windows and the power law of its alpha; a source without spectra is left out."""
+    from astropy.table import Table
+
+    from luv_finder.plotting import continuum_spectra_check
+
+    cat = Table({"id": [1, 2, 3], "snr": [40.0, 12.0, 6.0], "flux": [1e-3, 2e-4, 1e-4],
+                 "freq_ghz": [98.0] * 3, "alpha": [3.5, -1.0, np.nan]})  # fmt: skip
+    nu = np.array([86.0, 98.0, 110.0])
+    cat.meta["spectra"] = {
+        str(i): {"freq_ghz": nu.tolist(), "flux": (s * (nu / 98.0) ** a).tolist(), "error": [1e-5] * 3}
+        for i, s, a in zip(cat["id"][:2], cat["flux"][:2], cat["alpha"][:2], strict=True)
+    }
+    fig = continuum_spectra_check(cat, plots_dir=str(plots), name="continuum_spectra")
+    assert isinstance(fig, Figure) and len([ax for ax in fig.axes if ax.lines]) == 2

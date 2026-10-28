@@ -603,7 +603,7 @@ class Run:
             lines.append(
                 f"  {int(cat['detected'].sum())} of {len(cat)} groups detected (rule {m['rule']}): "
                 f"likelihood ratio {m['k']:g} from S/N {m['snr_likelihood']:.2f}, fidelity "
-                f"{m['fidelity_min']:g} from S/N {m['snr_fidelity']:.2f}; noise tail sigma {m['noise_sigma']:.3f}"
+                f"{m['fidelity_min']:g} from S/N {m['snr_fidelity']:.2f}; noise peaks m {m['noise_exponent']:.2f}"
             )
             spread = np.concatenate([p["jackknife_spread"] for p in m["parts"]])
             lines.append(f"  jackknife S/N spread {spread.min():.2f}-{spread.max():.2f} (1 under H0)")
@@ -665,6 +665,13 @@ class RunPlots:
         from .plotting import line_spectra_check
 
         return line_spectra_check(self._rows(which), plots_dir=self._dir(plots_dir), name=f"{which}_spectra")
+
+    def continuum(self, plots_dir=None):
+        """In-band spectra of the detected continuum sources."""
+        from .plotting import continuum_spectra_check
+
+        cat = self.run.continuum
+        return continuum_spectra_check(cat[cat["detected"]], plots_dir=self._dir(plots_dir), name="continuum_spectra")
 
     def maps(self, which: str = "detected", plots_dir=None):
         """Moment-0 maps of the fitted detections (or the near misses)."""
