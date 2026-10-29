@@ -232,20 +232,27 @@ def _counts(snr, at):
 @pytest.mark.parametrize("m", [1.0, 2.0, 3.0])
 def test_peak_exponent_comes_back(m):
     rng = np.random.default_rng(int(m))
-    assert peak_exponent(_peaks(rng, 20000, m)) == pytest.approx(m, abs=0.1)
+    assert peak_exponent(_peaks(rng, 20000, m), dim=3) == pytest.approx(m, abs=0.1)
     assert noise_above(NOISE_FLOOR, 500, m) == pytest.approx(500)
+
+
+def test_few_peaks_keep_the_dimension():
+    """Twenty peaks of a 2D field give an exponent near 1 under the prior, where ML alone scatters by ~1."""
+    rng = np.random.default_rng(8)
+    fits = [peak_exponent(_peaks(rng, 20, 1.0), dim=2) for _ in range(200)]
+    assert np.median(fits) == pytest.approx(1.0, abs=0.2) and np.std(fits) < 0.8 and min(fits) > -2
 
 
 def test_peak_exponent_needs_noise():
     with pytest.warns(UserWarning, match="too few"):
-        assert np.isnan(peak_exponent([3.0] * (MIN_NOISE - 1)))
+        assert np.isnan(peak_exponent([3.0] * (MIN_NOISE - 1), dim=3))
 
 
 def test_likelihood_of_noise_is_one():
     rng = np.random.default_rng(4)
     noise, data = _peaks(rng, 30000), _peaks(rng, 30000)
     data = data[data >= 4.0]
-    ratio = likelihood(data, lambda u: noise_above(u, noise.size, peak_exponent(noise)))
+    ratio = likelihood(data, lambda u: noise_above(u, noise.size, peak_exponent(noise, dim=3)))
     n_data = _counts(data, data)
     moderate = n_data >= 50
     assert moderate.sum() > 100
@@ -257,7 +264,7 @@ def test_likelihood_of_lines_is_large():
     rng = np.random.default_rng(5)
     noise = _peaks(rng, 30000)
     data = np.concatenate([(x := _peaks(rng, 30000))[x >= 4.0], rng.uniform(6.0, 12.0, 60)])
-    ratio = likelihood(data, lambda u: noise_above(u, noise.size, peak_exponent(noise)))
+    ratio = likelihood(data, lambda u: noise_above(u, noise.size, peak_exponent(noise, dim=3)))
     assert np.all(np.isfinite(ratio)) and np.all(ratio[data >= 6.0] > 10)
     assert np.all(likelihood([4.5, 5.0], lambda u: noise_above(u, 0, 2.0)) == np.inf)
 
@@ -267,7 +274,7 @@ def test_fidelity_from_the_noise_model():
     rng = np.random.default_rng(6)
     noise = _peaks(rng, 200000)
     data = np.concatenate([(x := _peaks(rng, 210000))[x >= 4.0], rng.uniform(4.0, 10.0, 600)])
-    model = lambda u: noise_above(u, noise.size, peak_exponent(noise))  # noqa: E731
+    model = lambda u: noise_above(u, noise.size, peak_exponent(noise, dim=3))  # noqa: E731
     values, bins = fidelity(data, noise[noise >= 4.0], model, floor=4.0)
     assert np.all(values[data > 7.0] > 0.95) and np.all(values[data < 4.5] < 0.2)
     centre = 4.0 + 0.25 * ((data - 4.0) // 0.25 + 0.5)
@@ -290,10 +297,10 @@ def _noise_and_lines(rng, n=20000, lines=40):
 def test_detection_rule_or_contains_and():
     snr = _noise_and_lines(np.random.default_rng(7))
     kernels = _one_kernel(snr)
-    either, both = (_reliability(snr, kernels, 4.0, 3.0, 0.6, rule)[0]["detected"] for rule in ("or", "and"))
+    either, both = (_reliability(snr, kernels, 3, 4.0, 3.0, 0.6, rule)[0]["detected"] for rule in ("or", "and"))
     assert both.sum() < either.sum() and np.all(either[both])
     with pytest.raises(ValueError, match="rule"):
-        _reliability(snr, kernels, 4.0, 3.0, 0.6, "xor")
+        _reliability(snr, kernels, 3, 4.0, 3.0, 0.6, "xor")
 
 
 def test_nothing_is_detected_without_a_noise_model():
@@ -301,7 +308,7 @@ def test_nothing_is_detected_without_a_noise_model():
     snr = {"data": np.array([9.0, 6.0, 4.5]), "jackknife": np.array([3.0, 2.6]), "negative": np.array([])}
     for rule in ("or", "and"):
         with pytest.warns(UserWarning, match="too few"):
-            columns, meta = _reliability(snr, _one_kernel(snr), 4.0, 3.0, 0.6, rule)
+            columns, meta = _reliability(snr, _one_kernel(snr), 3, 4.0, 3.0, 0.6, rule)
         assert not columns["detected"].any() and np.isnan(meta["noise_exponent"])
 
 
@@ -317,8 +324,8 @@ def test_each_kernel_is_tested_against_its_own_noise():
         "jackknife": np.r_[np.zeros(40000, int), np.ones(400, int)],
     }
     kernels = {name: templates[label.get(name, label["jackknife"])] for name in snr}
-    per_kernel = _reliability(snr, kernels, 4.0, 3.0, 0.6)
-    pooled = _reliability(snr, _one_kernel(snr), 4.0, 3.0, 0.6)
+    per_kernel = _reliability(snr, kernels, 3, 4.0, 3.0, 0.6)
+    pooled = _reliability(snr, _one_kernel(snr), 3, 4.0, 3.0, 0.6)
     assert per_kernel[0]["fidelity"][-1] > 0.6 > pooled[0]["fidelity"][-1]
     assert per_kernel[0]["detected"][-1] and not pooled[0]["detected"][-1]
     assert [k["n_jackknife"] for k in per_kernel[1]["kernels"]] == [40000, 400]
@@ -355,7 +362,8 @@ def test_catalogue_of_the_fixture(data, truth, blind_catalogue, tmp_path):
         np.testing.assert_array_equal(one[name], cat[name])
     assert two["id"].tolist() == list(range(1, 2 * len(cat) + 1)) and len(two.meta["parts"]) == 2
     assert sorted(two.meta["snr_jackknife"]) == sorted(2 * cat.meta["snr_jackknife"])
-    np.testing.assert_allclose(two["likelihood"][::2], cat["likelihood"], rtol=1e-8)
+    np.testing.assert_allclose(two.meta["noise_exponent"], cat.meta["noise_exponent"], atol=0.05)
+    np.testing.assert_allclose(two["likelihood"][::2], cat["likelihood"], rtol=0.1)  # twice the peaks, same prior
 
 
 def test_bright_lines_flags_only_groups_at_bright_snr():

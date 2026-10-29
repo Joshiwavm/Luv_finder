@@ -230,15 +230,18 @@ RELIABILITY = {"floor": 4.0, "k": 3.0, "fidelity_min": 0.6, "rule": DETECTION_RU
 NOISE_FLOOR = 2.5
 #: Fewest noise peaks above :data:`NOISE_FLOOR` to fit the model to; fewer, and nothing is detected.
 MIN_NOISE = 10
+#: Width of the Gaussian prior on the exponent ``m``, about the field's dimension minus one.
+EXPONENT_PRIOR = 1.0
 
 
-def peak_exponent(snr_noise, floor: float = NOISE_FLOOR) -> float:
-    """Exponent ``m`` of the noise peak counts ``N(>= u) ~ u^m exp(-u^2 / 2)`` above ``floor``, by unbinned ML.
+def peak_exponent(snr_noise, dim: int, floor: float = NOISE_FLOOR) -> float:
+    """Exponent ``m`` of the noise peak counts ``N(>= u) ~ u^m exp(-u^2 / 2)`` above ``floor``, by unbinned MAP.
 
-    The expected number of peaks of a smooth Gaussian field above ``u`` (its Euler characteristic, Vio &
-    Andreani 2021) is a polynomial in ``u`` times ``exp(-u^2 / 2)``, ``m`` about the field's dimension
-    minus one, plus one for the search over template sizes. NaN, with a warning, below :data:`MIN_NOISE`
-    peaks.
+    The expected number of peaks of a smooth Gaussian field of dimension ``dim`` above ``u`` (its Euler
+    characteristic, Vio & Andreani 2021) is a polynomial in ``u`` times ``exp(-u^2 / 2)``, of degree
+    ``dim - 1``: the prior's centre, :data:`EXPONENT_PRIOR` wide, so a few noise peaks (a continuum)
+    cannot drive ``m`` far off and many (a line search) set it. NaN, with a warning, below
+    :data:`MIN_NOISE` peaks.
     """
     u = np.asarray(snr_noise, dtype=float)
     u = u[u >= floor]
@@ -248,7 +251,7 @@ def peak_exponent(snr_noise, floor: float = NOISE_FLOOR) -> float:
     x = np.log(u / floor)
 
     def nll(m):  # density -dS/du of the survival S(u) = (u / floor)^m exp(-(u^2 - floor^2) / 2)
-        return -np.sum(m * x + np.log(u - m / u))
+        return -np.sum(m * x + np.log(u - m / u)) + ((m - dim + 1) / EXPONENT_PRIOR) ** 2 / 2
 
     return float(optimize.minimize_scalar(nll, bounds=(-5.0, floor**2 * (1 - 1e-6)), method="bounded").x)
 
@@ -403,7 +406,8 @@ def catalogue(
     columns |= {"line_flux": peak * error * per_width, "line_flux_error": error * per_width}
     columns["coverage"] = result.coverage[i, j, c]
     columns["n_peaks"] = np.array([g.n_peaks for g in found["data"]], dtype=int)
-    reliable, meta = _reliability(snr, kernels, floor, k, fidelity_min, rule)
+    dim = 3 if result.freqs.size > 1 else 2  # position and frequency, or a continuum's position
+    reliable, meta = _reliability(snr, kernels, dim, floor, k, fidelity_min, rule)
     search = {"jackknife_spread": jackknife_spread(result)} | {key: getattr(nc, key) for key in SEARCH_META[1:]}
     cat = Table(columns | reliable, meta={key: value.tolist() for key, value in search.items()} | meta)
     for name, unit in UNITS.items():
@@ -465,12 +469,12 @@ def passes(ratio, fid, k: float, fidelity_min: float) -> tuple[np.ndarray, np.nd
 
 
 def _reliability(
-    snr: dict, kernels: dict, floor: float, k: float, fidelity_min: float, rule: str = DETECTION_RULE
+    snr: dict, kernels: dict, dim: int, floor: float, k: float, fidelity_min: float, rule: str = DETECTION_RULE
 ) -> tuple[dict, dict]:
     """Likelihood ratio, fidelity and detection of the data groups against the noise model, as columns and meta.
 
-    The noise is the jackknife's peaks above :data:`NOISE_FLOOR`: one exponent for the whole search
-    (:func:`peak_exponent`) and, per kernel (``kernels``: each group's template, a row of
+    The noise is the jackknife's peaks above :data:`NOISE_FLOOR`: one exponent for the whole search of
+    dimension ``dim`` (:func:`peak_exponent`) and, per kernel (``kernels``: each group's template, a row of
     :data:`TEMPLATE_KEYS`, as ``snr``), the number of its peaks, since kernels of different size make
     different numbers of independent trials (González-López et al. 2019). Each data group is tested
     against its own kernel's model. ``meta["kernels"]`` has each kernel's counts and thresholds.
@@ -478,7 +482,7 @@ def _reliability(
     if rule not in ("or", "and"):
         raise ValueError(f'rule is "or" or "and", not {rule!r}')
     data, jackknife = snr["data"], snr["jackknife"]
-    m = peak_exponent(jackknife)
+    m = peak_exponent(jackknife, dim)
     ratio, fid = np.full(data.size, np.nan), np.full(data.size, np.nan)
     per_kernel = []
     for kernel in np.unique(np.r_[kernels["data"], kernels["jackknife"]], axis=0):
@@ -502,7 +506,7 @@ def _reliability(
     detected = lr | fid_ok if rule == "or" else lr & fid_ok
     columns = {"likelihood": ratio, "fidelity": fid, "detected": detected}
     meta = {"floor": float(floor), "k": float(k), "fidelity_min": float(fidelity_min), "rule": rule}
-    meta |= {"noise_floor": NOISE_FLOOR, "noise_exponent": m}
+    meta |= {"noise_floor": NOISE_FLOOR, "noise_dim": int(dim), "noise_exponent": m}
     for key, passed in (("snr_likelihood", lr), ("snr_fidelity", fid_ok)):
         meta[key] = float(data[passed].min()) if passed.any() else np.nan
     meta |= {f"snr_{name}": values.tolist() for name, values in snr.items()}
@@ -535,7 +539,8 @@ def merge_catalogues(cats: Sequence[Table], reliability: dict | None = None, bea
         cat["duplicate_of"] = duplicates(cat, beam)
         one = np.asarray(cat["duplicate_of"] == 0)
     kernels["data"] = np.c_[tuple(np.asarray(cat[key], dtype=float) for key in TEMPLATE_KEYS)][one]
-    reliable, meta = _reliability({**snr, "data": snr["data"][one]}, kernels, *(given[key] for key in RELIABILITY))
+    data = {**snr, "data": snr["data"][one]}
+    reliable, meta = _reliability(data, kernels, cats[0].meta["noise_dim"], *(given[key] for key in RELIABILITY))
     for name, values in reliable.items():
         cat[name] = np.full(len(cat), False if values.dtype == bool else np.nan, dtype=values.dtype)
         cat[name][one] = values

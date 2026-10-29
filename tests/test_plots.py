@@ -225,7 +225,7 @@ def _reliability_catalogue(data, jackknife, negative, floor=4.0, k=3.0, fidelity
         warnings.simplefilter("ignore")
         snr = dict(data=data, jackknife=jackknife, negative=negative)
         kernels = {name: np.zeros((len(values), 4)) for name, values in snr.items()}
-        columns, meta = _reliability(snr, kernels, floor, k, fidelity_min)
+        columns, meta = _reliability(snr, kernels, 3, floor, k, fidelity_min)
     return Table({"snr": data} | columns, meta=meta)
 
 
