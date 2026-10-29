@@ -296,10 +296,6 @@ def fidelity(snr_data, snr_noise, noise, floor: float, step: float = 0.25) -> tu
     return model[np.clip(np.searchsorted(edges, snr_data, side="right") - 1, 0, model.size - 1)], bins
 
 
-#: S/N from which a line's sidelobes (``sidelobe`` of a few per cent) reach a few sigma elsewhere in the search:
-#: flagged by :func:`bright_lines`, not subtracted.
-BRIGHT_SNR = 100.0
-
 #: Units of the :func:`catalogue` columns.
 UNITS = {
     "dra": "arcsec",
@@ -413,8 +409,6 @@ def catalogue(
     for name, unit in UNITS.items():
         if name in cat.colnames:
             cat[name].unit = unit
-    if note := bright_lines(cat):
-        warnings.warn(note, stacklevel=2)
     return cat
 
 
@@ -451,16 +445,12 @@ def continuum_catalogue(windows: SearchResult, ref=None, **reliability) -> Table
     return cat
 
 
-def bright_lines(cat: Table) -> str:
-    """A note on the groups at S/N >= :data:`BRIGHT_SNR`, empty if none."""
-    bright = cat[cat["snr"] >= BRIGHT_SNR]
-    if not len(bright):
-        return ""
-    found = ", ".join(f"#{row['id']} (S/N {row['snr']:.0f}, {row['freq_ghz']:.3f} GHz)" for row in bright)
-    return (
-        f"S/N >= {BRIGHT_SNR:g}: {found}; its sidelobes can pass the tests elsewhere, "
-        "so check the groups around it (or subtract it and search the residual)"
-    )
+def bright(cat: Table, floor: float) -> np.ndarray:
+    """The detections whose sidelobes reach ``floor``: S/N at least the brightest's times the response's highest
+    ``sidelobe``, none if the brightest's own sidelobes stay below ``floor``. They are subtracted in rounds."""
+    snr, detected = np.asarray(cat["snr"], dtype=float), np.asarray(cat["detected"], dtype=bool)
+    level = max(cat.meta["sidelobe"]) * snr[detected].max(initial=0.0)
+    return detected & (snr >= level) if level >= floor else np.zeros(len(cat), dtype=bool)
 
 
 def passes(ratio, fid, k: float, fidelity_min: float) -> tuple[np.ndarray, np.ndarray]:
@@ -548,8 +538,8 @@ def merge_catalogues(cats: Sequence[Table], reliability: dict | None = None, bea
     return cat
 
 
-def duplicates(cat: Table, beam: dict) -> np.ndarray:
-    """Id of a brighter group of the same line in another unit, else 0, for every row of ``cat``.
+def duplicates(cat: Table, beam: dict, by: str = "unit") -> np.ndarray:
+    """Id of a brighter group of the same line in another unit (another ``by``), else 0, for every row of ``cat``.
 
     Two groups are one line when they are within ``beam[unit]`` (arcsec) of each other and their
     templates overlap, ``|dv| <= (FWHM_a + FWHM_b) / 2``: a line wider than the gap it straddles between
@@ -558,7 +548,7 @@ def duplicates(cat: Table, beam: dict) -> np.ndarray:
     from scipy.spatial import cKDTree
 
     dra, ddec, nu, width = (np.asarray(cat[k], dtype=float) for k in ("dra", "ddec", "freq_ghz", "width"))
-    unit = np.asarray(cat["unit"])
+    unit = np.asarray(cat[by])
     pairs = cKDTree(np.c_[dra, ddec]).query_pairs(max(beam.values()), output_type="ndarray")
     pairs.sort(axis=1)  # a brighter than b
     a, b = pairs.T if pairs.size else (np.zeros(0, int), np.zeros(0, int))

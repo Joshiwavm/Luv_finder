@@ -6,12 +6,11 @@ import pytest
 from astropy.table import Table
 
 from luv_finder.catalogue import (
-    BRIGHT_SNR,
     MIN_NOISE,
     NOISE_FLOOR,
     ResponseCorrelation,
     _reliability,
-    bright_lines,
+    bright,
     catalogue,
     fidelity,
     groups,
@@ -366,10 +365,11 @@ def test_catalogue_of_the_fixture(data, truth, blind_catalogue, tmp_path):
     np.testing.assert_allclose(two["likelihood"][::2], cat["likelihood"], rtol=0.1)  # twice the peaks, same prior
 
 
-def test_bright_lines_flags_only_groups_at_bright_snr():
-    cat = Table({"id": [1, 2], "snr": [BRIGHT_SNR + 20, BRIGHT_SNR - 1], "freq_ghz": [85.0, 86.0]})
-    assert "#1 (S/N 120, 85.000 GHz)" in bright_lines(cat) and "#2" not in bright_lines(cat)
-    assert bright_lines(cat[1:]) == ""
+def test_bright_takes_the_detections_whose_sidelobes_reach_the_floor():
+    cat = Table({"snr": [80.0, 30.0, 9.0, 50.0], "detected": [True, True, True, False]}, meta={"sidelobe": [0.1, 0.25]})
+    assert bright(cat, 4.0).tolist() == [True, True, False, False]  # from 80 * 0.25 = 20, the undetected aside
+    assert not bright(cat[1:3], 8.0).any()  # 30 * 0.25 = 7.5 < 8: no sidelobe reaches the floor
+    assert not bright(cat[3:], 4.0).any()
 
 
 def test_chunks_of_a_spectrum_share_its_groups_out():

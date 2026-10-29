@@ -14,7 +14,7 @@ has unit variance under the null.
 from __future__ import annotations
 
 import dataclasses
-from collections.abc import Iterable, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
 from functools import partial
 from itertools import product
@@ -672,10 +672,11 @@ def search_pointings(
     cores: int | None = None,
     pb_limit: float = PB_LIMIT,
     fields: list[int] | None = None,
+    subtract: Callable[[DataHandler], DataHandler] | None = None,
     **filter_kwargs,
 ) -> SearchResult:
     """Search every field (or ``fields``) of a measurement set or NPZ, PB-corrected, and combine them on one
-    sky grid as they come."""
+    sky grid as they come; ``subtract`` takes each field's data to what is searched (a model's residual)."""
 
     cfg = {**(grid_cfg or {}), "pb_limit": pb_limit}
     fields = fields_in(path) if fields is None else fields
@@ -686,6 +687,8 @@ def search_pointings(
     def pointings():
         for field in fields:
             data = load(path, [field])
+            if subtract is not None:
+                data = subtract(data)
             mf = MatchedFilter(data, build_grid(data, cfg), **filter_kwargs)
             mf.run(jackknife=jackknife, cores=cores)
             result = _correct(mf.result, data, pb_limit)  # in place: the search is ours

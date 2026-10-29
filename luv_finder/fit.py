@@ -492,19 +492,24 @@ def _fit_rows(data: DataHandler, cat: Table, rows, others: list, columns: dict, 
     return out
 
 
-def continuum_model(chunks: list[Chunk], sources: Table, dish: float) -> list[Chunk]:
-    """The visibilities of the fitted continuum ``sources`` (:func:`fit_continuum`) at ``chunks``' rows, weighted
-    (``X = w V``): each a Gaussian at its fitted position and shape, its window's flux density
-    (``meta["spectra"]``) times the pointing's primary beam."""
+def source_model(chunks: list[Chunk], sources: Table, dish: float) -> list[Chunk]:
+    """The visibilities of fitted ``sources`` at ``chunks``' rows, weighted (``X = w V``): each a Gaussian at its
+    fitted position and shape times the pointing's primary beam, and its spectrum: a line's Gaussian line alone
+    (:func:`fit_lines`; its continuum is the continuum catalogue's), a continuum source's flux density in each
+    window (:func:`fit_continuum`, ``meta["spectra"]``)."""
+    line = "fit_peak" in sources.colnames
     out = []
     for c in chunks:
         model = np.zeros_like(c.X)
         uw, vw = c.uv_waves()
         for s in sources:
-            spectrum = sources.meta["spectra"][str(s["id"])]
-            flux = dict(zip(spectrum["spw"], spectrum["flux"], strict=True)).get(c.spw)
-            if flux is None:
-                continue
+            if line:
+                flux = s["fit_peak"] * line_profile(c.freq, s["fit_freq_ghz"] * 1e9, s["fit_width"])[:, None]
+            else:
+                spectrum = sources.meta["spectra"][str(s["id"])]
+                flux = dict(zip(spectrum["spw"], spectrum["flux"], strict=True)).get(c.spw)
+                if flux is None:
+                    continue
             axes = (np.nan_to_num(s[k]) * ARCSEC for k in ("fit_bmaj", "fit_bmin"))
             cov = covariance(*axes, np.nan_to_num(s["fit_pa"]))
             pb = primary_beam_at(s["fit_dra"], s["fit_ddec"], c.offset, c.freq, dish)[:, None]

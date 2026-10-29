@@ -1,3 +1,5 @@
+import dataclasses
+
 import numpy as np
 import pytest
 from astropy.table import Table
@@ -161,3 +163,35 @@ def test_unit_plan_chunks_blocks_with_their_neighbours():
     assert units["spw00+01"].core == (-np.inf, gap[0]) and units["spw02+03+05"].core == tuple(gap)
     assert units["spw04"].core == (gap[1], np.inf)
     assert unit_plan(freqs, widest=400.0)["units"] == {"spw00+01+02+03+04+05": ([*plan["blocks"]], None)}
+
+
+def test_a_bright_line_is_subtracted_and_its_sidelobes_with_it(data, truth, tmp_path):
+    """A line at S/N ~100 beside the fixture's, whose sidelobes (0.29 here) alone give ~20 groups at S/N ~20: fitted
+    in round 1 and searched off, so no group is left at its frequency, and the fixture's lines are found as before."""
+    from luv_finder.data import write_npz
+    from luv_finder.fit import source_model
+
+    line = Table({
+        "id": [1], "fit_dra": [-15.0], "fit_ddec": [-10.0], "fit_bmaj": [0.0], "fit_bmin": [0.0], "fit_pa": [0.0],
+        "fit_freq_ghz": [39.75], "fit_width": [300.0], "fit_peak": [0.2],
+    })  # fmt: skip
+    model = source_model(data.chunks, line, data.metadata.dish_diameter)
+    npz = tmp_path / "bright.npz"
+    write_npz(
+        str(npz), data.metadata, [dataclasses.replace(c, X=c.X + m.X) for c, m in zip(data.chunks, model, strict=False)]
+    )
+    step = data.metadata.minresolution() / 2
+    lattice = {"start": float(-18 * step), "stop": float(18.5 * step), "step": float(step)}
+    run = Run(
+        {"data": str(npz), "output": str(tmp_path / "out"), "grid": {"dra": lattice, "ddec": lattice, "width": [300.0]}}
+    )
+    run.search()
+    cat = run.catalogue
+    (subtracted,) = np.flatnonzero(cat["round"] > 0)
+    assert cat["snr"][subtracted] > 50 and cat["round"][subtracted] == 1
+    assert np.hypot(cat["dra"][subtracted] + 15.0, cat["ddec"][subtracted] + 10.0) < step
+    others = cat[(cat["round"] == 0) & cat["detected"]]
+    assert np.all(np.abs(others["freq_ghz"] - 39.75) > 0.05)
+    for src in truth["sources"]:
+        near = np.hypot(others["dra"] - src["position"][0], others["ddec"] - src["position"][1]) < step
+        assert np.any(near & (np.abs(others["freq_ghz"] - src["line"]["mean"]) < 0.01))

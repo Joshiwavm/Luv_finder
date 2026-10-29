@@ -8,7 +8,7 @@ from astropy.table import Table
 
 from luv_finder import DataHandler, Gaussian
 from luv_finder.data import ChannelNoise, Chunk, Metadata, sky_offset
-from luv_finder.fit import COLUMNS, _moments, _system, fit_line, fit_lines
+from luv_finder.fit import COLUMNS, _moments, _system, fit_line, fit_lines, source_model
 from luv_finder.imaging import line_maps
 from luv_finder.kernel import on_device
 from luv_finder.model import C_KMS, FWHM_TO_SIGMA, LINE_FLUX, covariance
@@ -124,6 +124,15 @@ def test_noisy_fit_is_within_its_errors():
         assert abs(pull) < 3, key
     assert abs(fit["fit_pa"] - SOURCE["pa"]) < 3 * fit["fit_pa_error"]
     assert 0.8 < fit["fit_chi2_reduced"] < 1.2
+
+
+def test_source_model_of_a_line_is_its_line_alone():
+    """A fitted line's model is the injected source with its line and no continuum, the continuum catalogue's."""
+    data, truth = _data(), _truth()
+    line = Table({k: [v] for k, v in truth.items()} | {"fit_pa": [SOURCE["pa"]], "id": [1]})
+    for chunk, model in zip(data.chunks, source_model(data.chunks, line, 12.0), strict=True):
+        expected = chunk.w * _model(chunk, _spectrum(continuum=(0.0,), **LINE), **SOURCE)
+        np.testing.assert_allclose(model.X, expected, atol=1e-6 * np.abs(expected).max())
 
 
 def test_point_source_fits_through_zero_size():

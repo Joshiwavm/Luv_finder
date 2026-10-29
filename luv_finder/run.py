@@ -30,7 +30,7 @@ import numpy as np
 import yaml
 from astropy.table import Table, vstack
 
-from .catalogue import RELIABILITY, bright_lines, catalogue, continuum_catalogue, merge_catalogues
+from .catalogue import RELIABILITY, bright, catalogue, continuum_catalogue, duplicates, merge_catalogues
 from .data import DataHandler, Metadata, WeightScale, fields_in, iter_chunks, load, target_selection, write_npz
 from .matchedfilter import (
     GRID_KEYS,
@@ -48,7 +48,7 @@ from .utils import PB_LIMIT
 
 #: Name of the config copy every run keeps in its output directory.
 RUN_FILE = "run.yaml"
-#: Most rounds of continuum subtraction (:meth:`Run.continuum_sources`).
+#: Most rounds of subtraction of bright lines (:meth:`Run.search`) or continuum sources (:meth:`Run.continuum_sources`).
 MAX_ROUNDS = 5
 
 #: Defaults of the run config; ``data`` and ``output`` have none.
@@ -268,18 +268,24 @@ class Run:
         rel, core = self.config["reliability"], self.plan["units"][unit].core
         # a chunk searches one widest FWHM beyond its core, so the groups at its edges form whole
         band = None if core is None else (core[0] * (1 - self.widest / C_KMS), core[1] * (1 + self.widest / C_KMS))
-        result = search_pointings(
-            self.exports(unit),
-            self.config["grid"],
-            jackknife=True,
-            cores=self.config["cores"],
-            pb_limit=self.config["pb_limit"],
-            band=band,
-            core=core,
-            **self.config["filter"],
-        )
-        print(f"[{unit}: search {time.perf_counter() - clock:.0f} s]", flush=True)
-        cat = catalogue(result, ref=self.metadata.ref, band=core, **rel)
+
+        def search(subtract=None):
+            result = search_pointings(
+                self.exports(unit),
+                self.config["grid"],
+                jackknife=True,
+                cores=self.config["cores"],
+                pb_limit=self.config["pb_limit"],
+                band=band,
+                core=core,
+                subtract=subtract,
+                **self.config["filter"],
+            )
+            print(f"[{unit}: search {time.perf_counter() - clock:.0f} s]", flush=True)
+            return result, catalogue(result, ref=self.metadata.ref, band=core, **rel)
+
+        result, cat = search()
+        result, cat = self._without_bright(unit, search, result, cat)
         cat["unit"], cat["unit_id"] = unit, cat["id"]
         self._save_maps(unit, result, cat)
         self._save_continuum(unit, result.continuum)
@@ -294,6 +300,49 @@ class Run:
             f"{time.perf_counter() - clock:.0f} s]",
             flush=True,
         )
+
+    def _without_bright(self, unit, search, result, cat):
+        """The unit searched again without its bright lines, in rounds: those whose sidelobes reach the floor
+        (:func:`~luv_finder.catalogue.bright`) are fitted, their lines (not their continuum, the continuum
+        catalogue's) come off the visibilities, and the residual is searched until none is left. The catalogue
+        is the residual's groups with the subtracted lines (``round``, 0: not), less the residual's groups of
+        those lines; the result and so the maps and continuum are the residual's."""
+        from .fit import fit_lines, source_model
+
+        def less(d, model):
+            m = source_model(d.chunks, model, self.metadata.dish_diameter)
+            chunks = [dataclasses.replace(c, X=c.X - k.X) for c, k in zip(d.chunks, m, strict=True)]
+            return DataHandler(chunks=chunks, metadata=d.metadata)
+
+        cat["round"] = 0
+        rounds, data = [], None
+        for n in range(1, MAX_ROUNDS + 1):
+            rows = bright(cat, self.config["reliability"]["floor"])
+            if not rows.any():
+                break
+            data = load(self.exports(unit)) if data is None else data
+            residual = less(data, vstack(rounds)) if rounds else data
+            fitted = fit_lines(residual, cat, rows=rows, cores=self.config["cores"], **self.fit_options)[rows]
+            fitted = fitted[np.isfinite(np.asarray(fitted["fit_dra"], dtype=float))]
+            if not len(fitted):
+                break
+            fitted["round"] = n
+            rounds.append(fitted)
+            print(f"[{unit}: round {n}, {len(fitted)} bright lines subtracted]", flush=True)
+            model = vstack(rounds)
+            result, cat = search(lambda d, model=model: less(d, model))
+            cat["round"] = 0
+        if not rounds:
+            return result, cat
+        lines = vstack(rounds)[list(cat.colnames)]
+        both = vstack([lines, cat], metadata_conflicts="silent")
+        both = both[np.argsort(-np.asarray(both["snr"]), kind="stable")]
+        both.meta = cat.meta
+        both["id"] = np.arange(1, len(both) + 1)
+        beam = max(cat.meta["hwhm_major"])
+        both = both[duplicates(both, {r: beam for r in set(both["round"])}, by="round") == 0]
+        both["id"] = np.arange(1, len(both) + 1)
+        return result, both
 
     def _export(self, block, spws) -> Path:
         """A block's visibilities with corrected weights; the weight scales and channel noise go to ``_weights.npz``.
@@ -446,7 +495,7 @@ class Run:
         model subtracted. Each source has its in-band spectrum (``meta["spectra"]``), ``alpha``, the round it was
         subtracted in (0: not) and the detected lines within a beam.
         """
-        from .fit import CONTINUUM_COLUMNS, continuum_model, fit_continuum
+        from .fit import CONTINUUM_COLUMNS, fit_continuum, source_model
 
         data, noise, widen = self._binned()
         found = self.catalogue
@@ -458,17 +507,16 @@ class Run:
         def less_model(chunks):
             if model is None:
                 return chunks
-            modelled = continuum_model(chunks, model, dish)
+            modelled = source_model(chunks, model, dish)
             return [dataclasses.replace(c, X=c.X - m.X) for c, m in zip(chunks, modelled, strict=True)]
 
         for n in range(1, MAX_ROUNDS + 1):
             cat = continuum_catalogue(residual, ref=self.metadata.ref, **rel)
-            snr = np.asarray(cat["snr"])[np.asarray(cat["detected"])]
-            if not snr.size or snr.max() * max(cat.meta["sidelobe"]) < rel["floor"]:
+            rows = bright(cat, rel["floor"])
+            if not rows.any():
                 break
-            bright = cat["detected"] & (cat["snr"] >= snr.max() * max(cat.meta["sidelobe"]))
             residual_data = DataHandler(chunks=less_model(data.chunks), metadata=data.metadata)
-            fitted = fit_continuum(residual_data, cat, found, rows=bright, **options)[bright]
+            fitted = fit_continuum(residual_data, cat, found, rows=rows, **options)[rows]
             fitted = fitted[np.isfinite(np.asarray(fitted["fit_dra"], dtype=float))]
             if not len(fitted):
                 break
@@ -476,7 +524,7 @@ class Run:
             rounds.append(fitted)
             model = _stack(rounds)
             response = continuum_response(
-                DataHandler(chunks=continuum_model(data.chunks, model, dish), metadata=data.metadata),
+                DataHandler(chunks=source_model(data.chunks, model, dish), metadata=data.metadata),
                 self.config["grid"], self.config["pb_limit"], self.config["cores"],
             )  # fmt: skip
             residual = _less(windows, response)
@@ -607,8 +655,8 @@ class Run:
             )
             spread = np.concatenate([p["jackknife_spread"] for p in m["parts"]])
             lines.append(f"  jackknife S/N spread {spread.min():.2f}-{spread.max():.2f} (1 under H0)")
-            if note := bright_lines(cat):
-                lines.append(f"  {note}")
+            if (subtracted := int(np.sum(cat["round"] > 0))) > 0:
+                lines.append(f"  {subtracted} bright lines subtracted before the search of the residual")
         noise = [self.weights(b) for b in self.plan["blocks"] if self.path(b, "_weights.npz").exists()]
         scale = [v for w in noise for k, v in w.items() if k.endswith("_noise_scale")]
         if scale:
