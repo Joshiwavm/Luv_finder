@@ -183,7 +183,8 @@ fitted and subtracted in rounds, each with its in-band spectrum and `alpha`. Ope
 - resolved sources are fitted 5-30% low, growing with size (6": 0.69-0.81 of the truth);
 - large-scale sky signal is not noise: the SZ decrement of J0459 and its positive ring
   (no short spacings) give 20 of 23 Band 1 continuum detections, fitted at 50-120".
-  If it matters, search the long baselines only;
+  J0459 now runs with `uv_min: 10` (kλ, from the uv-radial profiles of
+  arXiv:2310.06120);
 - confused or extended sources need the non-Gaussian templates of section 3.
 
 ## 3. Sources that are not Gaussians

@@ -60,7 +60,10 @@ Runs
 ----
 
 A run YAML (:doc:`../quickstart`) holds ``data`` and ``output`` and optionally ``grid``,
-``pb_limit``, ``max_channels``, ``filter``, ``reliability``, ``near_miss`` and ``cores``.
+``pb_limit``, ``max_channels``, ``uv_min``, ``filter``, ``reliability``, ``near_miss`` and
+``cores``. ``uv_min`` (kλ at the data's central frequency) keeps only the longer baselines,
+for example to filter a cluster's SZ decrement out of the search; the exports hold the
+cut, so another cut needs a new output directory.
 The search is planned in units: windows that overlap or whose gap is narrower than the
 widest template are one unit, so a line across a window edge is searched and fitted
 whole. ``max_channels`` cuts a long unit into chunks of whole blocks (windows overlapping

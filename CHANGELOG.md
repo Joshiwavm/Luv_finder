@@ -27,6 +27,13 @@ Notable changes, newest first. The format follows
 - NUFFT dirty cubes, moment-8, continuum and moment-0 maps for inspection.
 - A position angle for the Gaussian template.
 - `CITATION.cff`, `CONTRIBUTING.md` and this changelog.
+- Continuum sources from the line search (`continuum.ecsv`): the continuum the filter
+  fits at every position without its lines, catalogued against the jackknife, fitted in
+  the visibilities per window (`alpha`, in-band spectrum).
+- Detections whose sidelobes reach the floor, lines and continuum sources alike, are
+  fitted and subtracted in rounds before the residual is catalogued (`round`).
+- `uv_min` (kλ): a run searches only the longer baselines, e.g. without a cluster's SZ
+  decrement.
 
 ### Changed
 
@@ -45,6 +52,10 @@ Notable changes, newest first. The format follows
 - Positions are arcsec east and north in one sky frame per dataset, mocks included.
 - One weighting: each visibility is weighted by the trial source's own amplitude.
 - Python 3.12 is required.
+- Reliability from a model of the jackknife's peak counts, `n_k (u/2.5)^m exp(-(u^2 -
+  2.5^2)/2)`, one `m` per search with a prior about the dimension minus one and `n_k`
+  per template, instead of a Gaussian tail.
+- Default line templates 50, 100, 300, 500 km/s; the fitted width is bounded at 45 km/s.
 - The documentation is split into a quickstart, a one-page method, and guides.
 
 ### Removed
