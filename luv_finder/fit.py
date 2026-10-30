@@ -52,7 +52,7 @@ REPORTED = {
 
 #: Lowest fitted line FWHM, km/s: a line a few channels wide would otherwise collapse below one channel,
 #: since the model samples a Gaussian at the channel centres (no Hanning or channel response).
-MIN_WIDTH = 70.0
+MIN_WIDTH = 45.0
 
 #: Channels a continuum fit averages: a bandwidth of this fraction of the frequency, whose smearing is that
 #: fraction of a source's offset from the phase centre (a few 0.1% of a beam at the PB's edge).

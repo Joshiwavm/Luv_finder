@@ -50,7 +50,7 @@ Assumptions, stated in the paper rather than lifted:
 - Frequencies are in the measurement set's frame; `Metadata.from_ms` warns unless
   it is LSRK (TOPO differs by up to ~30 km/s), so regrid with `mstransform` first.
 - The line model is sampled at the channel centres, with no channel response; the
-  fitted width is bounded at 70 km/s (`fit.MIN_WIDTH`).
+  fitted width is bounded at 45 km/s (`fit.MIN_WIDTH`).
 - A line whose sidelobes reach the floor (S/N times the response's sidelobe level,
   `catalogue.bright`) is fitted and its line subtracted from the visibilities, and the
   residual searched again, in rounds (`Run._without_bright`); the continuum sources
