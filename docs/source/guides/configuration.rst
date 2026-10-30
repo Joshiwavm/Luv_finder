@@ -29,7 +29,7 @@ keys, a value or a list each; a key left out takes its value from ``GRID_DEFAULT
 
    # configs/grids/default.yaml (comments trimmed): a blind search
    pb_limit: 0.2
-   width: [50, 100, 200, 400] # km/s
+   width: [50, 100, 300, 500] # km/s
 
 Filter options
 --------------

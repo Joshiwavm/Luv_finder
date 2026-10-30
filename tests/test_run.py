@@ -5,8 +5,10 @@ import pytest
 from astropy.table import Table
 
 from luv_finder.catalogue import duplicates
+from luv_finder.data import load
 from luv_finder.matchedfilter import window_groups
 from luv_finder.run import RUN_FILE, Run, unit_name
+from luv_finder.utils import C
 
 
 @pytest.fixture(scope="module")
@@ -90,6 +92,22 @@ def test_run_releases_stale_claims(run, tmp_path):
     assert other.release() == [unit] and not other.path(unit, ".claim").exists()
 
 
+def test_run_searches_only_the_baselines_longer_than_uv_min(run, data, tmp_path):
+    """The exports hold only the baselines longer than ``uv_min`` (kλ at the central frequency), and the same
+    output with another cut raises rather than search the old exports."""
+    kl = data.metadata.central_frequency / C / 1e3
+    cut = float(np.median(np.concatenate([np.hypot(c.u, c.v) for c in data.chunks])) * kl)
+    config = run.config | {"output": str(tmp_path / "cut"), "uv_min": cut}
+    long = Run(config)
+    long.search()
+    (unit,) = long.units
+    kept = load(long.exports(unit)).chunks
+    assert all(np.hypot(c.u, c.v).min() * kl >= cut for c in kept)
+    assert sum(c.u.size for c in kept) < sum(c.u.size for c in data.chunks) * 0.6
+    with pytest.raises(ValueError, match="uv_min"):
+        Run(config | {"uv_min": None}).search()
+
+
 def test_run_needs_data_and_output():
     with pytest.raises(ValueError, match="needs"):
         Run({"data": "x.npz"})
@@ -97,7 +115,7 @@ def test_run_needs_data_and_output():
 
 def test_window_groups_join_windows_that_overlap_or_nearly_meet():
     """Two tunings over 100-102 GHz join, and so does a window at their edge; a gap joins if narrower than
-    the widest template (400 km/s, 141 MHz at 106 GHz)."""
+    the widest template (500 km/s, 177 MHz at 106 GHz)."""
     ch = 0.01e9
     freqs = {
         0: np.arange(100e9, 101e9, ch),

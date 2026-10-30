@@ -47,7 +47,7 @@ SPECTRAL_ARRAYS = 4
 #: FWHM of a grid's default source shape, a point to the filter, in units of the resolution (a sigma of 1/10).
 POINT = 0.1 / FWHM_TO_SIGMA
 #: Template FWHMs (km/s) a grid searches unless it names its own.
-WIDTHS = (50.0, 100.0, 200.0, 400.0)
+WIDTHS = (50.0, 100.0, 300.0, 500.0)
 
 
 @partial(jax.jit, static_argnames="order")

@@ -44,7 +44,7 @@ from .matchedfilter import (
     window_groups,
 )
 from .model import C_KMS, CONTINUUM_ORDER
-from .utils import PB_LIMIT
+from .utils import PB_LIMIT, C
 
 #: Name of the config copy every run keeps in its output directory.
 RUN_FILE = "run.yaml"
@@ -57,6 +57,7 @@ DEFAULTS = {
     "grid": None,
     "pb_limit": PB_LIMIT,
     "max_channels": None,
+    "uv_min": None,
     "filter": {},
     "reliability": RELIABILITY,
     "near_miss": {"fidelity": 0.2, "max": 20},
@@ -128,9 +129,11 @@ class Run:
 
     Keys: ``data`` (measurement set or NPZ), ``output`` (directory), and optionally ``name``,
     ``grid`` (dict or grid YAML, as for :func:`~luv_finder.matchedfilter.build_grid`),
-    ``pb_limit``, ``max_channels`` per unit (see :func:`unit_plan`), ``filter`` (keyword arguments of
-    the matched filter), ``reliability`` (``floor``, ``k``, ``fidelity_min``, ``rule``), ``near_miss``
-    (``fidelity``, ``max``) and ``cores`` per worker. Relative paths are relative to the YAML file.
+    ``pb_limit``, ``max_channels`` per unit (see :func:`unit_plan`), ``uv_min`` (kλ: only the baselines
+    longer at the data's central frequency, e.g. to filter out a cluster's SZ decrement; default all, the
+    exports hold the cut), ``filter`` (keyword arguments of the matched filter), ``reliability``
+    (``floor``, ``k``, ``fidelity_min``, ``rule``), ``near_miss`` (``fidelity``, ``max``) and ``cores`` per
+    worker. Relative paths are relative to the YAML file.
     """
 
     def __init__(self, config: str | Path | dict):
@@ -222,7 +225,12 @@ class Run:
 
     def _write_config(self):
         self.output.mkdir(parents=True, exist_ok=True)
-        (self.output / RUN_FILE).write_text(yaml.safe_dump(self.config, sort_keys=False))
+        saved = self.output / RUN_FILE
+        if saved.exists() and any((self.output / "export").glob("*.npz")):
+            cut = yaml.safe_load(saved.read_text()).get("uv_min")
+            if cut != self.config["uv_min"]:
+                raise ValueError(f"the exports in {self.output / 'export'} hold uv_min {cut}; remove them first")
+        saved.write_text(yaml.safe_dump(self.config, sort_keys=False))
 
     def _spawn(self, workers):
         """``workers`` processes, each on its own slice of the cores, sharing the units by claims."""
@@ -372,6 +380,9 @@ class Run:
             chunks = (c for f in fields_in(data) for c in load(data, [f]).chunks if c.spw in spws)
         else:
             chunks = iter_chunks(data, self.metadata.ref, spws=spws, scales=scales)
+        if self.config["uv_min"]:
+            length = self.config["uv_min"] * 1e3 * C / self.metadata.central_frequency
+            chunks = (c.longer_than(length) for c in chunks)
         write_npz(str(part), self.metadata, chunks)
         os.replace(part, npz)
         saved = {"spws": np.array(sorted(scales), dtype=int)}

@@ -297,6 +297,12 @@ class Chunk:
         X, w = np.add.reduceat(self.X, starts, axis=0) * scale, np.add.reduceat(self.w, starts, axis=0) * scale
         return dataclasses.replace(self, freq=freq, X=X, w=w.astype(np.float32)), corr / corr[0]
 
+    def longer_than(self, length: float) -> Chunk:
+        """Only the rows of baselines at least ``length`` (m) long."""
+        keep = np.hypot(self.u, self.v) >= length
+        rows = {k: getattr(self, k)[keep] for k in ("u", "v", "time", "baseline", "scan")}
+        return dataclasses.replace(self, **rows, X=self.X[:, keep], w=self.w[:, keep])
+
     def uv_waves(self) -> tuple[np.ndarray, np.ndarray]:
         """``u`` and ``v`` in wavelengths, ``(n_chan, n_row)``."""
         k = self.freq[:, None] / C

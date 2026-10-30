@@ -91,9 +91,12 @@ def _autocorrelation(x: np.ndarray, m: np.ndarray, axes: tuple, lags: tuple, chu
 
 
 def _half_power(rho: np.ndarray, lags_ra: np.ndarray, lags_dec: np.ndarray) -> tuple[float, float, float]:
+    """The ellipse of the main lobe's ``rho >= 0.5`` pixels, each a cell of the lattice (its own variance
+    ``step^2 / 12``), so a lobe one pixel wide (short baselines cut) keeps a width."""
     labels = ndimage.label(rho >= 0.5)[0]
     i, j = np.nonzero(labels == labels[len(lags_ra) // 2, len(lags_dec) // 2])
-    variance, vectors = np.linalg.eigh(np.cov(np.stack([lags_ra[i], lags_dec[j]]), bias=True))
+    cell = np.diag([np.ptp(lags) / max(lags.size - 1, 1) for lags in (lags_ra, lags_dec)]) ** 2 / 12
+    variance, vectors = np.linalg.eigh(np.cov(np.stack([lags_ra[i], lags_dec[j]]), bias=True) + cell)
     minor, major = 2 * np.sqrt(np.maximum(variance, 0.0))
     return major, minor, np.degrees(np.arctan2(*vectors[:, 1])) % 180
 
