@@ -313,7 +313,9 @@ the false-alarm rate of the peaks: a blind search selects peaks among many
 correlated tests, whose <span class="math notranslate nohighlight">\(P_\mathrm{FA}\)</span> is not that of a single value.
 Candidates need a likelihood ratio
 <span class="math notranslate nohighlight">\(N_\mathrm{data}(\ge\gamma)/N_\mathrm{jackknife}(\ge\gamma) \ge 3\)</span> and a
-fidelity <span class="math notranslate nohighlight">\(\ge 0.6\)</span> (<a class="reference internal" href="guides/catalogue.html"><span class="doc">Catalogue and line fit</span></a>).</p>
+fidelity <span class="math notranslate nohighlight">\(\ge 0.6\)</span>, with <span class="math notranslate nohighlight">\(N_\mathrm{jackknife}\)</span> a model of the
+jackknife’s peak counts, <span class="math notranslate nohighlight">\(n_k (u/2.5)^m e^{-(u^2 - 2.5^2)/2}\)</span>
+(<a class="reference internal" href="guides/catalogue.html"><span class="doc">Catalogue and line fit</span></a>).</p>
 <p><strong>Mosaics.</strong> Each pointing is divided by its primary beam and the pointings are
 combined by inverse variance on one sky grid (<a class="reference internal" href="guides/mosaics.html"><span class="doc">Mosaics and the primary beam</span></a>).</p>
 </section>

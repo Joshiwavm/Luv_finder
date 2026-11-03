@@ -282,9 +282,13 @@ ellipsoid in position and frequency is what one source occupies;</p></li>
 ellipsoid, for the data, the jackknife and (as a diagnostic) the negated data;</p></li>
 <li><p>every data group gets the likelihood ratio <code class="docutils literal notranslate"><span class="pre">N_data(&gt;=</span> <span class="pre">S/N)</span> <span class="pre">/</span> <span class="pre">N_jackknife(&gt;=</span> <span class="pre">S/N)</span></code>
 (van Marrewijk et al. 2025, required &gt;= 3) and the fidelity <code class="docutils literal notranslate"><span class="pre">1</span> <span class="pre">-</span> <span class="pre">N_jackknife</span> <span class="pre">/</span> <span class="pre">N_data</span></code>
-per S/N bin, <code class="docutils literal notranslate"><span class="pre">N_jackknife</span></code> from a Gaussian tail fitted to the jackknife groups
-(González-López et al. 2019, required &gt;= 0.6). <code class="docutils literal notranslate"><span class="pre">detected</span></code> needs both (<code class="docutils literal notranslate"><span class="pre">rule=&quot;and&quot;</span></code>,
-the default) or either (<code class="docutils literal notranslate"><span class="pre">&quot;or&quot;</span></code>); the defaults are <code class="docutils literal notranslate"><span class="pre">catalogue.RELIABILITY</span></code>.</p></li>
+per S/N bin (González-López et al. 2019, required &gt;= 0.6). <code class="docutils literal notranslate"><span class="pre">N_jackknife</span></code> is a model
+of the jackknife’s peak counts, <code class="docutils literal notranslate"><span class="pre">N(&gt;=</span> <span class="pre">u)</span> <span class="pre">=</span> <span class="pre">n_k</span> <span class="pre">(u/2.5)^m</span> <span class="pre">exp(-(u^2</span> <span class="pre">-</span> <span class="pre">2.5^2)/2)</span></code>
+(<a class="reference internal" href="../generated/luv_finder.catalogue.html#luv_finder.catalogue.peak_exponent" title="luv_finder.catalogue.peak_exponent"><code class="xref py py-func docutils literal notranslate"><span class="pre">peak_exponent()</span></code></a>): one exponent <code class="docutils literal notranslate"><span class="pre">m</span></code> per search, with a
+prior of width 1 about the field’s dimension minus one, and <code class="docutils literal notranslate"><span class="pre">n_k</span></code> per template,
+since narrow templates make more trials. Fewer than 10 noise peaks detect nothing.
+<code class="docutils literal notranslate"><span class="pre">detected</span></code> needs both tests (<code class="docutils literal notranslate"><span class="pre">rule=&quot;and&quot;</span></code>, the default) or either (<code class="docutils literal notranslate"><span class="pre">&quot;or&quot;</span></code>); the
+defaults are <code class="docutils literal notranslate"><span class="pre">catalogue.RELIABILITY</span></code>.</p></li>
 </ol>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">luv_finder.catalogue</span><span class="w"> </span><span class="kn">import</span> <span class="n">catalogue</span>
 
@@ -297,6 +301,18 @@ the default) or either (<code class="docutils literal notranslate"><span class="
 <a class="reference internal" href="../generated/luv_finder.catalogue.html#luv_finder.catalogue.merge_catalogues" title="luv_finder.catalogue.merge_catalogues"><code class="xref py py-func docutils literal notranslate"><span class="pre">merge_catalogues()</span></code></a>, which recomputes the reliability over
 the whole volume and counts a line found by two units once (<code class="docutils literal notranslate"><span class="pre">duplicate_of</span></code>). The
 template’s <code class="docutils literal notranslate"><span class="pre">bmaj</span></code>, <code class="docutils literal notranslate"><span class="pre">bmin</span></code> and <code class="docutils literal notranslate"><span class="pre">width</span></code> columns are FWHM.</p>
+<p>A line whose sidelobes reach the floor (<a class="reference internal" href="../generated/luv_finder.catalogue.html#luv_finder.catalogue.bright" title="luv_finder.catalogue.bright"><code class="xref py py-func docutils literal notranslate"><span class="pre">bright()</span></code></a>) is fitted,
+subtracted from the visibilities and the unit searched again, up to five rounds; the
+catalogue’s <code class="docutils literal notranslate"><span class="pre">round</span></code> column says when (0: never subtracted).</p>
+</section>
+<section id="continuum-sources">
+<h2>Continuum sources<a class="headerlink" href="#continuum-sources" title="Link to this heading">¶</a></h2>
+<p>The filter fits a continuum at every position with that position’s lines masked, so
+the search also yields a continuum per window at no extra cost.
+<a class="reference internal" href="../generated/luv_finder.catalogue.html#luv_finder.catalogue.continuum_catalogue" title="luv_finder.catalogue.continuum_catalogue"><code class="xref py py-func docutils literal notranslate"><span class="pre">continuum_catalogue()</span></code></a> catalogues it with the same tests (a
+peak exponent about 1), and a run writes <code class="docutils literal notranslate"><span class="pre">continuum.ecsv</span></code>: each source fitted in the
+visibilities as a Gaussian with a flux density per window, its in-band spectrum and
+spectral index <code class="docutils literal notranslate"><span class="pre">alpha</span></code>, bright ones subtracted in rounds like the lines.</p>
 </section>
 <section id="fitting-the-detected-lines">
 <h2>Fitting the detected lines<a class="headerlink" href="#fitting-the-detected-lines" title="Link to this heading">¶</a></h2>
@@ -389,6 +405,7 @@ writes the test figures to <code class="docutils literal notranslate"><span clas
             <ul>
 <li><a class="reference internal" href="#">Catalogue and line fit</a><ul>
 <li><a class="reference internal" href="#catalogue">Catalogue</a></li>
+<li><a class="reference internal" href="#continuum-sources">Continuum sources</a></li>
 <li><a class="reference internal" href="#fitting-the-detected-lines">Fitting the detected lines</a></li>
 <li><a class="reference internal" href="#diagnostic-figures">Diagnostic figures</a></li>
 </ul>
