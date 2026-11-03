@@ -120,6 +120,7 @@ class MockObservation:
         self.cube_shape = tuple(cube_shape)
         self.dv = dv
         self.freq_center = freq_center
+        self.reference = freq_center  # the continuum's reference frequency, shared by every window
         self.cell = cell
         self.sources = sources
         default = "_".join(
@@ -230,7 +231,7 @@ class MockObservation:
             if "continuum" in src:
                 flux_cont = src["continuum"]["snr"] * self.sensitivity / np.sqrt(nchan)
                 nu = f_start + df * chans
-                slope = (nu / u.Quantity(self.freq_center).to(u.GHz).value) ** src["continuum"].get("index", 0.0)
+                slope = (nu / u.Quantity(self.reference).to(u.GHz).value) ** src["continuum"].get("index", 0.0)
                 self.cube += flux_cont * slope[:, None, None] * spatial[None]
                 print(f"source {src['position']}: continuum {flux_cont:.3e} Jy/chan")
         return self.cube

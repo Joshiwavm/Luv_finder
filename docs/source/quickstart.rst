@@ -29,7 +29,7 @@ Catalogues come from a run: one YAML file in, every product in one directory.
    grid: configs/grids/line13_line9.yaml   # or the grid itself, as a mapping
 
 Optional keys are ``name``, ``pb_limit``, ``max_channels`` (the channels a unit of the
-search holds at most), ``filter`` (``continuum_order``, ``channel_noise``),
+search holds at most), ``uv_min`` (kλ: only longer baselines), ``filter`` (``continuum_order``, ``channel_noise``),
 ``reliability`` (``floor``, ``k``, ``fidelity_min``, ``rule``), ``near_miss``
 (``fidelity``, ``max``) and ``cores``; an unknown key raises an error.
 

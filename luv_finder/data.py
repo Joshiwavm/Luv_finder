@@ -279,6 +279,30 @@ class Chunk:
         """``X`` and ``w`` times ``factor`` (per visibility, or broadcast): weights rescaled, data as they were."""
         return dataclasses.replace(self, X=self.X * factor, w=(self.w * factor).astype(np.float32))
 
+    def binned(self, n: int, rho=None) -> tuple[Chunk, np.ndarray]:
+        """The channels averaged in runs of ``n`` (the last shorter unless ``n`` divides them) and the binned
+        channels' correlation.
+
+        ``X`` and ``w`` add, an inverse-variance average at each run's mean frequency. Under the channels'
+        correlation ``rho`` (``(1, rho_1, ...)``) a run's variance is ``sum_kl rho_|k-l|`` times the independent
+        one: the weights are divided by it, and neighbouring runs correlate by the ``rho`` spanning them.
+        """
+        rho = np.ones(1) if rho is None else np.asarray(rho, dtype=float)
+        starts = np.arange(0, self.freq.size, n)
+        runs = np.arange(-(-(rho.size - 1) // n) + 1)[:, None, None]  # the runs a correlation spans
+        lag = np.abs(np.arange(n)[:, None] - np.arange(n)[None, :] + n * runs)
+        corr = np.where(lag < rho.size, rho[np.minimum(lag, rho.size - 1)], 0.0).sum(axis=(1, 2))
+        scale = n / corr[0]
+        freq = np.add.reduceat(self.freq, starts) / np.diff(np.r_[starts, self.freq.size])
+        X, w = np.add.reduceat(self.X, starts, axis=0) * scale, np.add.reduceat(self.w, starts, axis=0) * scale
+        return dataclasses.replace(self, freq=freq, X=X, w=w.astype(np.float32)), corr / corr[0]
+
+    def longer_than(self, length: float) -> Chunk:
+        """Only the rows of baselines at least ``length`` (m) long."""
+        keep = np.hypot(self.u, self.v) >= length
+        rows = {k: getattr(self, k)[keep] for k in ("u", "v", "time", "baseline", "scan")}
+        return dataclasses.replace(self, **rows, X=self.X[:, keep], w=self.w[:, keep])
+
     def uv_waves(self) -> tuple[np.ndarray, np.ndarray]:
         """``u`` and ``v`` in wavelengths, ``(n_chan, n_row)``."""
         k = self.freq[:, None] / C

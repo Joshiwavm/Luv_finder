@@ -28,16 +28,31 @@ pointing in one call; the whole Band 3 mosaic, 195 x 183 positions x 3 widths x
 
 From a search to a catalogue (`catalogue.py`, section 2.1): local maxima are
 grouped by the response shape measured on the jackknife, and every group is
-tested with a likelihood ratio and a fidelity against the jackknife's groups;
+tested with a likelihood ratio and a fidelity against a model of the jackknife's
+peak counts, `N(>= u) = n_k (u / 2.5)^m exp(-(u^2 - 2.5^2) / 2)`: one exponent `m`
+per search (a prior of width 1 about the field's dimension minus one), the count
+`n_k` per template, since narrow templates make more independent trials (ASPECS);
 it is detected when it passes both. The S/N accounts for the correlation between
 channels that ALMA's Hanning response leaves, measured on the jackknife. The
 continuum is a degree-1 polynomial fitted with the template, with every line at
 S/N >= 5 at that position masked over one template FWHM; the fit does the same.
-On 2026-10-19 the J0459 Band 3 mosaic gives 12 lines and Band 1 4. With the windows
-joined (2026-10-22 rerun) ASPECS 3 mm gives 12 and 1.2 mm 6, all published (12 of the
-16 published 3 mm lines): two 3 mm lines that the per-window search split at a window
-edge are now one, at S/N 8.9 and 10.4 instead of 6.9 and 9.3, and one at S/N 6.2 falls
-to a near miss (fidelity 0.59).
+Final runs (2026-10-28 to 11-03; templates 50-500 km/s, 3 mm regridded to LSRK):
+
+| Field | Lines | Published recovered | Continuum | Published recovered |
+|---|---|---|---|---|
+| ASPECS 3 mm | 19 | 16/16 (GL19), flux 0.90 | 6 | 6/6, flux 0.98 |
+| ASPECS 1.2 mm | 12 | 6/48 | 42 | 31/35 (GL20), flux 1.10 |
+| J0459 Band 3, `uv_min: 10` | 15 | - | 2 | - |
+| J0459 Band 1, `uv_min: 10` | 4 | - | 3 | - |
+
+The 3 mm lines the TOPO run missed (4 of 16) are found in LSRK; its 3 new lines sit
+at S/N 5.5-5.7. The 6 new 1.2 mm lines (S/N 5.8-6.0) are likely noise: the negated
+data hold 14 peaks above 5.75 where the jackknife predicts 4 (section 2.1). The 4
+GL20 sources missed have published S/N 3.3-3.9. On J0459 the cut keeps the lines
+(Band 3: 14 in common with all baselines, flux ratio 1.05, S/N ratio 0.96) and removes
+the SZ ring (Band 1 continuum 23 -> 3). The search costs 1.35x the 2026-10-22 one at
+3 mm (123 h over units), the fourth template's share, so the continuum is free; the
+fit is now the slow step (21 h at 3 mm).
 
 Assumptions, stated in the paper rather than lifted:
 
@@ -47,9 +62,11 @@ Assumptions, stated in the paper rather than lifted:
 - Frequencies are in the measurement set's frame; `Metadata.from_ms` warns unless
   it is LSRK (TOPO differs by up to ~30 km/s), so regrid with `mstransform` first.
 - The line model is sampled at the channel centres, with no channel response; the
-  fitted width is bounded at 70 km/s (`fit.MIN_WIDTH`).
-- A line at S/N >= 100 is flagged (`catalogue.bright_lines`), not subtracted: its
-  sidelobes reach a few sigma elsewhere.
+  fitted width is bounded at 45 km/s (`fit.MIN_WIDTH`).
+- A line whose sidelobes reach the floor (S/N times the response's sidelobe level,
+  `catalogue.bright`) is fitted and its line subtracted from the visibilities, and the
+  residual searched again, in rounds (`Run._without_bright`); the continuum sources
+  likewise (`Run.continuum_sources`). Fainter lines' sidelobes stay.
 - A line is one Gaussian: two lines within about 2 FWHM at one position are one
   group and one fit, and a multi-peaked profile can be one group or several (no
   grouping rule).
@@ -160,12 +177,15 @@ visibilities, so the Band 1 default grid (21,675 points, 415 k rows in the
   at 31 GB, 11 chunks in 92 h, as each chunk also collapses its neighbouring blocks
   whole (about 1.3x the per-window search's CPU). J0459 needs no chunks (one unit per
   group).
-- **Fidelity per template width.** ASPECS computes the fidelity per kernel width:
-  narrow templates have more independent trials than broad ones at the same S/N.
-  The catalogue pools all templates. Its noise is a Gaussian tail fitted to the
-  jackknife groups, as ASPECS fits its negatives; an erf fitted to the binned
-  fidelity failed at 1.2 mm, where the jackknife's 7% fewer groups near the
-  floor held the low bins at 0.05 and set the threshold at S/N 7.9 instead of 6.7.
+- **Fit time.** The 3 mm fit takes 21 h for 19 lines and their near misses, J0459
+  Band 1 without the cut 4 h (2x its search); not profiled.
+- **Sparse jackknife.** At 1.2 mm each field is seen once per visit, so the jackknife
+  pairs integrations far apart and under-predicts the negated data's tail above S/N
+  5.5 (4 against 14 peaks above 5.75).
+- **Noise model.** Fitted on S/N 2.5-4 of the mocks' jackknife and negated data, the
+  peak-count model predicts N(>= 4) within 15% (41/38/49 for 36/40/46 observed), the
+  erfc tail about 2x and a Gaussian of sigma 1 about 0.2x (2026-10-28). A continuum has
+  10-50 noise peaks above 2.5, too few to fit `m`; hence the prior.
 
 ### 2.2 Joint Band 1 and Band 3 identification
 One pointing per band. A line in each band at the same sky position is a redshift
@@ -174,14 +194,15 @@ Needs co-spatial matching with a tolerance set by the coarser beam, a way to
 combine two independent significances, and a catalogue format that spans bands.
 
 ### 2.3 Continuum sources
-The same data hold the continuum: the polynomial the filter already fits at every
-position. A continuum catalogue needs no matched filter along frequency, only the
-spatial collapse summed over channels (or the order-0 term per window), PB-corrected
-and combined like the lines, with the same reliability against the jackknife (likelihood
-ratio and fidelity per S/N bin). Open: the jackknife cancels the continuum as it
-cancels the lines, so it is the null for both; confused or extended sources need the
-non-Gaussian templates of section 3; and the line catalogue could then flag lines on a
-continuum source.
+`continuum.ecsv`: the continuum the filter fits at every position without its lines,
+over every window of every unit, catalogued with the same tests, its bright sources
+fitted and subtracted in rounds, each with its in-band spectrum and `alpha`. Open:
+- resolved sources are fitted 5-30% low, growing with size (6": 0.69-0.81 of the truth);
+- large-scale sky signal is not noise: the SZ decrement of J0459 and its positive ring
+  (no short spacings) give 20 of 23 Band 1 continuum detections, fitted at 50-120".
+  J0459 now runs with `uv_min: 10` (kλ, from the uv-radial profiles of
+  arXiv:2310.06120);
+- confused or extended sources need the non-Gaussian templates of section 3.
 
 ## 3. Sources that are not Gaussians
 

@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import functools
 import os
-import warnings
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -504,86 +503,79 @@ def _erf_plot(ax, bins, xlim, **style):
 
 @_styled
 def reliability_check(cat, plots_dir=None, name="reliability"):
-    """Counts, likelihood ratio and fidelity of a catalogue against the jackknife, its noise reference.
+    """Counts, likelihood ratio and fidelity of a catalogue against its noise model.
 
     ``cat`` is the output of :func:`luv_finder.catalogue.catalogue` (its ``meta`` holds what is
     plotted, so a subset of its rows works too). Left: cumulative group counts N(>= S/N) of the
-    data, the jackknife and the negated data (a diagnostic only), with the detected rows on the
-    data curve, and the Gaussian tail fitted to the jackknife's. Middle: the likelihood ratio
-    N_data / N_jackknife at every data group, a lower limit (caret) where no jackknife group is as
-    bright, against the threshold ``k`` and the lowest S/N above it. Right: the binned fidelity
-    ``1 - N_jackknife / N_data``, the fidelity from the jackknife's tail with an erf through it
-    (:func:`erf_curve`, display only) and the lowest S/N reaching ``fidelity_min``, and both against
-    the negated data (as ASPECS measures it) for comparison. The tails and the
-    thresholds are left out where they are NaN.
+    data, the jackknife and the negated data (a diagnostic only) from the noise floor, with the
+    detected rows on the data curve, and the noise model: the peak counts of every kernel summed.
+    Middle: the likelihood ratio of every row against its kernel's model, against the threshold ``k``
+    and the lowest S/N above it. Right: the binned fidelity ``1 - N_jackknife / N_data``, the
+    model's fidelity with an erf through it (:func:`erf_curve`, display only) and the lowest S/N
+    reaching ``fidelity_min``, and the binned fidelity against the negated data (as ASPECS measures
+    it) for comparison. The model and the thresholds are left out where they are NaN.
     """
     from matplotlib.ticker import LogFormatter
-    from scipy import special
 
-    from .catalogue import fidelity, likelihood
+    from .catalogue import fidelity, noise_above
 
     meta = cat.meta
-    floor, k, fidelity_min = meta["floor"], meta["k"], meta["fidelity_min"]
+    floor, k, fidelity_min, low = meta["floor"], meta["k"], meta["fidelity_min"], meta["noise_floor"]
     data, jackknife, negative = (np.sort(meta[f"snr_{key}"]) for key in ("data", "jackknife", "negative"))
     detected = np.asarray(cat["snr"])[np.asarray(cat["detected"], dtype=bool)]
     xlim = (floor, data.max(initial=floor) + 0.5)
+    n_noise = sum(kernel["n_jackknife"] for kernel in meta["kernels"])
+
+    def model(u):
+        return noise_above(u, n_noise, meta["noise_exponent"], low)
 
     fig, (counts, ratio, fid) = _subplots(1, 3, figsize=(16, 4.5))
     styles = {"data": dict(c="k"), "jackknife": dict(c="C0"), "negated data": dict(c="0.5", ls="--")}
     for (label, style), values in zip(styles.items(), (data, jackknife, negative), strict=True):
-        n = np.r_[len(values), _count_above(values, values)]
+        start = floor if label == "data" else low
+        n = np.r_[_count_above(values, start), _count_above(values, values)]
         shown = n > 0
-        counts.step(np.r_[floor, values][shown], n[shown], where="pre", label=label, **style)
+        counts.step(np.r_[start, values][shown], n[shown], where="pre", label=label, **style)
     counts.plot(detected, _count_above(data, detected), "o", c="C3", ms=6, label="detected")
-    amplitude, sigma = meta["noise_amplitude"], meta["noise_sigma"]
-    if np.isfinite([amplitude, sigma]).all():
-        x = np.linspace(*xlim, 200)
-        counts.plot(x, amplitude * special.erfc(x / (np.sqrt(2) * sigma)), c="C1", label="jackknife tail")
+    if np.isfinite(meta["noise_exponent"]):
+        x = np.linspace(low, xlim[1], 200)
+        counts.plot(x, model(x), c="C1", label=f"noise model, m {meta['noise_exponent']:.2f}")
     counts.set_ylim(bottom=0.7)
     counts.set_ylabel(r"Groups with S/N $\geq$ abscissa")
 
-    value, lower = likelihood(data, jackknife)
-    for is_limit, marker, label in ((False, "o", r"$\Lambda$"), (True, "^", "lower limit")):
-        use = lower == is_limit
-        ratio.plot(data[use], value[use], marker, c="k", mfc="none" if is_limit else "k", ms=5, ls="", label=label)
+    ratio.plot(cat["snr"], cat["likelihood"], "o", c="k", ms=5, ls="", label=r"$\Lambda$")
     ratio.axhline(k, c="C3", ls="--", lw=1, label="k")
-    ratio.set_ylabel(r"Likelihood ratio $\Lambda$ = N$_{data}$ / N$_{jackknife}$")
+    ratio.set_ylabel(r"Likelihood ratio $\Lambda$ = N$_{data}$ / N$_{noise}$")
 
     bins = meta["fidelity_bins"]
     fid.errorbar(
         bins["snr"], bins["fidelity"], bins["error"], fmt="o", c="k", ecolor="0.6", ms=4, capsize=2, label="binned"
     )
-    fid.plot(bins["snr"], bins["model"], ".", c="C1", label="jackknife tail")
+    fid.plot(bins["snr"], bins["model"], ".", c="C1", label="noise model")
     _erf_plot(fid, bins, xlim, c="C1", label="erf")
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore")
-        values, (_, s_neg), bins_neg = fidelity(data, negative, floor)
+    bins_neg = fidelity(data, negative[negative >= floor], model, floor)[1]
     fid.plot(bins_neg["snr"], bins_neg["fidelity"], "s", mfc="none", c="0.45", ms=4,
              label="binned, negated")  # fmt: skip
-    if np.isfinite(s_neg):
-        fid.plot(bins_neg["snr"], bins_neg["model"], ".", c="0.45", label="negated tail")
-        _erf_plot(fid, bins_neg, xlim, c="0.45", ls="--", label="erf, negated")
     fid.axhline(fidelity_min, c="C3", ls="--", lw=1, label="fidelity_min")
     fid.set_ylim(-0.05, 1.05)
-    fid.set_ylabel(r"Fidelity 1 $-$ N$_{jackknife}$ / N$_{data}$")
+    fid.set_ylabel(r"Fidelity 1 $-$ N$_{noise}$ / N$_{data}$")
 
     for ax, key in ((ratio, "snr_likelihood"), (fid, "snr_fidelity")):
         if np.isfinite(meta[key]):
             ax.axvline(meta[key], c="C3", ls=":", lw=1, label="threshold")
-    passing = data[values >= fidelity_min] if np.isfinite(s_neg) else np.array([])
     titles = (
-        f"Counts: {len(data)} data, {len(jackknife)} jackknife, {len(negative)} negated"
-        + (rf"; tail $\sigma$ {sigma:.3f}" if np.isfinite(sigma) else ""),
+        f"Counts: {len(data)} data, {len(jackknife)} jackknife, {len(negative)} negated",
         rf"Likelihood ratio: $\Lambda \geq$ {k:g}"
         + (f" from S/N {meta['snr_likelihood']:.2f}" if np.isfinite(meta["snr_likelihood"]) else ""),
         f"Fidelity: {fidelity_min:g}"
-        + (f" at S/N {meta['snr_fidelity']:.2f}" if np.isfinite(meta["snr_fidelity"]) else "")
-        + (f" (negated {passing.min():.2f})" if passing.size else ""),
+        + (f" at S/N {meta['snr_fidelity']:.2f}" if np.isfinite(meta["snr_fidelity"]) else ""),
     )
     for ax, title in zip((counts, ratio, fid), titles, strict=True):
         ax.set_title(title)
-        ax.set_xlim(xlim)
         ax.set_xlabel("S/N")
+    counts.set_xlim(low, xlim[1])
+    for ax in (ratio, fid):
+        ax.set_xlim(xlim)
     for ax in (counts, ratio):
         ax.set_yscale("log")
         plain = LogFormatter(minor_thresholds=(2, 0.5))
@@ -679,7 +671,7 @@ def passes(cat) -> np.ndarray:
     """Which reliability test each row passes: ``both``, ``likelihood``, ``fidelity`` or ``none``."""
     from .catalogue import passes as tests
 
-    columns = ("likelihood", "likelihood_lower_limit", "fidelity")
+    columns = ("likelihood", "fidelity")
     if not set(columns) <= set(cat.colnames) or "k" not in cat.meta:
         return np.full(len(cat), "both")
     lr, fid = tests(*(cat[c] for c in columns), cat.meta["k"], cat.meta["fidelity_min"])
@@ -754,6 +746,26 @@ def line_spectra_check(cat, span=3.0, plots_dir=None, name="line_spectra"):
         ax.set_title(f"#{row['id']}  S/N {row['snr']:.1f}", fontsize=10)
         ax.set_xlabel("frequency [GHz]")
         ax.set_ylabel("flux / fitted peak")
+    _frame_note(fig, passed)
+    return _save(fig, plots_dir, name)
+
+
+@_styled
+def continuum_spectra_check(cat, plots_dir=None, name="continuum_spectra"):
+    """Each continuum source's flux density per window with ``flux (nu / freq_ghz)^alpha`` over it."""
+    keep = np.array([str(i) in cat.meta.get("spectra", {}) for i in cat["id"]], dtype=bool)
+    rows, passed = [r for r, k in zip(cat, keep, strict=True) if k], passes(cat)[keep]
+    fig, axes = _panels(len(rows), 3.2)
+    for ax, row, p in zip(axes, rows, passed, strict=False):
+        _frame(ax, p)
+        sp = {k: np.asarray(v) for k, v in cat.meta["spectra"][str(row["id"])].items()}
+        ax.errorbar(sp["freq_ghz"], 1e3 * sp["flux"], 1e3 * sp["error"], fmt="o", c="k", ms=4)
+        f = np.linspace(sp["freq_ghz"].min(), sp["freq_ghz"].max(), 50)
+        alpha = row["alpha"] if np.isfinite(row["alpha"]) else 0.0
+        ax.plot(f, 1e3 * row["flux"] * (f / row["freq_ghz"]) ** alpha, c="C3", lw=1.5)
+        ax.set_title(f"#{row['id']}  S/N {row['snr']:.1f}  alpha {row['alpha']:.2f}", fontsize=10)
+        ax.set_xlabel("frequency [GHz]")
+        ax.set_ylabel("flux density [mJy]")
     _frame_note(fig, passed)
     return _save(fig, plots_dir, name)
 

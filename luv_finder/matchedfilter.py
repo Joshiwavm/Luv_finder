@@ -14,7 +14,7 @@ has unit variance under the null.
 from __future__ import annotations
 
 import dataclasses
-from collections.abc import Iterable, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
 from functools import partial
 from itertools import product
@@ -36,6 +36,9 @@ GRID_DEFAULTS = {"dra": 0.0, "ddec": 0.0, "bmin": 0.0, "bmaj": 0.0, "pa": 0.0, "
 #: A line whose response peaks at ``MASK_SNR`` or more at a position is left out of the continuum fit
 #: there, within ``MASK_FWHM`` template FWHM of its peak, so it does not bend the continuum of the others.
 MASK_SNR, MASK_FWHM = 5.0, 1.0
+#: Template FWHM a line masks from the continuum of its position (:func:`_continuum`): a Gaussian line keeps 1.8%
+#: of its flux beyond 1 FWHM, 0.9 sigma of a S/N 100 line's continuum, and 1e-6 beyond 2.
+CONTINUUM_MASK_FWHM = 2.0
 #: The brightest peaks per position that may mask (a position rarely holds more lines at ``MASK_SNR``).
 MASK_PEAKS = 4
 #: Arrays of a block's positions x templates x centres that :func:`_spectral` holds at once (measured on ASPECS
@@ -44,7 +47,7 @@ SPECTRAL_ARRAYS = 4
 #: FWHM of a grid's default source shape, a point to the filter, in units of the resolution (a sigma of 1/10).
 POINT = 0.1 / FWHM_TO_SIGMA
 #: Template FWHMs (km/s) a grid searches unless it names its own.
-WIDTHS = (100.0, 200.0, 300.0, 400.0)
+WIDTHS = (50.0, 100.0, 300.0, 500.0)
 
 
 @partial(jax.jit, static_argnames="order")
@@ -127,12 +130,7 @@ def _masked(peak, which, sig, num0, weight, freq, centres, widths, profile, basi
     sums minus the masked channels' part. The variance is exact for independent channels, scaled by the
     channel correlation's ``ratio`` of the unmasked fit. Where nothing is masked this is the joint fit.
     """
-    velocity = jnp.abs(freq[None, :] / centres[:, None] - 1) * C_KMS  # (n_centre, n_chan)
-    near = (velocity[None] <= MASK_FWHM * widths[:, None, None]).astype(float)  # (n_width, n_centre, n_chan)
-    strength, at = jax.lax.top_k(
-        peak, min(MASK_PEAKS, peak.shape[-1])
-    )  # the brightest peaks' S/N and centre, (n_shape, n_dra, n_ddec, k)
-    reach = near[jnp.take_along_axis(which, at, axis=-1), at]  # the channels each masks, (..., k, n_chan)
+    near, strength, at, reach = _lines(peak, which, freq, centres, widths)
     offset = jnp.abs(centres[at][..., None, None, :] / centres[:, None] - 1) * C_KMS  # (..., 1, n_centre, k)
     masks = (strength[..., None, None, :] > 0) & (
         offset > MASK_FWHM * widths[:, None, None]
@@ -155,6 +153,42 @@ def _masked(peak, which, sig, num0, weight, freq, centres, widths, profile, basi
     ok = covered[:, :, None, None] & (var > 1e-9 * v0[:, :, None, None])
     root = jnp.sqrt(jnp.where(ok, var_c, 1.0))
     return jnp.where(ok, num / root, 0.0), jnp.where(ok, root / jnp.where(ok, var, 1.0), jnp.nan)
+
+
+def _lines(peak, which, freq, centres, widths, fwhm=MASK_FWHM):
+    """The ``MASK_PEAKS`` brightest lines per position (``peak``, ``which``: :func:`_peaks`) and their channels.
+
+    Returns ``near`` (n_width, n_centre, n_chan), 1 within ``fwhm`` template FWHM of each centre; the lines'
+    S/N and centre ``strength``, ``at`` (n_shape, n_dra, n_ddec, k); and the channels each masks, ``reach``
+    (..., k, n_chan).
+    """
+    velocity = jnp.abs(freq[None, :] / centres[:, None] - 1) * C_KMS  # (n_centre, n_chan)
+    near = (velocity[None] <= fwhm * widths[:, None, None]).astype(float)
+    strength, at = jax.lax.top_k(peak, min(MASK_PEAKS, peak.shape[-1]))
+    return near, strength, at, near[jnp.take_along_axis(which, at, axis=-1), at]
+
+
+@jax.jit
+def _line_free(snr, freq, centres, widths):
+    """1 but in the channels of the lines peaking at ``MASK_SNR`` or more at each position (``snr``, a window's
+    search), ``CONTINUUM_MASK_FWHM`` of their template's FWHM around the peak: ``(n_shape, n_dra, n_ddec, n_chan)``."""
+    _, strength, _, reach = _lines(*_peaks(snr), freq, centres, widths, CONTINUUM_MASK_FWHM)
+    return 1.0 - jnp.max((strength > 0)[..., None] * reach, axis=-2)
+
+
+@jax.jit
+def _continuum(sig, weight, rho, keep):
+    """A flat spectrum fitted at every position in the channels ``keep`` (:func:`_line_free`): ``num``, ``var``,
+    ``var_c``, each ``(n_shape, n_dra, n_ddec)``. ``F = num / var`` with variance ``var_c / var^2`` under the
+    channel correlation ``rho``; without the lines' channels, the lines do not leak into the continuum.
+    """
+    num = jnp.einsum("sabm,msab->sab", keep, sig)
+    var = jnp.einsum("sabm,ms->sab", keep, weight)
+    h = keep * jnp.sqrt(weight.T)[:, None, None, :]
+    var_c = jnp.sum(h * h, axis=-1)
+    for lag in range(1, rho.size):
+        var_c = var_c + 2 * rho[lag] * jnp.sum(h[..., :-lag] * h[..., lag:], axis=-1)
+    return num, var, var_c
 
 
 def window_groups(freqs: dict, widest: float = max(WIDTHS)) -> list[list]:
@@ -282,6 +316,8 @@ class SearchResult(_Grid):
     error: np.ndarray
     coverage: np.ndarray
     jackknife: SearchResult | None = None
+    #: The flat-spectrum continuum per window, a search with one "channel" per window (:func:`continuum`).
+    continuum: SearchResult | None = None
 
     @property
     def flux(self) -> np.ndarray:
@@ -314,16 +350,21 @@ def _correct(result: SearchResult, data: DataHandler, pb_limit: float) -> Search
     """``result`` of one pointing corrected for its primary beam in place: the error over the PB, the S/N
     unchanged, NaN below ``pb_limit``."""
     _one_field(data)
-    pb = _beam(
-        result.axes["dra"], result.axes["ddec"], data.chunks[0].offset, result.freqs, data.metadata.dish_diameter
-    )
-    keep = pb >= pb_limit
-    scale = np.where(keep, pb, np.nan)[:, :, None]
-    for r in filter(None, (result, result.jackknife)):
+    for r in _parts(result):
+        pb = _beam(r.axes["dra"], r.axes["ddec"], data.chunks[0].offset, r.freqs, data.metadata.dish_diameter)
+        keep = pb >= pb_limit
         np.copyto(r.snr, np.nan, where=~keep[:, :, None])
-        r.error /= scale
+        r.error /= np.where(keep, pb, np.nan)[:, :, None]
         r.coverage = np.where(keep, pb, 0.0)
     return result
+
+
+def _parts(r: SearchResult) -> list[SearchResult]:
+    """The searches ``r`` holds: itself, its jackknife, its continuum and the continuum's jackknife."""
+    out = [r, r.jackknife]
+    if r.continuum is not None:
+        out += [r.continuum, r.continuum.jackknife]
+    return [x for x in out if x is not None]
 
 
 def pb_corrected(result: SearchResult, data: DataHandler, pb_limit: float = PB_LIMIT) -> SearchResult:
@@ -333,7 +374,9 @@ def pb_corrected(result: SearchResult, data: DataHandler, pb_limit: float = PB_L
         return (
             None
             if r is None
-            else dataclasses.replace(r, snr=r.snr.copy(), error=r.error.copy(), jackknife=copy(r.jackknife))
+            else dataclasses.replace(
+                r, snr=r.snr.copy(), error=r.error.copy(), jackknife=copy(r.jackknife), continuum=copy(r.continuum)
+            )
         )
 
     return _correct(copy(result), data, pb_limit)
@@ -349,19 +392,21 @@ class _Mosaic:
     wflux: np.ndarray
     coverage: np.ndarray
     jackknife: _Mosaic | None
+    continuum: _Mosaic | None = None
 
     @classmethod
     def of(cls, r: SearchResult, own: bool = False) -> _Mosaic:
         """The sums of one PB-corrected pointing, ``w = 1 / error^2`` and ``w flux = snr / error``; made in
         place of ``r``'s arrays when it is ``own`` (``r`` is then spent)."""
         jackknife = None if r.jackknife is None else cls.of(r.jackknife, own)
+        continuum = None if r.continuum is None else cls.of(r.continuum, own)
         w, wflux = (r.error, r.snr) if own else (r.error.copy(), r.snr.copy())
         with np.errstate(divide="ignore", invalid="ignore"):
             np.divide(wflux, w, out=wflux)
             np.divide(1.0, w, out=w)
             np.multiply(w, w, out=w)
         return cls(dict(r.axes), r.freqs, np.nan_to_num(w, copy=False), np.nan_to_num(wflux, copy=False),
-                   r.coverage**2, jackknife)  # fmt: skip
+                   r.coverage**2, jackknife, continuum)  # fmt: skip
 
     def add(self, other: _Mosaic) -> None:
         """Add another pointing in place; the lattice grows only where it reaches beyond."""
@@ -376,10 +421,12 @@ class _Mosaic:
             total, part = getattr(self, name), getattr(other, name)
             for k, i in enumerate(ira):  # a row at a time: no pointing-size gather
                 total[i, idec] += part[k]
-        if self.jackknife is None or other.jackknife is None:
-            self.jackknife = None
-        else:
-            self.jackknife.add(other.jackknife)
+        for name in ("jackknife", "continuum"):
+            mine, theirs = getattr(self, name), getattr(other, name)
+            if mine is None or theirs is None:
+                setattr(self, name, None)
+            else:
+                mine.add(theirs)
 
     def grow(self, dra, ddec) -> tuple[np.ndarray, np.ndarray]:
         """Extend the lattice over ``dra`` and ``ddec`` (zero sums there), and their indices in it."""
@@ -392,15 +439,36 @@ class _Mosaic:
                 grown[np.ix_(i, j)] = total
                 setattr(self, name, grown)
         self.axes |= {"dra": new_dra.tolist(), "ddec": new_ddec.tolist()}
-        if self.jackknife is not None:
-            self.jackknife.grow(dra, ddec)
+        for part in filter(None, (self.jackknife, self.continuum)):
+            part.grow(dra, ddec)
         return ira, idec
 
     def result(self) -> SearchResult:
         """The combined search, made in place of the sums (the mosaic is spent)."""
-        jackknife = None if self.jackknife is None else self.jackknife.result()
+        jackknife, continuum = (None if m is None else m.result() for m in (self.jackknife, self.continuum))
         snr, error = _estimate(self.w, self.wflux, np.nan)
-        return SearchResult(self.axes, self.freqs, snr, error, np.sqrt(self.coverage), jackknife)
+        return SearchResult(self.axes, self.freqs, snr, error, np.sqrt(self.coverage), jackknife, continuum)
+
+
+def continuum(windows: SearchResult, freq: float | None = None) -> SearchResult:
+    """A continuum per window (``SearchResult.continuum``) as one: the windows combined by inverse variance, a
+    single "channel" at ``freq`` Hz, by default their mean frequency weighted alike; its jackknife alike."""
+
+    def total(c):
+        if c is None:
+            return None
+        with np.errstate(divide="ignore", invalid="ignore"):
+            w = np.nan_to_num(c.error**-2.0)
+            wflux = np.nan_to_num(c.snr / c.error)
+        nu = float(np.sum(w * c.freqs) / np.sum(w)) if freq is None else freq
+        snr, error = _estimate(w.sum(axis=-1, keepdims=True), wflux.sum(axis=-1, keepdims=True), np.nan)
+        return SearchResult(dict(c.axes), np.array([nu]), snr, error, c.coverage.max(axis=-1, keepdims=True))
+
+    out = total(windows)
+    out.jackknife = total(windows.jackknife)
+    if out.jackknife is not None:
+        out.jackknife.freqs = out.freqs
+    return out
 
 
 def combine_pointings(results: Iterable[SearchResult], span: tuple | None = None, own: bool = False) -> SearchResult:
@@ -426,6 +494,9 @@ class MatchedFilter(_Grid):
 
     ``band`` (Hz, low and high) keeps the trial centres there, a chunk of a long spectrum: every window is
     still fitted over all its centres, so its continuum and its masks are those of the whole spectrum.
+    ``core`` (Hz) the windows whose continuum this search gives, those centred in it (None: every window),
+    so the chunks of a spectrum give each window's continuum once. Without ``lines`` only the continuum is
+    computed, over every channel (a model's response, say).
     """
 
     def __init__(
@@ -435,6 +506,8 @@ class MatchedFilter(_Grid):
         continuum_order: int | None = CONTINUUM_ORDER,
         channel_noise: str | dict | None = "measure",
         band: tuple[float, float] | None = None,
+        core: tuple[float, float] | None = None,
+        lines: bool = True,
     ):
         if isinstance(channel_noise, str) and channel_noise != "measure":
             raise ValueError(f'channel_noise must be "measure", None or a dict, got {channel_noise!r}')
@@ -450,6 +523,8 @@ class MatchedFilter(_Grid):
         self.freqs = self.lattice[(self.lattice >= lo) & (self.lattice <= hi)]
         if not self.freqs.size:
             raise ValueError(f"no trial centre in the band {lo / 1e9:.4f}-{hi / 1e9:.4f} GHz")
+        self.core = core or (-np.inf, np.inf)
+        self.lines = lines
         self.result: SearchResult | None = None
 
     @property
@@ -469,6 +544,8 @@ class MatchedFilter(_Grid):
         self.result = self._search(self.data)
         if jackknife:
             self.result.jackknife = self._search(noise)
+            if self.result.continuum is not None:
+                self.result.continuum.jackknife, self.result.jackknife.continuum = self.result.jackknife.continuum, None
 
     def _search(self, data: DataHandler) -> SearchResult:
         axes = {k: np.asarray(v) for k, v in self.axes.items()}
@@ -476,19 +553,32 @@ class MatchedFilter(_Grid):
         cov = covariance(bmaj * ARCSEC, bmin * ARCSEC, pa)
         # windows that overlap in frequency add by inverse variance, (n_dra, n_ddec, n_template, n_centre)
         layout = (len(axes["dra"]), len(axes["ddec"]), bmin.size * len(axes["width"]))
-        w = np.zeros((*layout, self.freqs.size))
+        freqs = self.freqs if self.lines else self.freqs[:0]
+        w = np.zeros((*layout, freqs.size))
         wflux = np.zeros_like(w)
         tol = 1e-3 * np.diff(self.lattice).min() if self.lattice.size > 1 else 1.0
         reach = _reach(data.chunks, max(self.axes["width"]))
+        owned = [c for c in data.chunks if self.core[0] <= c.freq.mean() < self.core[1]]
+        # the continuum's inverse-variance sums per window, (n_dra, n_ddec, n_shape, n_window)
+        cw = np.zeros((*layout[:2], bmin.size, len(owned)))
+        cwflux = np.zeros_like(cw)
         with jax.enable_x64(True):
             for c, (f0, f1) in zip(tqdm(data.chunks, desc="Windows", leave=False), reach, strict=True):
                 # the window's centres, a contiguous run of the lattice: slices, so no copies
                 full = self.lattice[slice(*np.searchsorted(self.lattice, [f0 - tol, f1 + tol], side="right"))]
                 keep = slice(*np.searchsorted(full, [self.freqs[0] - tol, self.freqs[-1] + tol], side="right"))
                 if keep.start == keep.stop:
-                    continue  # none of its centres is in the band
+                    continue  # none of its centres is in the band (nor, then, in the core)
+                mine = next((n for n, o in enumerate(owned) if o is c), None)
                 at = slice(*np.searchsorted(self.freqs, [full[keep][0] - tol, full[keep][-1] + tol], side="right"))
-                for rows, *pair in self._window(c, axes, cov, full):
+                for rows, cont, *pair in self._window(c, axes, cov, full, mine is not None):
+                    if cont is not None:
+                        num, var, var_c = (a.transpose(1, 2, 0) for a in cont)
+                        with np.errstate(divide="ignore", invalid="ignore"):
+                            cw[rows, ..., mine] = np.nan_to_num(var**2 / var_c)
+                            cwflux[rows, ..., mine] = np.nan_to_num(num * var / var_c)
+                    if not self.lines:
+                        continue
                     # (n_rows, n_ddec, n_template, n_centre), the templates in the order of the grid
                     shape = (*pair[0].shape[2:4], -1, at.stop - at.start)
                     snr, error = (a[..., keep].transpose(2, 3, 0, 1, 4).reshape(shape) for a in pair)
@@ -497,18 +587,36 @@ class MatchedFilter(_Grid):
                         wflux[rows, ..., at] += np.nan_to_num(snr / error)
         snr, error = _estimate(w, wflux, 0.0)
         coverage = np.broadcast_to(1.0, (*snr.shape[:2], snr.shape[-1]))
-        return SearchResult(dict(self.axes), self.freqs, snr, error, coverage)
+        continuum = None
+        if owned:
+            centres = np.array([c.freq.mean() for c in owned])
+            csnr, cerror = _estimate(cw, cwflux, 0.0)
+            caxes = {**self.axes, "width": [0.0]}  # the shapes, in the order of the search's templates
+            ccov = np.broadcast_to(1.0, (*csnr.shape[:2], centres.size))
+            continuum = SearchResult(caxes, centres, csnr, cerror, ccov)
+        return SearchResult(dict(self.axes), freqs, snr, error, coverage, continuum=continuum)
 
-    def _window(self, chunk: Chunk, axes: dict, cov: tuple, centres: np.ndarray):
-        """S/N and error of one window at ``centres`` per block of ``dra`` rows: (rows, snr, error), the arrays
-        ``(n_shape, n_width, n_rows, n_ddec, n_centre)``."""
+    def _window(self, chunk: Chunk, axes: dict, cov: tuple, centres: np.ndarray, continuum: bool = False):
+        """S/N and error of one window at ``centres`` per block of ``dra`` rows: (rows, continuum, snr, error), the
+        arrays ``(n_shape, n_width, n_rows, n_ddec, n_centre)``, and with ``continuum`` its :func:`_continuum`
+        sums ``(n_shape, n_rows, n_ddec)`` (else None)."""
         rho = jnp.asarray(self.noise[chunk.spw].rho if chunk.spw in self.noise else np.ones(1))
         freq, centres, widths = jnp.asarray(chunk.freq), jnp.asarray(centres), jnp.asarray(axes["width"])
         per_row = SPECTRAL_ARRAYS * 8 * len(cov[0]) * widths.size * len(axes["ddec"]) * centres.size
         start = 0
         for n, collapsed in _blocks(chunk, axes["dra"], axes["ddec"], cov, per_row):
-            snr, error = _spectral(*collapsed, freq, centres, widths, rho, order=self.continuum_order)
-            yield slice(start, start + n), np.asarray(snr)[:, :, :n], np.asarray(error)[:, :, :n]
+            snr, error = None, None
+            if self.lines:
+                snr, error = _spectral(*collapsed, freq, centres, widths, rho, order=self.continuum_order)
+            cont = None
+            if continuum:
+                sig, weight = collapsed
+                every = jnp.ones(jnp.moveaxis(sig, 0, -1).shape)
+                keep = _line_free(snr, freq, centres, widths) if self.lines else every
+                cont = tuple(np.asarray(a)[:, :n] for a in _continuum(sig, weight, rho, keep))
+            if self.lines:
+                snr, error = np.asarray(snr)[:, :, :n], np.asarray(error)[:, :, :n]
+            yield slice(start, start + n), cont, snr, error
             start += n
 
 
@@ -564,10 +672,11 @@ def search_pointings(
     cores: int | None = None,
     pb_limit: float = PB_LIMIT,
     fields: list[int] | None = None,
+    subtract: Callable[[DataHandler], DataHandler] | None = None,
     **filter_kwargs,
 ) -> SearchResult:
     """Search every field (or ``fields``) of a measurement set or NPZ, PB-corrected, and combine them on one
-    sky grid as they come."""
+    sky grid as they come; ``subtract`` takes each field's data to what is searched (a model's residual)."""
 
     cfg = {**(grid_cfg or {}), "pb_limit": pb_limit}
     fields = fields_in(path) if fields is None else fields
@@ -578,6 +687,8 @@ def search_pointings(
     def pointings():
         for field in fields:
             data = load(path, [field])
+            if subtract is not None:
+                data = subtract(data)
             mf = MatchedFilter(data, build_grid(data, cfg), **filter_kwargs)
             mf.run(jackknife=jackknife, cores=cores)
             result = _correct(mf.result, data, pb_limit)  # in place: the search is ours
@@ -585,3 +696,20 @@ def search_pointings(
             yield result
 
     return combine_pointings(pointings(), span, own=True)
+
+
+def continuum_response(
+    data: DataHandler, grid_cfg: dict | None, pb_limit: float = PB_LIMIT, cores: int | None = None
+) -> SearchResult:
+    """The continuum per window of in-memory ``data`` (a model's visibilities, say) on the search's grid: every
+    field PB-corrected and combined as :func:`search_pointings` does, over every channel."""
+    cfg = {**(grid_cfg or {}), "pb_limit": pb_limit}
+
+    def pointings():
+        for field in sorted({c.field for c in data.chunks}):
+            one = DataHandler(chunks=[c for c in data.chunks if c.field == field], metadata=data.metadata)
+            mf = MatchedFilter(one, build_grid(one, cfg), channel_noise=None, lines=False)
+            mf.run(cores=cores)
+            yield _correct(mf.result, one, pb_limit)
+
+    return combine_pointings(pointings(), own=True).continuum

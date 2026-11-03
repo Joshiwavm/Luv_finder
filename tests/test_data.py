@@ -157,6 +157,15 @@ def test_stokes_i_combines_hands_and_flags():
     assert np.allclose(stokes_i(data, spectrum, flag)[1], w)
 
 
+def test_longer_than_keeps_the_rows_of_the_long_baselines(data):
+    chunk = data.chunks[0]
+    length = np.median(np.hypot(chunk.u, chunk.v))
+    long = chunk.longer_than(length)
+    keep = np.hypot(chunk.u, chunk.v) >= length
+    assert long.u.size == keep.sum() == long.X.shape[1] == long.w.shape[1] == long.scan.size
+    np.testing.assert_array_equal(long.X, chunk.X[:, keep])
+
+
 def test_spectrum_is_the_weighted_mean():
     chunk = _chunk([0, 0, 1], [0, 1, 0])
     w = np.broadcast_to(np.array([1.0, 2.0, 3.0], dtype=np.float32), chunk.w.shape).copy()
