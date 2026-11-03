@@ -20,9 +20,13 @@ throughout:
    ellipsoid, for the data, the jackknife and (as a diagnostic) the negated data;
 4. every data group gets the likelihood ratio ``N_data(>= S/N) / N_jackknife(>= S/N)``
    (van Marrewijk et al. 2025, required >= 3) and the fidelity ``1 - N_jackknife / N_data``
-   per S/N bin, ``N_jackknife`` from a Gaussian tail fitted to the jackknife groups
-   (González-López et al. 2019, required >= 0.6). ``detected`` needs both (``rule="and"``,
-   the default) or either (``"or"``); the defaults are ``catalogue.RELIABILITY``.
+   per S/N bin (González-López et al. 2019, required >= 0.6). ``N_jackknife`` is a model
+   of the jackknife's peak counts, ``N(>= u) = n_k (u/2.5)^m exp(-(u^2 - 2.5^2)/2)``
+   (:func:`~luv_finder.catalogue.peak_exponent`): one exponent ``m`` per search, with a
+   prior of width 1 about the field's dimension minus one, and ``n_k`` per template,
+   since narrow templates make more trials. Fewer than 10 noise peaks detect nothing.
+   ``detected`` needs both tests (``rule="and"``, the default) or either (``"or"``); the
+   defaults are ``catalogue.RELIABILITY``.
 
 .. code-block:: python
 
@@ -36,6 +40,20 @@ A run (:doc:`../quickstart`) does this per unit and merges the units with
 :func:`~luv_finder.catalogue.merge_catalogues`, which recomputes the reliability over
 the whole volume and counts a line found by two units once (``duplicate_of``). The
 template's ``bmaj``, ``bmin`` and ``width`` columns are FWHM.
+
+A line whose sidelobes reach the floor (:func:`~luv_finder.catalogue.bright`) is fitted,
+subtracted from the visibilities and the unit searched again, up to five rounds; the
+catalogue's ``round`` column says when (0: never subtracted).
+
+Continuum sources
+-----------------
+
+The filter fits a continuum at every position with that position's lines masked, so
+the search also yields a continuum per window at no extra cost.
+:func:`~luv_finder.catalogue.continuum_catalogue` catalogues it with the same tests (a
+peak exponent about 1), and a run writes ``continuum.ecsv``: each source fitted in the
+visibilities as a Gaussian with a flux density per window, its in-band spectrum and
+spectral index ``alpha``, bright ones subtracted in rounds like the lines.
 
 Fitting the detected lines
 --------------------------

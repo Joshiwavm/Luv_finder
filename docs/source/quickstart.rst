@@ -41,8 +41,8 @@ search holds at most), ``uv_min`` (kλ: only longer baselines), ``filter`` (``co
    luv-run run.yaml plots
 
 The output holds ``catalogue.ecsv`` (every group, with its likelihood ratio, fidelity
-and ``detected``), ``lines_fit.ecsv`` (the fitted lines), ``line_maps.npz`` (their
-moment-0 maps), ``export/`` and ``units/`` (each unit's catalogue, maps and weights).
+and ``detected``), ``lines_fit.ecsv`` (the fitted lines), ``continuum.ecsv`` (the
+fitted continuum sources), ``line_maps.npz`` (moment-0 maps), ``export/`` and ``units/`` (each unit's catalogue, maps and weights).
 What is on disk is not redone, and ``Run.open(output)`` reopens a run for its figures.
 
 Python
