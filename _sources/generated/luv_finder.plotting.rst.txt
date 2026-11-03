@@ -16,6 +16,7 @@
    .. autosummary::
    
       amp_phase_check
+      continuum_spectra_check
       dirty_maps_check
       erf_curve
       filter_responses

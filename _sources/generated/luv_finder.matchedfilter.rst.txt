@@ -11,6 +11,7 @@
       GRID_DEFAULTS
       MASK_SNR
       MASK_FWHM
+      CONTINUUM_MASK_FWHM
       MASK_PEAKS
       SPECTRAL_ARRAYS
       POINT
@@ -22,6 +23,8 @@
    
       build_grid
       combine_pointings
+      continuum
+      continuum_response
       grid_axis
       pb_corrected
       search_pointings

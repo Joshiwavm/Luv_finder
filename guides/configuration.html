@@ -288,7 +288,7 @@ key raises an error; <code class="docutils literal notranslate"><span class="pre
 keys, a value or a list each; a key left out takes its value from <code class="docutils literal notranslate"><span class="pre">GRID_DEFAULTS</span></code>.</p>
 <div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="c1"># configs/grids/default.yaml (comments trimmed): a blind search</span>
 <span class="nt">pb_limit</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.2</span>
-<span class="nt">width</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">100</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">200</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">300</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">400</span><span class="p p-Indicator">]</span><span class="w"> </span><span class="c1"># km/s</span>
+<span class="nt">width</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">50</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">100</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">300</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">500</span><span class="p p-Indicator">]</span><span class="w"> </span><span class="c1"># km/s</span>
 </pre></div>
 </div>
 </section>
@@ -320,7 +320,10 @@ such as <code class="docutils literal notranslate"><span class="pre">alma.cycle1
 <section id="runs">
 <h2>Runs<a class="headerlink" href="#runs" title="Link to this heading">¶</a></h2>
 <p>A run YAML (<a class="reference internal" href="../quickstart.html"><span class="doc">Quickstart</span></a>) holds <code class="docutils literal notranslate"><span class="pre">data</span></code> and <code class="docutils literal notranslate"><span class="pre">output</span></code> and optionally <code class="docutils literal notranslate"><span class="pre">grid</span></code>,
-<code class="docutils literal notranslate"><span class="pre">pb_limit</span></code>, <code class="docutils literal notranslate"><span class="pre">max_channels</span></code>, <code class="docutils literal notranslate"><span class="pre">filter</span></code>, <code class="docutils literal notranslate"><span class="pre">reliability</span></code>, <code class="docutils literal notranslate"><span class="pre">near_miss</span></code> and <code class="docutils literal notranslate"><span class="pre">cores</span></code>.
+<code class="docutils literal notranslate"><span class="pre">pb_limit</span></code>, <code class="docutils literal notranslate"><span class="pre">max_channels</span></code>, <code class="docutils literal notranslate"><span class="pre">uv_min</span></code>, <code class="docutils literal notranslate"><span class="pre">filter</span></code>, <code class="docutils literal notranslate"><span class="pre">reliability</span></code>, <code class="docutils literal notranslate"><span class="pre">near_miss</span></code> and
+<code class="docutils literal notranslate"><span class="pre">cores</span></code>. <code class="docutils literal notranslate"><span class="pre">uv_min</span></code> (kλ at the data’s central frequency) keeps only the longer baselines,
+for example to filter a cluster’s SZ decrement out of the search; the exports hold the
+cut, so another cut needs a new output directory.
 The search is planned in units: windows that overlap or whose gap is narrower than the
 widest template are one unit, so a line across a window edge is searched and fitted
 whole. <code class="docutils literal notranslate"><span class="pre">max_channels</span></code> cuts a long unit into chunks of whole blocks (windows overlapping

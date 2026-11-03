@@ -425,6 +425,16 @@ sum over <code class="docutils literal notranslate"><span class="pre">X</span></
 </dd>
 </dl>
 <dl class="py method">
+<dt class="sig sig-object py" id="luv_finder.data.Chunk.binned">
+<span class="sig-name descname"><span class="pre">binned</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">n</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#int" title="(in Python v3.15)"><span class="pre">int</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">rho</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/builtins/stdtypes.html#tuple" title="(in Python v3.15)"><span class="pre">tuple</span></a><span class="p"><span class="pre">[</span></span><a class="reference internal" href="#luv_finder.data.Chunk" title="luv_finder.data.Chunk"><span class="pre">Chunk</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><a class="reference external" href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="(in NumPy v2.5)"><span class="pre">ndarray</span></a><span class="p"><span class="pre">]</span></span></span></span><a class="reference internal" href="../_modules/luv_finder/data.html#Chunk.binned"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#luv_finder.data.Chunk.binned" title="Link to this definition">¶</a></dt>
+<dd><p>The channels averaged in runs of <code class="docutils literal notranslate"><span class="pre">n</span></code> (the last shorter unless <code class="docutils literal notranslate"><span class="pre">n</span></code> divides them) and the binned
+channels’ correlation.</p>
+<p><code class="docutils literal notranslate"><span class="pre">X</span></code> and <code class="docutils literal notranslate"><span class="pre">w</span></code> add, an inverse-variance average at each run’s mean frequency. Under the channels’
+correlation <code class="docutils literal notranslate"><span class="pre">rho</span></code> (<code class="docutils literal notranslate"><span class="pre">(1,</span> <span class="pre">rho_1,</span> <span class="pre">...)</span></code>) a run’s variance is <code class="docutils literal notranslate"><span class="pre">sum_kl</span> <span class="pre">rho_|k-l|</span></code> times the independent
+one: the weights are divided by it, and neighbouring runs correlate by the <code class="docutils literal notranslate"><span class="pre">rho</span></code> spanning them.</p>
+</dd></dl>
+
+<dl class="py method">
 <dt class="sig sig-object py" id="luv_finder.data.Chunk.jackknife">
 <span class="sig-name descname"><span class="pre">jackknife</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="#luv_finder.data.Chunk" title="luv_finder.data.Chunk"><span class="pre">Chunk</span></a></span></span><a class="reference internal" href="../_modules/luv_finder/data.html#Chunk.jackknife"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#luv_finder.data.Chunk.jackknife" title="Link to this definition">¶</a></dt>
 <dd><p>A signal-free noise realisation: consecutive integrations of every baseline differenced and halved.</p>
@@ -436,6 +446,12 @@ weight <code class="docutils literal notranslate"><span class="pre">pair_weight<
 <p>The split is by integration, never random: a random sign flip of individual
 visibilities destroys the baseline structure and does not give the observation’s
 white-noise level.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="luv_finder.data.Chunk.longer_than">
+<span class="sig-name descname"><span class="pre">longer_than</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">length</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/builtins/functions.html#float" title="(in Python v3.15)"><span class="pre">float</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="#luv_finder.data.Chunk" title="luv_finder.data.Chunk"><span class="pre">Chunk</span></a></span></span><a class="reference internal" href="../_modules/luv_finder/data.html#Chunk.longer_than"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#luv_finder.data.Chunk.longer_than" title="Link to this definition">¶</a></dt>
+<dd><p>Only the rows of baselines at least <code class="docutils literal notranslate"><span class="pre">length</span></code> (m) long.</p>
 </dd></dl>
 
 <dl class="py method">
@@ -780,7 +796,9 @@ scan of one integration is measured too.</p>
 </ul>
 </li>
 <li><a class="reference internal" href="#luv_finder.data.Chunk"><code class="docutils literal notranslate"><span class="pre">Chunk</span></code></a><ul>
+<li><a class="reference internal" href="#luv_finder.data.Chunk.binned"><code class="docutils literal notranslate"><span class="pre">Chunk.binned()</span></code></a></li>
 <li><a class="reference internal" href="#luv_finder.data.Chunk.jackknife"><code class="docutils literal notranslate"><span class="pre">Chunk.jackknife()</span></code></a></li>
+<li><a class="reference internal" href="#luv_finder.data.Chunk.longer_than"><code class="docutils literal notranslate"><span class="pre">Chunk.longer_than()</span></code></a></li>
 <li><a class="reference internal" href="#luv_finder.data.Chunk.phase"><code class="docutils literal notranslate"><span class="pre">Chunk.phase()</span></code></a></li>
 <li><a class="reference internal" href="#luv_finder.data.Chunk.scaled"><code class="docutils literal notranslate"><span class="pre">Chunk.scaled()</span></code></a></li>
 <li><a class="reference internal" href="#luv_finder.data.Chunk.uv_waves"><code class="docutils literal notranslate"><span class="pre">Chunk.uv_waves()</span></code></a></li>

@@ -10,7 +10,9 @@
    
       DETECTION_RULE
       RELIABILITY
-      BRIGHT_SNR
+      NOISE_FLOOR
+      MIN_NOISE
+      EXPONENT_PRIOR
       UNITS
       SEARCH_META
    
@@ -18,15 +20,18 @@
 
    .. autosummary::
    
-      bright_lines
+      bright
       catalogue
+      continuum_catalogue
       duplicates
       fidelity
       groups
       jackknife_spread
       likelihood
       merge_catalogues
+      noise_above
       passes
+      peak_exponent
       response_correlation
    
    .. rubric:: Classes

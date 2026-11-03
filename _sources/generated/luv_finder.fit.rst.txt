@@ -10,7 +10,9 @@
    
       REPORTED
       MIN_WIDTH
+      BIN_FRACTION
       COLUMNS
+      CONTINUUM_COLUMNS
       START
    
    .. rubric:: Functions
@@ -18,7 +20,9 @@
    .. autosummary::
    
       empty_fit
+      fit_continuum
       fit_line
       fit_lines
       home_window
+      source_model
    
